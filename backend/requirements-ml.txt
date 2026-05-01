@@ -1,0 +1,15 @@
+# === Heavy ML dependencies (install on Render/Colab, NOT on local Windows) ===
+# These require C++ build tools or large downloads
+
+# ML/NLP
+torch>=2.3
+transformers>=4.44
+sentence-transformers>=3.0
+peft>=0.12
+trl>=0.9
+datasets>=2.21
+sentencepiece>=0.2
+
+# Translation (needs C++ build tools — install on Linux/Render only)
+# IndicTransToolkit>=1.1.1
+# Alternative: use HuggingFace Inference API for translation during local dev
