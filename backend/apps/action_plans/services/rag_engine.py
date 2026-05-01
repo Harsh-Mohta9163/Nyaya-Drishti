@@ -86,13 +86,13 @@ def _nvidia_rerank(query: str, documents: list[str], top_n: int = 5) -> list[dic
 
     try:
         resp = requests.post(
-            "https://ai.api.nvidia.com/v1/retrieval/nvidia/llama-3.2-nv-rerankqa-1b-v2/reranking",
+            "https://integrate.api.nvidia.com/v1/retrieval/nvidia/nv-rerankqa-mistral-4b-v3/reranking",
             headers={
                 "Authorization": f"Bearer {api_key}",
                 "Content-Type": "application/json",
             },
             json={
-                "model": "nvidia/llama-3.2-nv-rerankqa-1b-v2",
+                "model": "nvidia/nv-rerankqa-mistral-4b-v3",
                 "query": {"text": query[:1000]},
                 "passages": [{"text": d[:1500]} for d in documents],
             },
