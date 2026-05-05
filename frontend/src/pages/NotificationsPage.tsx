@@ -1,19 +1,19 @@
-import { useState } from 'react';
 import { motion } from 'framer-motion';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
 import {
   Clock, AlertTriangle, ClipboardCheck, CheckCircle, ArrowUpCircle, CheckCheck
 } from 'lucide-react';
-import { mockNotifications } from '@/lib/mockData';
 import { cn, formatRelativeTime } from '@/lib/utils';
 import type { NotificationType } from '@/types';
 import EmptyState from '@/components/common/EmptyState';
+import LoadingSpinner from '@/components/common/LoadingSpinner';
+import { useNotifications, useMarkNotificationRead } from '@/hooks/useNotifications';
 
 const container = { hidden: { opacity: 0 }, show: { opacity: 1, transition: { staggerChildren: 0.06 } } };
 const item = { hidden: { opacity: 0, y: 10 }, show: { opacity: 1, y: 0 } };
 
-const typeConfig: Record<NotificationType, { icon: React.ReactNode; color: string }> = {
+const typeConfig: Record<string, { icon: React.ReactNode; color: string }> = {
   deadline_warning: { icon: <Clock size={18} />, color: 'text-amber-400 bg-amber-500/10' },
   high_risk_alert: { icon: <AlertTriangle size={18} />, color: 'text-red-400 bg-red-500/10' },
   review_assigned: { icon: <ClipboardCheck size={18} />, color: 'text-blue-400 bg-blue-500/10' },
@@ -24,18 +24,26 @@ const typeConfig: Record<NotificationType, { icon: React.ReactNode; color: strin
 export default function NotificationsPage() {
   const { t } = useTranslation();
   const navigate = useNavigate();
-  const [notifications, setNotifications] = useState(mockNotifications);
+  
+  const { data: notifications = [], isLoading } = useNotifications();
+  const markReadMutation = useMarkNotificationRead();
 
   const unreadCount = notifications.filter(n => !n.is_read).length;
 
   const markAllRead = () => {
-    setNotifications(prev => prev.map(n => ({ ...n, is_read: true })));
+    notifications.forEach(n => {
+      if (!n.is_read) markReadMutation.mutate(n.id);
+    });
   };
 
   const handleClick = (notifId: number, caseId: number) => {
-    setNotifications(prev => prev.map(n => n.id === notifId ? { ...n, is_read: true } : n));
+    markReadMutation.mutate(notifId);
     navigate(`/cases/${caseId}`);
   };
+
+  if (isLoading) {
+    return <div className="flex items-center justify-center h-64"><LoadingSpinner /></div>;
+  }
 
   // Group by date
   const grouped: Record<string, typeof notifications> = {};
@@ -55,6 +63,7 @@ export default function NotificationsPage() {
         {unreadCount > 0 && (
           <button
             onClick={markAllRead}
+            disabled={markReadMutation.isPending}
             className="flex items-center gap-1.5 rounded-lg border border-slate-700 bg-slate-800/50 px-3 py-1.5 text-xs font-medium text-slate-300 hover:bg-slate-700/50 transition-colors"
           >
             <CheckCheck size={14} />
@@ -71,7 +80,7 @@ export default function NotificationsPage() {
             <p className="text-xs text-slate-500 uppercase tracking-wider mb-3">{date}</p>
             <div className="space-y-2">
               {notifs.map((n) => {
-                const config = typeConfig[n.notification_type];
+                const config = typeConfig[n.notification_type] || typeConfig['deadline_warning'];
                 return (
                   <motion.div
                     key={n.id}
@@ -88,9 +97,9 @@ export default function NotificationsPage() {
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2">
                         <span className="text-xs font-medium text-slate-400">
-                          {t(`notifications.${n.notification_type}`)}
+                          {t(`notifications.${n.notification_type}`, n.notification_type.replace('_', ' '))}
                         </span>
-                        <span className="text-xs text-blue-400 font-medium">{n.case_number}</span>
+                        {n.case_number && <span className="text-xs text-blue-400 font-medium">{n.case_number}</span>}
                         {!n.is_read && (
                           <span className="h-2 w-2 rounded-full bg-blue-500" />
                         )}

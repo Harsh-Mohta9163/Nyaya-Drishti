@@ -2,13 +2,15 @@ import { useTranslation } from 'react-i18next';
 import { Bell, Globe, User } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 import { Link } from 'react-router-dom';
-import { mockNotifications } from '@/lib/mockData';
+import { useNotifications } from '@/hooks/useNotifications';
 
 export default function Header() {
   const { i18n } = useTranslation();
   const { user } = useAuth();
-
-  const unreadCount = mockNotifications.filter(n => !n.is_read).length;
+  
+  // Fetch only unread notifications for the badge
+  const { data: notifications = [] } = useNotifications(true);
+  const unreadCount = notifications.length;
 
   const toggleLanguage = () => {
     const next = i18n.language === 'en' ? 'kn' : 'en';

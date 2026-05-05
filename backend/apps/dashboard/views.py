@@ -1,5 +1,6 @@
 from datetime import timedelta
 
+from django.db.models import Avg, Q
 from django.utils import timezone
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -10,45 +11,84 @@ from apps.cases.models import Case
 
 class DashboardStatsView(APIView):
     def get(self, request):
-        return Response(
-            {
-                "total_cases": Case.objects.count(),
-                "pending_cases": Case.objects.filter(status__in=[Case.Status.UPLOADED, Case.Status.PROCESSING]).count(),
-                "verified_cases": Case.objects.filter(status=Case.Status.VERIFIED).count(),
-                "high_risk_cases": ActionPlan.objects.filter(contempt_risk="High").count(),
-            }
-        )
+        now = timezone.now()
+        seven_days = now.date() + timedelta(days=7)
+        month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+
+        total_cases = Case.objects.count()
+        pending_review = Case.objects.filter(status__in=[
+            Case.Status.EXTRACTED, Case.Status.REVIEW_PENDING
+        ]).count()
+        high_risk = ActionPlan.objects.filter(contempt_risk="High").count()
+        upcoming_7d = ActionPlan.objects.filter(
+            legal_deadline__lte=seven_days,
+            legal_deadline__gte=now.date()
+        ).count()
+        verified_month = Case.objects.filter(
+            status=Case.Status.VERIFIED,
+            updated_at__gte=month_start
+        ).count()
+        avg_conf = Case.objects.filter(
+            ocr_confidence__isnull=False
+        ).aggregate(avg=Avg("ocr_confidence"))["avg"] or 0.0
+
+        return Response({
+            "total_cases": total_cases,
+            "pending_review": pending_review,
+            "high_risk": high_risk,
+            "upcoming_deadlines_7d": upcoming_7d,
+            "verified_this_month": verified_month,
+            "avg_extraction_confidence": round(avg_conf, 2),
+        })
 
 
 class DashboardDeadlinesView(APIView):
     def get(self, request):
-        cutoff = timezone.now().date() + timedelta(days=30)
-        plans = ActionPlan.objects.select_related("case").filter(legal_deadline__lte=cutoff).order_by("legal_deadline")
-        data = [
-            {
+        days = int(request.query_params.get("days", 30))
+        cutoff = timezone.now().date() + timedelta(days=days)
+        plans = (
+            ActionPlan.objects.select_related("case")
+            .filter(legal_deadline__lte=cutoff, legal_deadline__gte=timezone.now().date())
+            .order_by("legal_deadline")
+        )
+        data = []
+        for plan in plans:
+            days_remaining = (plan.legal_deadline - timezone.now().date()).days
+            data.append({
                 "case_id": plan.case_id,
                 "case_number": plan.case.case_number,
+                "case_type": plan.case.case_type,
                 "legal_deadline": plan.legal_deadline,
                 "internal_deadline": plan.internal_deadline,
-                "ccms_stage": plan.ccms_stage,
                 "contempt_risk": plan.contempt_risk,
-            }
-            for plan in plans
-        ]
+                "ccms_stage": plan.ccms_stage,
+                "days_remaining": days_remaining,
+            })
         return Response(data)
 
 
 class DashboardHighRiskView(APIView):
     def get(self, request):
-        plans = ActionPlan.objects.select_related("case").filter(contempt_risk="High").order_by("legal_deadline")
-        data = [
-            {
+        plans = (
+            ActionPlan.objects.select_related("case")
+            .filter(contempt_risk="High")
+            .order_by("legal_deadline")
+        )
+        data = []
+        for plan in plans:
+            days_remaining = (
+                (plan.legal_deadline - timezone.now().date()).days
+                if plan.legal_deadline
+                else None
+            )
+            data.append({
                 "case_id": plan.case_id,
                 "case_number": plan.case.case_number,
-                "recommendation": plan.recommendation,
+                "court": plan.case.court,
+                "petitioner": plan.case.petitioner,
+                "contempt_risk": plan.contempt_risk,
                 "legal_deadline": plan.legal_deadline,
+                "days_remaining": days_remaining,
                 "ccms_stage": plan.ccms_stage,
-            }
-            for plan in plans
-        ]
+            })
         return Response(data)

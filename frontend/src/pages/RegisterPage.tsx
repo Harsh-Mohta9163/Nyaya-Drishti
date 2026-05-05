@@ -25,8 +25,21 @@ export default function RegisterPage() {
     try {
       await register(form);
       navigate('/dashboard');
-    } catch {
-      setError('Registration failed. Please try again.');
+    } catch (err: any) {
+      if (err.response?.data) {
+        // Extract the first error message from the DRF response object
+        const data = err.response.data;
+        const firstKey = Object.keys(data)[0];
+        if (Array.isArray(data[firstKey])) {
+          setError(data[firstKey][0]);
+        } else if (typeof data[firstKey] === 'string') {
+          setError(data[firstKey]);
+        } else {
+          setError('Registration failed. Please try again.');
+        }
+      } else {
+        setError('Registration failed. Please check your connection.');
+      }
     }
   };
 

@@ -19,8 +19,14 @@ export default function LoginPage() {
     try {
       await login(email, password);
       navigate('/dashboard');
-    } catch {
-      setError('Invalid credentials. Please try again.');
+    } catch (err: any) {
+      if (err.response?.status === 401) {
+        setError('Invalid email or password.');
+      } else if (err.response?.data?.detail) {
+        setError(err.response.data.detail);
+      } else {
+        setError('Login failed. Please check your credentials or connection.');
+      }
     }
   };
 

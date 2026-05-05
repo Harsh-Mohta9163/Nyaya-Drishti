@@ -10,6 +10,8 @@ class ExtractedDataSerializer(serializers.ModelSerializer):
     class Meta:
         model = ExtractedData
         fields = [
+            "id",
+            "case",
             "header_data",
             "operative_order",
             "court_directions",

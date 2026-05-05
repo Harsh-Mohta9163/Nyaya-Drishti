@@ -1,11 +1,14 @@
 from rest_framework import serializers
 
+from apps.accounts.serializers import UserSerializer
 from apps.action_plans.models import ActionPlan
 
 from .models import ReviewLog, TrainingPair
 
 
 class ReviewLogSerializer(serializers.ModelSerializer):
+    reviewer = UserSerializer(read_only=True)
+
     class Meta:
         model = ReviewLog
         fields = [
@@ -44,3 +47,13 @@ class ReviewSubmitSerializer(serializers.Serializer):
     notes = serializers.CharField(required=False, allow_blank=True)
     field_name = serializers.CharField(required=False, allow_blank=True)
     human_correction = serializers.CharField(required=False, allow_blank=True)
+
+
+class PendingReviewSerializer(serializers.Serializer):
+    """Serializes pending reviews in the shape the frontend expects."""
+    case_id = serializers.IntegerField()
+    case_number = serializers.CharField()
+    court = serializers.CharField()
+    contempt_risk = serializers.CharField()
+    review_level = serializers.CharField()
+    created_at = serializers.DateTimeField()

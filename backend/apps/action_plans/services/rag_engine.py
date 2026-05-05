@@ -121,6 +121,26 @@ class HybridRAGEngine:
 
     def __init__(self):
         self.documents = []  # List of {"text": ..., "metadata": ...}
+        
+        # Load existing documents from ChromaDB so the in-memory BM25 index can be rebuilt
+        collection = _get_collection()
+        if collection.count() > 0:
+            results = collection.get(include=["documents", "metadatas"])
+            if results and results["documents"]:
+                for i in range(len(results["documents"])):
+                    self.documents.append({
+                        "text": results["documents"][i],
+                        "metadata": results["metadatas"][i] if results["metadatas"] else {}
+                    })
+                
+                # Rebuild BM25 index
+                global _bm25_index, _bm25_corpus, _bm25_doc_ids
+                _bm25_corpus = [d.get("text", "") for d in self.documents]
+                _bm25_doc_ids = list(range(len(self.documents)))
+                tokenized = [text.lower().split() for text in _bm25_corpus]
+                if tokenized:
+                    from rank_bm25 import BM25Okapi
+                    _bm25_index = BM25Okapi(tokenized)
 
     def add_documents(self, documents: list[dict]):
         """

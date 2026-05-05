@@ -6,11 +6,12 @@ import StatCard from '@/components/dashboard/StatCard';
 import DeadlineHeatmap from '@/components/dashboard/DeadlineHeatmap';
 import RiskBoard from '@/components/dashboard/RiskBoard';
 import AppealCountdown from '@/components/dashboard/AppealCountdown';
-import { mockDashboardStats, mockDeadlines, mockHighRisk, mockPendingReviews } from '@/lib/mockData';
+import { useDashboardStats, useDeadlines, useHighRiskCases } from '@/hooks/useDashboard';
+import { usePendingReviews } from '@/hooks/useReviews';
 import { useNavigate } from 'react-router-dom';
-import GlassCard from '@/components/common/GlassCard';
 import { cn, riskColor } from '@/lib/utils';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
+import LoadingSpinner from '@/components/common/LoadingSpinner';
 
 const container = {
   hidden: { opacity: 0 },
@@ -25,7 +26,15 @@ export default function DashboardPage() {
   const { t } = useTranslation();
   const { user } = useAuth();
   const navigate = useNavigate();
-  const stats = mockDashboardStats;
+
+  const { data: stats, isLoading: statsLoading } = useDashboardStats();
+  const { data: deadlines = [], isLoading: deadlinesLoading } = useDeadlines(30);
+  const { data: highRisk = [], isLoading: highRiskLoading } = useHighRiskCases();
+  const { data: pendingReviews = [] } = usePendingReviews();
+
+  if (statsLoading) {
+    return <div className="flex items-center justify-center h-64"><LoadingSpinner /></div>;
+  }
 
   return (
     <motion.div variants={container} initial="hidden" animate="show" className="space-y-6">
@@ -38,26 +47,26 @@ export default function DashboardPage() {
 
       {/* Stat Cards */}
       <motion.div variants={item} className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4">
-        <StatCard title={t('dashboard.totalCases')} value={stats.total_cases} icon={FileText} color="blue" />
-        <StatCard title={t('dashboard.pendingReview')} value={stats.pending_review} icon={ClipboardCheck} color="amber" />
-        <StatCard title={t('dashboard.highRisk')} value={stats.high_risk} icon={AlertTriangle} color="red" />
-        <StatCard title={t('dashboard.upcomingDeadlines')} value={stats.upcoming_deadlines_7d} icon={Calendar} color="green" />
+        <StatCard title={t('dashboard.totalCases')} value={stats?.total_cases ?? 0} icon={FileText} color="blue" />
+        <StatCard title={t('dashboard.pendingReview')} value={stats?.pending_review ?? 0} icon={ClipboardCheck} color="amber" />
+        <StatCard title={t('dashboard.highRisk')} value={stats?.high_risk ?? 0} icon={AlertTriangle} color="red" />
+        <StatCard title={t('dashboard.upcomingDeadlines')} value={stats?.upcoming_deadlines_7d ?? 0} icon={Calendar} color="green" />
       </motion.div>
 
       {/* Additional stat row */}
       <motion.div variants={item} className="grid grid-cols-1 gap-6 sm:grid-cols-2">
-        <StatCard title={t('dashboard.verifiedThisMonth')} value={stats.verified_this_month} icon={CheckCircle} color="green" />
-        <StatCard title={t('dashboard.avgConfidence')} value={Math.round(stats.avg_extraction_confidence * 100)} icon={Gauge} color="blue" trend={{ value: 2.3, label: 'vs last month' }} />
+        <StatCard title={t('dashboard.verifiedThisMonth')} value={stats?.verified_this_month ?? 0} icon={CheckCircle} color="green" />
+        <StatCard title={t('dashboard.avgConfidence')} value={Math.round((stats?.avg_extraction_confidence ?? 0) * 100)} icon={Gauge} color="blue" trend={{ value: 2.3, label: 'vs last month' }} />
       </motion.div>
 
       {/* Deadline Heatmap + Risk Board */}
       <motion.div variants={item} className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-        <DeadlineHeatmap deadlines={mockDeadlines} onCellClick={(id) => navigate(`/cases/${id}`)} />
-        <RiskBoard cases={mockHighRisk} />
+        <DeadlineHeatmap deadlines={deadlines} onCellClick={(id) => navigate(`/cases/${id}`)} />
+        <RiskBoard cases={highRisk} />
       </motion.div>
 
       {/* Role-specific widgets */}
-      {user?.role === 'reviewer' && (
+      {user?.role === 'reviewer' && pendingReviews.length > 0 && (
         <motion.div variants={item}>
           <Card className="border-border bg-card shadow-sm">
             <CardHeader className="pb-3 border-b border-border/50">
@@ -68,7 +77,7 @@ export default function DashboardPage() {
             </CardHeader>
             <CardContent className="p-0">
               <div className="flex flex-col divide-y divide-border/50">
-                {mockPendingReviews.map((r, i) => (
+                {pendingReviews.map((r, i) => (
                   <motion.div
                     key={r.case_id}
                     initial={{ opacity: 0, x: -10 }}
@@ -97,7 +106,7 @@ export default function DashboardPage() {
 
       {user?.role === 'legal_advisor' && (
         <motion.div variants={item}>
-          <AppealCountdown deadlines={mockDeadlines} />
+          <AppealCountdown deadlines={deadlines} />
         </motion.div>
       )}
     </motion.div>

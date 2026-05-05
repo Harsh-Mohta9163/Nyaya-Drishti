@@ -3,17 +3,18 @@ import { motion } from 'framer-motion';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
 import { Search, Plus, Eye } from 'lucide-react';
-import { mockCases, mockDeadlines } from '@/lib/mockData';
 import StatusBadge from '@/components/cases/StatusBadge';
 import PDFUpload from '@/components/cases/PDFUpload';
 import { cn, riskColor, formatDate } from '@/lib/utils';
-import { mockDelay } from '@/lib/api';
-import type { Case, CaseStatus, CaseType } from '@/types';
+import { useCasesList, useUploadCase } from '@/hooks/useCases';
+import { useDeadlines } from '@/hooks/useDashboard';
+import type { CaseStatus, CaseType } from '@/types';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import LoadingSpinner from '@/components/common/LoadingSpinner';
 
 const container = { hidden: { opacity: 0 }, show: { opacity: 1, transition: { staggerChildren: 0.06 } } };
 const item = { hidden: { opacity: 0, y: 10 }, show: { opacity: 1, y: 0 } };
@@ -26,30 +27,35 @@ export default function CasesListPage() {
   const [typeFilter, setTypeFilter] = useState<CaseType | 'all'>('all');
   const [showUpload, setShowUpload] = useState(false);
 
-  const filtered = useMemo(() => {
-    return mockCases.filter(c => {
-      if (search && !c.case_number.toLowerCase().includes(search.toLowerCase()) &&
-          !c.petitioner.toLowerCase().includes(search.toLowerCase()) &&
-          !c.respondent.toLowerCase().includes(search.toLowerCase())) return false;
-      if (statusFilter !== 'all' && c.status !== statusFilter) return false;
-      if (typeFilter !== 'all' && c.case_type !== typeFilter) return false;
-      return true;
-    });
-  }, [search, statusFilter, typeFilter]);
+  // We can pass filters to the backend, but since the mock version did client-side filtering, 
+  // we'll fetch all and filter client-side for now, or pass params if backend supports it.
+  // The updated backend supports status, case_type, and search.
+  const { data: casesResponse, isLoading: casesLoading } = useCasesList({
+    status: statusFilter !== 'all' ? statusFilter : undefined,
+    case_type: typeFilter !== 'all' ? typeFilter : undefined,
+    search: search || undefined,
+  });
+  
+  const cases = casesResponse?.results || [];
+
+  const { data: deadlines = [] } = useDeadlines(30);
+  const uploadMutation = useUploadCase();
 
   const getDaysRemaining = (caseId: number) => {
-    const d = mockDeadlines.find(dl => dl.case_id === caseId);
+    const d = deadlines.find(dl => dl.case_id === caseId);
     return d?.days_remaining;
   };
 
   const getContemptRisk = (caseId: number) => {
-    const d = mockDeadlines.find(dl => dl.case_id === caseId);
+    const d = deadlines.find(dl => dl.case_id === caseId);
     return d?.contempt_risk;
   };
 
-  const handleUpload = async (file: File): Promise<Case> => {
-    await mockDelay(1500);
-    return { ...mockCases[0], id: Date.now(), case_number: `NEW/${Date.now()}`, status: 'uploaded' };
+  const handleUpload = async (file: File) => {
+    const newCase = await uploadMutation.mutateAsync({ file });
+    setShowUpload(false);
+    navigate(`/cases/${newCase.id}`);
+    return newCase;
   };
 
   return (
@@ -57,7 +63,9 @@ export default function CasesListPage() {
       <motion.div variants={item} className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold tracking-tight text-foreground">{t('cases.title')}</h1>
-          <p className="text-sm text-muted-foreground mt-1">{filtered.length} of {mockCases.length} cases</p>
+          <p className="text-sm text-muted-foreground mt-1">
+            {casesLoading ? 'Loading cases...' : `${cases.length} ${search || statusFilter !== 'all' || typeFilter !== 'all' ? 'filtered ' : ''}cases`}
+          </p>
         </div>
         <Button onClick={() => setShowUpload(!showUpload)} className="bg-blue-600 hover:bg-blue-700 text-white shadow-lg shadow-blue-500/20">
           <Plus className="mr-2 h-4 w-4" />
@@ -109,7 +117,12 @@ export default function CasesListPage() {
       </motion.div>
 
       {/* Table */}
-      <motion.div variants={item} className="rounded-xl border border-border bg-card shadow-sm overflow-hidden">
+      <motion.div variants={item} className="rounded-xl border border-border bg-card shadow-sm overflow-hidden min-h-[400px] relative">
+        {casesLoading && (
+          <div className="absolute inset-0 z-10 flex items-center justify-center bg-card/50 backdrop-blur-sm">
+            <LoadingSpinner />
+          </div>
+        )}
         <Table>
           <TableHeader className="bg-muted/50">
             <TableRow className="hover:bg-transparent">
@@ -124,14 +137,14 @@ export default function CasesListPage() {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {filtered.length === 0 ? (
+            {!casesLoading && cases.length === 0 ? (
               <TableRow>
                 <TableCell colSpan={8} className="h-24 text-center text-muted-foreground">
                   {t('cases.noResults')}
                 </TableCell>
               </TableRow>
             ) : (
-              filtered.map((c, i) => {
+              cases.map((c, i) => {
                 const days = getDaysRemaining(c.id);
                 const risk = getContemptRisk(c.id);
                 return (

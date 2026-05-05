@@ -6,15 +6,20 @@ import {
   ArrowLeft, Lock, Check, Pencil, X, CheckCircle,
   FileSearch, GitBranch, Stamp, AlertTriangle
 } from 'lucide-react';
-import { mockExtractedData, mockActionPlan, mockCases } from '@/lib/mockData';
 import GlassCard from '@/components/common/GlassCard';
 import ConfidenceBadge from '@/components/common/ConfidenceBadge';
 import ConflictAlert from '@/components/review/ConflictAlert';
+import LoadingSpinner from '@/components/common/LoadingSpinner';
 import { cn, riskColor } from '@/lib/utils';
 import { useAuth } from '@/context/AuthContext';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
+
+import { useCaseDetail } from '@/hooks/useCases';
+import { useExtractedData } from '@/hooks/useExtraction';
+import { useActionPlan } from '@/hooks/useActionPlan';
+import { useSubmitReview } from '@/hooks/useReviews';
 
 const container = { hidden: { opacity: 0 }, show: { opacity: 1, transition: { staggerChildren: 0.06 } } };
 const item = { hidden: { opacity: 0, y: 10 }, show: { opacity: 1, y: 0 } };
@@ -23,23 +28,43 @@ type ReviewTab = 'field' | 'directive' | 'case';
 
 export default function ReviewPage() {
   const { id } = useParams();
+  const caseId = Number(id);
   const navigate = useNavigate();
   const { t } = useTranslation();
   const { user } = useAuth();
+  
+  const { data: caseData, isLoading: caseLoading } = useCaseDetail(caseId);
+  const { data: extracted, isLoading: extractionLoading } = useExtractedData(caseId);
+  const { data: plan, isLoading: planLoading } = useActionPlan(caseId);
+  const submitMutation = useSubmitReview(caseId);
+
   const [activeTab, setActiveTab] = useState<ReviewTab>('field');
   const [fieldApproved, setFieldApproved] = useState(false);
   const [directiveApproved, setDirectiveApproved] = useState(false);
+  
   const [editingField, setEditingField] = useState<string | null>(null);
   const [editValues, setEditValues] = useState<Record<string, string>>({});
   const [rejectDialog, setRejectDialog] = useState(false);
   const [rejectReason, setRejectReason] = useState('');
+  
   const [conflicts, setConflicts] = useState<string[]>([]);
   const [approvedFields, setApprovedFields] = useState<Set<string>>(new Set());
   const [approvedDirectives, setApprovedDirectives] = useState<Set<string>>(new Set());
 
-  const caseData = mockCases.find(c => c.id === Number(id)) || mockCases[0];
-  const extracted = mockExtractedData;
-  const plan = mockActionPlan;
+  if (caseLoading || extractionLoading || planLoading) {
+    return <div className="flex items-center justify-center h-64"><LoadingSpinner /></div>;
+  }
+
+  if (!caseData || !extracted || !plan) {
+    return (
+      <div className="space-y-6">
+        <button onClick={() => navigate(`/cases/${id}`)} className="flex items-center gap-2 text-sm text-slate-400 hover:text-white transition-colors">
+          <ArrowLeft size={16} /> Back to Case
+        </button>
+        <div className="p-8 text-center text-slate-400">Not all data is available for review yet.</div>
+      </div>
+    );
+  }
 
   const tabs = [
     { key: 'field' as const, label: t('review.fieldLevel'), icon: <FileSearch size={14} />, locked: false },
@@ -54,13 +79,25 @@ export default function ReviewPage() {
   const handleFieldEdit = (fieldKey: string, value: string) => {
     setEditValues(prev => ({ ...prev, [fieldKey]: value }));
     setEditingField(null);
-    // Check for conflicts
-    if (fieldKey === 'judgment_date' && new Date(value) > new Date(plan.legal_deadline)) {
+    if (fieldKey === 'judgment_date' && new Date(value) > new Date(plan.legal_deadline || '')) {
       setConflicts(['Judgment date is after the legal deadline — this may be incorrect.']);
     }
   };
 
-  const handleApproveAllFields = () => {
+  const handleApproveAllFields = async () => {
+    if (Object.keys(editValues).length > 0) {
+      await submitMutation.mutateAsync({
+        review_level: 'field',
+        action: 'edit',
+        changes: editValues,
+        notes: 'Bulk field edits',
+      });
+    } else {
+      await submitMutation.mutateAsync({
+        review_level: 'field',
+        action: 'approve',
+      });
+    }
     setFieldApproved(true);
     setActiveTab('directive');
   };
@@ -69,19 +106,37 @@ export default function ReviewPage() {
     setApprovedDirectives(prev => new Set(prev).add(dirId));
   };
 
-  const handleApproveAllDirectives = () => {
+  const handleApproveAllDirectives = async () => {
+    await submitMutation.mutateAsync({
+      review_level: 'directive',
+      action: 'approve',
+    });
     setDirectiveApproved(true);
     setActiveTab('case');
   };
 
   const canSignOff = user?.role === 'dept_head' || user?.role === 'legal_advisor';
 
-  const handleSignOff = () => {
-    alert('Case signed off successfully! Status updated to "verified".');
+  const handleSignOff = async () => {
+    await submitMutation.mutateAsync({
+      review_level: 'case',
+      action: 'approve',
+    });
     navigate(`/cases/${id}`);
   };
 
-  const headerFields = Object.entries(extracted.header_data);
+  const handleReject = async () => {
+    await submitMutation.mutateAsync({
+      review_level: activeTab,
+      action: 'reject',
+      notes: rejectReason,
+    });
+    setRejectDialog(false);
+    setRejectReason('');
+    navigate(`/cases/${id}`);
+  };
+
+  const headerFields = Object.entries(extracted.header_data || {});
 
   return (
     <motion.div variants={container} initial="hidden" animate="show" className="space-y-6">
@@ -141,73 +196,78 @@ export default function ReviewPage() {
         {activeTab === 'field' && (
           <div className="space-y-8">
             <p className="text-sm text-muted-foreground">Review each extracted field. Approve, edit, or reject.</p>
-            {headerFields.map(([key, value]) => {
-              const isApproved = approvedFields.has(key);
-              const editedValue = editValues[key];
-              const displayValue = editedValue || value;
+            {headerFields.length === 0 ? (
+              <p className="text-sm text-slate-500">No header fields to review.</p>
+            ) : (
+              headerFields.map(([key, value]) => {
+                const isApproved = approvedFields.has(key);
+                const editedValue = editValues[key];
+                const displayValue = editedValue !== undefined ? editedValue : String(value);
 
-              return (
-                <GlassCard key={key} className={cn(isApproved && 'border-green-500/30')}>
-                  <div className="flex items-start justify-between">
-                    <div className="flex-1">
-                      <p className="text-xs text-muted-foreground capitalize mb-1">{key.replace(/_/g, ' ')}</p>
-                      {editingField === key ? (
-                        <div className="flex gap-2">
-                          <Input
-                            type="text"
-                            defaultValue={displayValue}
-                            onKeyDown={(e) => {
-                              if (e.key === 'Enter') handleFieldEdit(key, (e.target as HTMLInputElement).value);
-                              if (e.key === 'Escape') setEditingField(null);
-                            }}
-                            className="flex-1 h-8 text-sm"
-                            autoFocus
-                          />
-                          <Button variant="ghost" size="icon" onClick={() => setEditingField(null)} className="h-8 w-8 text-muted-foreground hover:text-foreground">
-                            <X size={14} />
-                          </Button>
-                        </div>
-                      ) : (
-                        <p className="text-sm text-foreground">{displayValue}</p>
-                      )}
-                      {editedValue && <p className="text-[10px] text-blue-500 mt-1">✎ Edited</p>}
+                return (
+                  <GlassCard key={key} className={cn(isApproved && 'border-green-500/30')}>
+                    <div className="flex items-start justify-between">
+                      <div className="flex-1">
+                        <p className="text-xs text-muted-foreground capitalize mb-1">{key.replace(/_/g, ' ')}</p>
+                        {editingField === key ? (
+                          <div className="flex gap-2">
+                            <Input
+                              type="text"
+                              defaultValue={displayValue}
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter') handleFieldEdit(key, (e.target as HTMLInputElement).value);
+                                if (e.key === 'Escape') setEditingField(null);
+                              }}
+                              className="flex-1 h-8 text-sm"
+                              autoFocus
+                            />
+                            <Button variant="ghost" size="icon" onClick={() => setEditingField(null)} className="h-8 w-8 text-muted-foreground hover:text-foreground">
+                              <X size={14} />
+                            </Button>
+                          </div>
+                        ) : (
+                          <p className="text-sm text-foreground">{displayValue}</p>
+                        )}
+                        {editedValue !== undefined && <p className="text-[10px] text-blue-500 mt-1">✎ Edited</p>}
+                      </div>
+                      <div className="flex items-center gap-1.5 ml-4">
+                        <ConfidenceBadge value={extracted.extraction_confidence} />
+                        {!isApproved && (
+                          <>
+                            <button
+                              onClick={() => handleFieldApprove(key)}
+                              className="rounded-md bg-green-500/10 p-1.5 text-green-400 hover:bg-green-500/20 transition-colors"
+                              title="Approve"
+                            >
+                              <Check size={14} />
+                            </button>
+                            <button
+                              onClick={() => setEditingField(key)}
+                              className="rounded-md bg-blue-500/10 p-1.5 text-blue-400 hover:bg-blue-500/20 transition-colors"
+                              title="Edit"
+                            >
+                              <Pencil size={14} />
+                            </button>
+                            <button
+                              onClick={() => setRejectDialog(true)}
+                              className="rounded-md bg-red-500/10 p-1.5 text-red-400 hover:bg-red-500/20 transition-colors"
+                              title="Reject"
+                            >
+                              <X size={14} />
+                            </button>
+                          </>
+                        )}
+                        {isApproved && <CheckCircle size={16} className="text-green-400" />}
+                      </div>
                     </div>
-                    <div className="flex items-center gap-1.5 ml-4">
-                      <ConfidenceBadge value={extracted.extraction_confidence} />
-                      {!isApproved && (
-                        <>
-                          <button
-                            onClick={() => handleFieldApprove(key)}
-                            className="rounded-md bg-green-500/10 p-1.5 text-green-400 hover:bg-green-500/20 transition-colors"
-                            title="Approve"
-                          >
-                            <Check size={14} />
-                          </button>
-                          <button
-                            onClick={() => setEditingField(key)}
-                            className="rounded-md bg-blue-500/10 p-1.5 text-blue-400 hover:bg-blue-500/20 transition-colors"
-                            title="Edit"
-                          >
-                            <Pencil size={14} />
-                          </button>
-                          <button
-                            onClick={() => setRejectDialog(true)}
-                            className="rounded-md bg-red-500/10 p-1.5 text-red-400 hover:bg-red-500/20 transition-colors"
-                            title="Reject"
-                          >
-                            <X size={14} />
-                          </button>
-                        </>
-                      )}
-                      {isApproved && <CheckCircle size={16} className="text-green-400" />}
-                    </div>
-                  </div>
-                </GlassCard>
-              );
-            })}
+                  </GlassCard>
+                );
+              })
+            )}
 
             <Button
               onClick={handleApproveAllFields}
+              disabled={submitMutation.isPending}
               className="w-full bg-gradient-to-r from-green-600 to-green-500 text-white shadow-lg hover:from-green-500 hover:to-green-400 transition-all h-11"
             >
               Approve All Fields & Continue →
@@ -219,58 +279,68 @@ export default function ReviewPage() {
         {activeTab === 'directive' && (
           <div className="space-y-8">
             <p className="text-sm text-muted-foreground">Review each court direction alongside its generated compliance action.</p>
-            {extracted.court_directions.map((dir, i) => {
-              const isApproved = approvedDirectives.has(dir.id);
-              const action = plan.compliance_actions[i];
-              return (
-                <GlassCard key={dir.id} className={cn(isApproved && 'border-green-500/30')}>
-                  <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-                    <div>
-                      <p className="text-xs text-muted-foreground mb-2 flex items-center gap-1">
-                        <FileSearch size={12} /> Court Direction
-                      </p>
-                      <p className="text-sm text-foreground">{dir.verbatim_text}</p>
-                      <div className="mt-2 flex items-center gap-2">
-                        <span className="rounded-md bg-blue-500/10 px-2 py-0.5 text-xs text-blue-500">{dir.direction_type}</span>
-                        <ConfidenceBadge value={dir.confidence} />
+            {(!extracted.court_directions || extracted.court_directions.length === 0) ? (
+              <p className="text-sm text-slate-500">No directives to review.</p>
+            ) : (
+              extracted.court_directions.map((dir: any, i: number) => {
+                const dirId = dir.id || `dir-${i}`;
+                const isApproved = approvedDirectives.has(dirId);
+                const action = plan.compliance_actions ? plan.compliance_actions[i] : null;
+                const verbatimText = dir.verbatim_text || dir.text || '';
+                const directionType = dir.direction_type || dir.action_required || 'Directive';
+                const confidence = dir.confidence || extracted.extraction_confidence || 0.5;
+
+                return (
+                  <GlassCard key={dirId} className={cn(isApproved && 'border-green-500/30')}>
+                    <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+                      <div>
+                        <p className="text-xs text-muted-foreground mb-2 flex items-center gap-1">
+                          <FileSearch size={12} /> Court Direction
+                        </p>
+                        <p className="text-sm text-foreground">{verbatimText}</p>
+                        <div className="mt-2 flex items-center gap-2">
+                          <span className="rounded-md bg-blue-500/10 px-2 py-0.5 text-xs text-blue-500">{directionType}</span>
+                          <ConfidenceBadge value={confidence} />
+                        </div>
+                      </div>
+                      <div className="border-t border-border/50 pt-4 lg:border-t-0 lg:border-l lg:pl-4 lg:pt-0">
+                        <p className="text-xs text-muted-foreground mb-2 flex items-center gap-1">
+                          <GitBranch size={12} /> Generated Action
+                        </p>
+                        {action ? (
+                          <>
+                            <p className="text-sm text-foreground">{action.action || action.text || action.action_required || 'Compliance Action'}</p>
+                            <span className="mt-2 inline-block rounded-md bg-purple-500/10 px-2 py-0.5 text-xs text-purple-500">
+                              {action.responsible_department || action.responsible_entity || 'Assigned Department'}
+                            </span>
+                          </>
+                        ) : (
+                          <p className="text-xs text-muted-foreground italic">No matching action</p>
+                        )}
                       </div>
                     </div>
-                    <div className="border-t border-border/50 pt-4 lg:border-t-0 lg:border-l lg:pl-4 lg:pt-0">
-                      <p className="text-xs text-muted-foreground mb-2 flex items-center gap-1">
-                        <GitBranch size={12} /> Generated Action
-                      </p>
-                      {action ? (
+                    <div className="flex justify-end gap-1.5 mt-3 pt-3 border-t border-slate-700/30">
+                      {!isApproved ? (
                         <>
-                          <p className="text-sm text-foreground">{action.action}</p>
-                          <span className="mt-2 inline-block rounded-md bg-purple-500/10 px-2 py-0.5 text-xs text-purple-500">
-                            {action.responsible_department}
-                          </span>
+                          <button onClick={() => handleDirectiveApprove(dirId)} className="rounded-md bg-green-500/10 px-3 py-1.5 text-xs text-green-400 hover:bg-green-500/20 transition-colors flex items-center gap-1">
+                            <Check size={12} /> Approve
+                          </button>
+                          <button onClick={() => setRejectDialog(true)} className="rounded-md bg-red-500/10 px-3 py-1.5 text-xs text-red-400 hover:bg-red-500/20 transition-colors flex items-center gap-1">
+                            <X size={12} /> Reject
+                          </button>
                         </>
                       ) : (
-                        <p className="text-xs text-muted-foreground italic">No matching action</p>
+                        <span className="flex items-center gap-1 text-xs text-green-400"><CheckCircle size={12} /> Approved</span>
                       )}
                     </div>
-                  </div>
-                  <div className="flex justify-end gap-1.5 mt-3 pt-3 border-t border-slate-700/30">
-                    {!isApproved ? (
-                      <>
-                        <button onClick={() => handleDirectiveApprove(dir.id)} className="rounded-md bg-green-500/10 px-3 py-1.5 text-xs text-green-400 hover:bg-green-500/20 transition-colors flex items-center gap-1">
-                          <Check size={12} /> Approve
-                        </button>
-                        <button onClick={() => setRejectDialog(true)} className="rounded-md bg-red-500/10 px-3 py-1.5 text-xs text-red-400 hover:bg-red-500/20 transition-colors flex items-center gap-1">
-                          <X size={12} /> Reject
-                        </button>
-                      </>
-                    ) : (
-                      <span className="flex items-center gap-1 text-xs text-green-400"><CheckCircle size={12} /> Approved</span>
-                    )}
-                  </div>
-                </GlassCard>
-              );
-            })}
+                  </GlassCard>
+                );
+              })
+            )}
 
             <Button
               onClick={handleApproveAllDirectives}
+              disabled={submitMutation.isPending}
               className="w-full bg-gradient-to-r from-green-600 to-green-500 text-white shadow-lg hover:from-green-500 hover:to-green-400 transition-all h-11"
             >
               Approve All Directives & Continue →
@@ -307,11 +377,11 @@ export default function ReviewPage() {
                 </div>
 
                 <div className="rounded-lg bg-muted/30 p-6 border border-border/30">
-                  <p className="text-sm text-muted-foreground mb-4">Compliance Actions ({plan.compliance_actions.length} steps)</p>
+                  <p className="text-sm text-muted-foreground mb-4">Compliance Actions ({(plan.compliance_actions || []).length} steps)</p>
                   <div className="space-y-3">
-                    {plan.compliance_actions.map(a => (
-                      <p key={a.id} className="text-sm text-foreground py-1">
-                        <span className="font-medium">{a.step_number}.</span> {a.action} — <span className="text-muted-foreground">{a.responsible_department}</span>
+                    {(plan.compliance_actions || []).map((a: any, idx: number) => (
+                      <p key={a.id || idx} className="text-sm text-foreground py-1">
+                        <span className="font-medium">{a.step_number || idx + 1}.</span> {a.action || a.text || a.action_required || 'Compliance Action'} — <span className="text-muted-foreground">{a.responsible_department || a.responsible_entity || 'Assigned Department'}</span>
                       </p>
                     ))}
                   </div>
@@ -322,6 +392,7 @@ export default function ReviewPage() {
             {canSignOff ? (
               <Button
                 onClick={handleSignOff}
+                disabled={submitMutation.isPending}
                 className="w-full bg-gradient-to-r from-green-600 to-emerald-500 text-white shadow-lg hover:from-green-500 hover:to-emerald-400 transition-all h-12 text-sm font-semibold"
               >
                 <Stamp size={16} className="mr-2" />
@@ -357,10 +428,10 @@ export default function ReviewPage() {
               </Button>
               <Button
                 variant="destructive"
-                onClick={() => { setRejectDialog(false); setRejectReason(''); alert('Rejection submitted.'); }}
-                disabled={!rejectReason.trim()}
+                onClick={handleReject}
+                disabled={!rejectReason.trim() || submitMutation.isPending}
               >
-                Submit Rejection
+                {submitMutation.isPending ? 'Submitting...' : 'Submit Rejection'}
               </Button>
             </div>
           </motion.div>

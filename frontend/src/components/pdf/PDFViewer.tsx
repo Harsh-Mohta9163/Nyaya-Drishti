@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { Document, Page, pdfjs } from 'react-pdf';
 import { ChevronLeft, ChevronRight, ZoomIn, ZoomOut } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -41,6 +41,7 @@ export default function PDFViewer({ file, currentPage, onPageChange, highlightTe
   const handleNext = () => onPageChange(Math.min(currentPage + 1, numPages || 1));
 
   const applyHighlight = useCallback(() => {
+    // ... logic remains same
     if (!highlightText || !containerRef.current) return;
     
     const textLayer = containerRef.current.querySelector('.react-pdf__Page__textContent');
@@ -61,6 +62,11 @@ export default function PDFViewer({ file, currentPage, onPageChange, highlightTe
   useEffect(() => {
     applyHighlight();
   }, [applyHighlight, currentPage]);
+
+  const pdfFile = useMemo(() => ({
+    url: file,
+    httpHeaders: { Authorization: `Bearer ${localStorage.getItem('access_token')}` }
+  }), [file]);
 
   return (
     <div className="flex flex-col h-full bg-muted/20 border border-border/50 rounded-xl overflow-hidden">
@@ -88,13 +94,12 @@ export default function PDFViewer({ file, currentPage, onPageChange, highlightTe
         </div>
       </div>
 
-      {/* Document Container */}
       <div 
         ref={containerRef}
         className="flex-1 overflow-auto bg-[#e5e7eb] dark:bg-[#1e1e20] flex justify-center p-4"
       >
         <Document
-          file={file}
+          file={pdfFile}
           onLoadSuccess={onDocumentLoadSuccess}
           loading={
             <div className="flex items-center justify-center h-64 text-muted-foreground animate-pulse">

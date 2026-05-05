@@ -10,11 +10,31 @@ from .models import ReviewLog, TrainingPair
 from .serializers import ReviewLogSerializer, ReviewSubmitSerializer, TrainingPairSerializer
 
 
-class PendingReviewsView(ListAPIView):
-    serializer_class = ActionPlanSerializer
+class PendingReviewsView(APIView):
+    """Returns pending reviews in the PendingReview shape the frontend expects."""
+    def get(self, request):
+        plans = ActionPlan.objects.select_related("case").filter(
+            verification_status="pending"
+        ).order_by("-updated_at")
 
-    def get_queryset(self):
-        return ActionPlan.objects.select_related("case").filter(verification_status="pending")
+        data = []
+        for plan in plans:
+            # Determine the current review level based on verification_status
+            review_level = "field"  # default
+            if plan.verification_status == "field_approved":
+                review_level = "directive"
+            elif plan.verification_status == "directive_approved":
+                review_level = "case"
+
+            data.append({
+                "case_id": plan.case_id,
+                "case_number": plan.case.case_number,
+                "court": plan.case.court,
+                "contempt_risk": plan.contempt_risk,
+                "review_level": review_level,
+                "created_at": plan.updated_at,
+            })
+        return Response(data)
 
 
 class SubmitReviewView(APIView):

@@ -32,7 +32,17 @@ def generate_or_refresh_action_plan(case: Case):
     recommendation = "appeal" if "appeal" in (operative_text or "").lower() else "comply"
     deadline_info = compute_deadlines(case.judgment_date, extracted_data.order_type if extracted_data else "", recommendation)
     contempt_risk = classify_contempt_risk(operative_text)
-    similar_cases = RAG_ENGINE.query(operative_text or case.case_number, top_k=5)
+    raw_similar = RAG_ENGINE.query(operative_text or case.case_number, top_k=5)
+    similar_cases = []
+    for r in raw_similar:
+        meta = r.get("metadata", {})
+        similar_cases.append({
+            "case_number": meta.get("case_number", "Unknown Case"),
+            "summary": meta.get("summary", r.get("text", "")),
+            "similarity_score": r.get("score", 0.0),
+            "outcome": meta.get("outcome", "Unknown")
+        })
+
     compliance_actions = extracted_data.court_directions if extracted_data else []
     action_plan, _ = ActionPlan.objects.update_or_create(
         case=case,
