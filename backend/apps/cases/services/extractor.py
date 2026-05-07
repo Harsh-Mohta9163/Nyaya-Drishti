@@ -1,197 +1,401 @@
-"""
-LLM-based structured extraction using NVIDIA NIM (Llama 3.3 70B).
-
-Extracts court directions, order type, entities, contempt indicators,
-and financial implications from the operative order section.
-"""
 import json
 import logging
-from datetime import date
+import time
+import requests
+from typing import Optional
+from pydantic import BaseModel, Field
+
+from django.conf import settings
+from apps.cases.models import Case, Judgment, Citation
 
 logger = logging.getLogger(__name__)
 
-LEGAL_SYSTEM_PROMPT = """You are a specialist in analyzing Indian High Court judgments, particularly from the Karnataka High Court.
+# ==============================================================================
+# Pydantic Schemas for Structured Output (4-Agent Pipeline)
+# ==============================================================================
 
-Your task is to extract structured information from the OPERATIVE ORDER section of a judgment.
+# Agent 1: Registry Clerk (8B)
+class RegistryExtraction(BaseModel):
+    case_number: str = Field(description="e.g., WA 541/2026 or WP No. 98 of 2024")
+    court_name: str = Field(description="e.g., High Court of Karnataka")
+    bench: str = Field(description="'Single Judge' or 'Division Bench'")
+    presiding_judges: list[str] = Field(description="List of judge full names")
+    case_type: str = Field(description="Exact case type abbreviation: 'Writ Petition', 'Writ Appeal', etc.")
+    document_type: str = Field(description="'Final Judgment', 'Interim Order', 'Notice', 'Stay Order'")
+    date_of_order: str = Field(description="Date in ISO format YYYY-MM-DD.")
+    petitioner_name: str = Field(description="Full name(s) of petitioner(s)")
+    respondent_name: str = Field(description="Full name(s) of respondent(s)")
+    appeal_type: str = Field(description="'writ_petition', 'writ_appeal', 'regular_first_appeal', 'criminal_appeal', 'other'. Use 'none' if original.")
+    # Appeal lineage
+    is_appeal_from_lower_court: bool = Field(description="True if this is an appeal/revision from a lower court.")
+    lower_court_name: Optional[str] = Field(description="Name of lower court whose order is challenged.", default=None)
+    lower_court_case_number: Optional[str] = Field(description="Case number in the lower court.", default=None)
+    lower_court_decision: Optional[str] = Field(description="What the lower court decided.", default=None)
 
-Return a JSON object with EXACTLY these fields:
+# Agent 2: Legal Analyst (70B)
+class AnalystExtraction(BaseModel):
+    summary_of_facts: str = Field(description="Display-ready factual summary in 3-5 complete sentences.")
+    issues_framed: list[str] = Field(description="List of legal questions the court addresses. Complete sentences.")
 
-{
-  "court_directions": [
-    {
-      "text": "Verbatim directive text from the order",
-      "responsible_entity": "Department/official who must act",
-      "deadline_mentioned": "Any deadline mentioned in the directive, or null",
-      "action_required": "Brief summary of what must be done"
+# Agent 3: Precedent Scholar (70B)
+class CitationExtraction(BaseModel):
+    case_name: str = Field(description="Full case name as cited. e.g., 'X vs. Y'")
+    citation_ref: str = Field(description="Citation reference if available. e.g., '(2010) 5 SCC 186'")
+    context: str = Field(description="How the court used this case: 'relied_upon', 'distinguished', 'overruled', 'referred'.")
+    principle_extracted: Optional[str] = Field(description="The legal principle for which this case was cited.", default=None)
+
+class ScholarExtraction(BaseModel):
+    ratio_decidendi: str = Field(description="The court's legal reasoning and analysis in 2-4 complete sentences.")
+    area_of_law: str = Field(description="Primary legal domain: e.g., 'Service Law', 'Motor Vehicles', 'Criminal'. NEVER empty.")
+    primary_statute: str = Field(description="The MAIN Act/statute the case is about. e.g., 'Motor Vehicles Act 1988'. NEVER empty.")
+    citations: list[CitationExtraction] = Field(description="ALL case citations mentioned in the body with their context.")
+    entities: list[str] = Field(description="All named entities: government departments, officials, Acts mentioned.")
+
+# Agent 4: Compliance Officer (8B)
+class DirectiveExtraction(BaseModel):
+    text: str = Field(description="The VERBATIM actionable directive from the order.")
+    responsible_entity: str = Field(description="The specific department/party who must carry out the directive.")
+    action_required: str = Field(description="One-line plain English summary of what must be done.")
+    deadline_mentioned: Optional[str] = Field(description="Exact phrase describing deadline, e.g. 'within 8 weeks'", default=None)
+
+class ComplianceExtraction(BaseModel):
+    disposition: str = Field(description="Outcome word: 'Allowed', 'Dismissed', 'Partly Allowed', 'Disposed of', 'Remanded'.")
+    winning_party_type: str = Field(description="Who won: 'Petitioner', 'Respondent', 'None'.")
+    court_directions: list[DirectiveExtraction] = Field(description="List of ACTIONABLE compliance directives.")
+    financial_implications: list[str] = Field(description="Any monetary orders: costs, fines, deposits.")
+    contempt_indicators: list[str] = Field(description="Phrases suggesting contempt risk: compliance warnings, personal appearance.")
+    contempt_risk: str = Field(description="'High', 'Medium', or 'Low' risk.")
+    entities: list[str] = Field(description="Additional named entities in the operative order (departments, officials).")
+
+# ==============================================================================
+# LLM Provider Abstraction
+# ==============================================================================
+
+def _call_agent_70b(prompt: str, schema: type[BaseModel], temperature: float) -> dict:
+    """Agent 2 & 3: Calls NVIDIA 70B for heavy reasoning."""
+    api_key = settings.NVIDIA_API_KEY
+    base_url = settings.NVIDIA_BASE_URL.rstrip("/")
+    model = "meta/llama-3.3-70b-instruct"
+
+    schema_json = json.dumps(schema.model_json_schema(), indent=2)
+    full_prompt = f"{prompt}\n\nRespond ONLY with valid JSON matching this schema:\n{schema_json}"
+
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json",
     }
-  ],
-  "order_type": "One of: Allowed | Dismissed | Disposed | Partial | Modified | Remanded",
-  "entities": [
-    {
-      "name": "Name of government department/official",
-      "role": "respondent | petitioner | interested_party"
+    payload = {
+        "model": model,
+        "messages": [{"role": "user", "content": full_prompt}],
+        "temperature": temperature,
+        "max_tokens": 4096,
+        "response_format": {"type": "json_object"},
     }
-  ],
-  "contempt_indicators": ["List of exact phrases indicating coercive/contempt language"],
-  "financial_implications": {
-    "amount": null,
-    "type": "compensation | penalty | cost | refund | none",
-    "details": ""
-  },
-  "appeal_type": "SLP | LPA | Review | Writ_Appeal | none",
-  "case_metadata": {
-    "case_number": "Extract from header if visible",
-    "bench": "Single/Division bench",
-    "judgment_date": "Date if found"
-  }
-}
 
-RULES:
-1. Extract directives VERBATIM - do not paraphrase
-2. Only extract from the OPERATIVE ORDER section, not from facts or analysis
-3. Look for contempt-related phrases like: "shall comply without fail", "failing which", "coercive action", "personal appearance"
-4. If information is not found, use null or empty values - never guess
-5. Respond with ONLY valid JSON, no markdown formatting"""
+    for attempt in range(5):
+        try:
+            print(f"  [NVIDIA 70B] Calling {model} (attempt {attempt+1}/5)...")
+            resp = requests.post(
+                f"{base_url}/chat/completions",
+                headers=headers,
+                json=payload,
+                timeout=120,
+            )
+            if resp.status_code in (429, 503):
+                wait = 30 * (attempt + 1)
+                print(f"  [NVIDIA 70B] Rate limited, waiting {wait}s...")
+                time.sleep(wait)
+                continue
+            resp.raise_for_status()
+            content = resp.json()["choices"][0]["message"]["content"]
+            return json.loads(content)
+        except requests.exceptions.HTTPError as e:
+            status = e.response.status_code if e.response else 0
+            if status in (429, 503):
+                wait = 30 * (attempt + 1)
+                time.sleep(wait)
+            else:
+                raise
+    raise RuntimeError("NVIDIA Llama 70B failed after 5 retries")
 
 
-def _build_client():
-    """Build OpenAI-compatible client for NVIDIA NIM or Groq."""
+def _call_agent_8b(prompt: str, schema: type[BaseModel], temperature: float) -> dict:
+    """Agent 1 & 4: Calls Groq 8B for fast extraction, falls back to NVIDIA 70B."""
+    api_key = settings.GROQ_API_KEY
+    base_url = getattr(settings, "GROQ_BASE_URL", "https://api.groq.com/openai/v1").rstrip("/")
+    model = "llama-3.1-8b-instant"
+
+    schema_json = json.dumps(schema.model_json_schema(), indent=2)
+    full_prompt = f"{prompt}\n\nRespond ONLY with valid JSON matching this schema:\n{schema_json}"
+
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json",
+    }
+    payload = {
+        "model": model,
+        "messages": [{"role": "user", "content": full_prompt}],
+        "temperature": temperature,
+        "max_tokens": 2048,
+        "response_format": {"type": "json_object"},
+    }
+
+    last_error = None
+    for attempt in range(3):
+        try:
+            print(f"  [Groq 8B] Calling {model} (attempt {attempt+1})...")
+            resp = requests.post(
+                f"{base_url}/chat/completions",
+                headers=headers,
+                json=payload,
+                timeout=60,
+            )
+            if resp.status_code in (429, 503):
+                wait = 20 * (attempt + 1)
+                print(f"  [Groq 8B] Rate limited (HTTP {resp.status_code}), waiting {wait}s...")
+                time.sleep(wait)
+                continue
+            resp.raise_for_status()
+            content = resp.json()["choices"][0]["message"]["content"]
+            return json.loads(content)
+        except requests.exceptions.HTTPError as e:
+            status_code = e.response.status_code if e.response else 0
+            print(f"  [Groq 8B] HTTP error {status_code}: {e}")
+            last_error = e
+            if status_code in (429, 503):
+                wait = 20 * (attempt + 1)
+                print(f"  [Groq 8B] Waiting {wait}s before retry...")
+                time.sleep(wait)
+            else:
+                break
+        except Exception as e:
+            print(f"  [Groq 8B] Error: {e}")
+            last_error = e
+            time.sleep(5)
+
+    # Fallback: use NVIDIA 70B instead of failing completely
+    print(f"  [Groq 8B] All attempts failed ({last_error}). Falling back to NVIDIA 70B...")
+    nvidia_key = settings.NVIDIA_API_KEY
+    nvidia_url = settings.NVIDIA_BASE_URL.rstrip("/")
+    nvidia_payload = {
+        "model": "meta/llama-3.3-70b-instruct",
+        "messages": [{"role": "user", "content": full_prompt}],
+        "temperature": temperature,
+        "max_tokens": 2048,
+        "response_format": {"type": "json_object"},
+    }
+    nvidia_headers = {
+        "Authorization": f"Bearer {nvidia_key}",
+        "Content-Type": "application/json",
+    }
     try:
-        from openai import OpenAI
-        from django.conf import settings
-
-        provider = getattr(settings, "LLM_PROVIDER", "nvidia").lower()
-        if provider == "nvidia":
-            base_url = settings.NVIDIA_BASE_URL
-            api_key = settings.NVIDIA_API_KEY
-            model = "meta/llama-3.3-70b-instruct"
-        else:
-            base_url = settings.GROQ_BASE_URL
-            api_key = settings.GROQ_API_KEY
-            model = "llama-3.1-8b-instant"
-
-        if not api_key:
-            logger.warning("No API key configured for %s", provider)
-            return None, None
-        return OpenAI(base_url=base_url, api_key=api_key), model
-    except Exception as e:
-        logger.error("Failed to build LLM client: %s", e)
-        return None, None
-
-
-def _fallback_extract(case, sections):
-    """Rule-based fallback when LLM is unavailable."""
-    operative_order = sections.get("operative_order", "")
-    lines = [line.strip() for line in operative_order.splitlines() if line.strip()]
-    directions = []
-    for line in lines[:10]:
-        if len(line) > 20:
-            directions.append({
-                "text": line,
-                "responsible_entity": "",
-                "deadline_mentioned": None,
-                "action_required": line[:100],
-            })
-
-    lowered = operative_order.lower()
-    if "allowed" in lowered:
-        order_type = "Allowed"
-    elif "dismissed" in lowered:
-        order_type = "Dismissed"
-    elif "disposed" in lowered:
-        order_type = "Disposed"
-    else:
-        order_type = "unknown"
-
-    return {
-        "header_data": {
-            "case_number": case.case_number,
-            "court": case.court,
-            "judgment_date": (
-                case.judgment_date.isoformat()
-                if hasattr(case.judgment_date, "isoformat")
-                else str(case.judgment_date)
-            ),
-        },
-        "operative_order": operative_order,
-        "court_directions": directions,
-        "order_type": order_type,
-        "entities": [{"name": case.respondent, "role": "respondent"}] if case.respondent else [],
-        "extraction_confidence": 0.45,
-        "ocr_confidence": 0.5,
-        "source_references": [{"section": "operative_order", "page": 1, "paragraph": 1}],
-    }
-
-
-def extract_structured_data(case, sections):
-    """
-    Extract structured data from judgment sections using LLM.
-
-    Falls back to rule-based extraction if LLM is unavailable.
-    """
-    client, model = _build_client()
-    if client is None:
-        logger.info("Using fallback extraction for case %s", case.case_number)
-        return _fallback_extract(case, sections)
-
-    header = sections.get("header", "")[:2000]
-    operative = sections.get("operative_order", "")[:6000]
-
-    if not operative.strip():
-        logger.warning("Empty operative order for case %s", case.case_number)
-        return _fallback_extract(case, sections)
-
-    user_message = (
-        f"CASE NUMBER: {case.case_number}\n"
-        f"COURT: {case.court}\n"
-        f"CASE TYPE: {case.case_type}\n"
-        f"JUDGMENT DATE: {case.judgment_date}\n\n"
-        f"--- HEADER ---\n{header}\n\n"
-        f"--- OPERATIVE ORDER ---\n{operative}"
-    )
-
-    try:
-        response = client.chat.completions.create(
-            model=model,
-            temperature=0.1,
-            max_tokens=2000,
-            response_format={"type": "json_object"},
-            messages=[
-                {"role": "system", "content": LEGAL_SYSTEM_PROMPT},
-                {"role": "user", "content": user_message},
-            ],
+        print(f"  [NVIDIA 70B Fallback] Calling meta/llama-3.3-70b-instruct...")
+        resp = requests.post(
+            f"{nvidia_url}/chat/completions",
+            headers=nvidia_headers,
+            json=nvidia_payload,
+            timeout=120,
         )
-
-        content = response.choices[0].message.content
-        if not content:
-            return _fallback_extract(case, sections)
-
-        parsed = json.loads(content)
-        logger.info("LLM extraction successful for case %s", case.case_number)
-
-        # Normalize into the format expected by the Case/ExtractedData models
-        return {
-            "header_data": parsed.get("case_metadata", {
-                "case_number": case.case_number,
-                "court": case.court,
-                "judgment_date": str(case.judgment_date),
-            }),
-            "operative_order": operative,
-            "court_directions": parsed.get("court_directions", []),
-            "order_type": parsed.get("order_type", "unknown"),
-            "entities": parsed.get("entities", []),
-            "extraction_confidence": 0.85,
-            "ocr_confidence": 0.85,
-            "source_references": [{"section": "operative_order"}],
-            # Extra fields for action plan generation
-            "contempt_indicators": parsed.get("contempt_indicators", []),
-            "financial_implications": parsed.get("financial_implications", {}),
-            "appeal_type": parsed.get("appeal_type", "none"),
-        }
-
-    except json.JSONDecodeError as e:
-        logger.error("LLM returned invalid JSON for case %s: %s", case.case_number, e)
-        return _fallback_extract(case, sections)
+        resp.raise_for_status()
+        content = resp.json()["choices"][0]["message"]["content"]
+        return json.loads(content)
     except Exception as e:
-        logger.error("LLM extraction failed for case %s: %s", case.case_number, e)
-        return _fallback_extract(case, sections)
+        raise RuntimeError(f"Both Groq 8B and NVIDIA 70B failed. Last error: {e}")
+
+
+def _sanitize_disposition(val: str) -> str:
+    if not val or val.strip().lower() in ("none", "null", "n/a", ""):
+        return ""
+    return val.strip()
+
+def _sanitize_party_type(val) -> str:
+    if isinstance(val, list):
+        val = ", ".join(str(v) for v in val)
+    if not val or str(val).strip().lower() in ("none", "null", "n/a", ""):
+        return ""
+    return str(val).strip()
+
+def _safe_str(val) -> str:
+    """Helper to handle if LLM returns a list for a string field."""
+    if isinstance(val, list):
+        return ", ".join(str(v) for v in val)
+    if val is None:
+        return ""
+    return str(val).strip()
+
+# ==============================================================================
+# Extraction Service (4 Agents)
+# ==============================================================================
+
+def extract_structured_data(
+    judgment_id: str,
+    header_text: str,
+    middle_text: str,
+    operative_text: str
+) -> dict:
+    judgment = Judgment.objects.get(id=judgment_id)
+    case = judgment.case
+    extracted_data = {}
+
+    # --- AGENT 1: Registry Clerk (8B) ---
+    if header_text:
+        print(f"  [Agent 1] Registry Clerk (Header)...")
+        header_prompt = (
+            "Extract metadata from the header of an Indian High Court judgment PDF.\n"
+            "Extract every field exactly as it appears. Pay attention to case number, date, judges, and parties.\n"
+            f"Document:\n{header_text}"
+        )
+        extracted_data["registry"] = _call_agent_8b(header_prompt, RegistryExtraction, temperature=0.0)
+
+    # --- AGENT 4: Compliance Officer (8B) ---
+    if operative_text:
+        print(f"  [Agent 4] Compliance Officer (Operative)...")
+        operative_prompt = (
+            "Extract the final operative order/compliance tasks of an Indian judgment.\n"
+            "CRITICAL INSTRUCTION: IGNORE ANY CASE LAW OR PRECEDENTS. Extract ONLY the final compliance tasks and directives.\n"
+            "Focus on actionable directives, disposition outcome, financial orders, and contempt risk.\n"
+            f"Document:\n{operative_text}"
+        )
+        extracted_data["compliance"] = _call_agent_8b(operative_prompt, ComplianceExtraction, temperature=0.0)
+
+    # --- AGENT 2: Legal Analyst (70B) ---
+    if middle_text:
+        print(f"  [Agent 2] Legal Analyst (Facts/Issues)...")
+        analyst_prompt = (
+            "Extract the factual summary and legal issues framed from the body of this judgment.\n"
+            "Write in clear, professional prose.\n"
+            f"Document:\n{middle_text}"
+        )
+        extracted_data["analyst"] = _call_agent_70b(analyst_prompt, AnalystExtraction, temperature=0.2)
+        
+        # Prevent 429 rate limits on NVIDIA's free tier for the second 70B call
+        print(f"  [Sleep] Waiting 15s before next 70B call...")
+        time.sleep(15)
+
+    # --- AGENT 3: Precedent Scholar (70B) ---
+    if middle_text:
+        print(f"  [Agent 3] Precedent Scholar (Ratio/Citations)...")
+        scholar_prompt = (
+            "Extract the legal reasoning (ratio decidendi), area of law, primary statute, and ALL case citations.\n"
+            "For citations, identify how the court used them (relied_upon, distinguished, overruled, referred).\n"
+            f"Document:\n{middle_text}"
+        )
+        extracted_data["scholar"] = _call_agent_70b(scholar_prompt, ScholarExtraction, temperature=0.1)
+
+    # Save raw JSON backup
+    judgment.raw_extracted_json = extracted_data
+
+    # -----------------------------------------------------------------------
+    # Populate DB Models
+    # -----------------------------------------------------------------------
+
+    # Registry (Agent 1)
+    if "registry" in extracted_data:
+        h = extracted_data["registry"]
+        judgment.presiding_judges = h.get("presiding_judges", [])
+        
+        raw_date = h.get("date_of_order", "")
+        if raw_date and raw_date not in ("", "YYYY-MM-DD", "Unknown"):
+            try:
+                judgment.date_of_order = raw_date
+            except Exception:
+                pass
+
+        doc_type = _safe_str(h.get("document_type", ""))
+        if doc_type: judgment.document_type = doc_type
+
+        appeal_type = _safe_str(h.get("appeal_type", "none")).lower()
+        if appeal_type: judgment.appeal_type = appeal_type
+
+        extracted_case_number = _safe_str(h.get("case_number", ""))
+        if extracted_case_number:
+            existing = Case.objects.filter(
+                court_name=_safe_str(h.get("court_name", case.court_name)),
+                case_number=extracted_case_number,
+                case_year=case.case_year,
+            ).exclude(id=case.id).first()
+
+            if existing:
+                old_case = case
+                judgment.case = existing
+                judgment.save()  # MUST save before deleting old_case to avoid cascade-delete
+                case = existing
+                old_case.delete()
+
+            case.case_number = extracted_case_number
+
+        case.court_name = _safe_str(h.get("court_name", case.court_name))
+        case.case_type = _safe_str(h.get("case_type", case.case_type))
+        case.petitioner_name = _safe_str(h.get("petitioner_name", ""))
+        case.respondent_name = _safe_str(h.get("respondent_name", ""))
+        case.save()
+
+    # Analyst (Agent 2)
+    if "analyst" in extracted_data:
+        a = extracted_data["analyst"]
+        judgment.summary_of_facts = a.get("summary_of_facts", "")
+        judgment.issues_framed = a.get("issues_framed", [])
+
+    # Scholar (Agent 3)
+    if "scholar" in extracted_data:
+        s = extracted_data["scholar"]
+        judgment.ratio_decidendi = s.get("ratio_decidendi", "")
+        
+        # Area of law & Statute are now extracted by the Scholar (Agent 3)
+        case.area_of_law = _safe_str(s.get("area_of_law", ""))
+        case.primary_statute = _safe_str(s.get("primary_statute", ""))
+        case.save()
+
+    # Compliance (Agent 4)
+    if "compliance" in extracted_data:
+        c = extracted_data["compliance"]
+        judgment.court_directions = c.get("court_directions", [])
+        judgment.disposition = _sanitize_disposition(c.get("disposition", ""))
+        judgment.winning_party_type = _sanitize_party_type(c.get("winning_party_type", ""))
+        judgment.contempt_indicators = c.get("contempt_indicators", [])
+        judgment.contempt_risk = c.get("contempt_risk", "Low")
+        judgment.financial_implications = c.get("financial_implications", [])
+
+    # Entities Merging
+    entities = set()
+    if "scholar" in extracted_data:
+        entities.update(extracted_data["scholar"].get("entities", []))
+    if "compliance" in extracted_data:
+        entities.update(extracted_data["compliance"].get("entities", []))
+    judgment.entities = list(entities)
+
+    # Citations Save
+    all_citations = []
+    if "scholar" in extracted_data:
+        all_citations = extracted_data["scholar"].get("citations", [])
+    
+    if all_citations:
+        Citation.objects.filter(citing_judgment=judgment).delete()
+        citation_objs = []
+        for cit in all_citations:
+            if isinstance(cit, dict):
+                case_name = _safe_str(cit.get("case_name", ""))
+                citation_ref = _safe_str(cit.get("citation_ref", ""))
+                context = _safe_str(cit.get("context", "referred")).lower()
+                principle = _safe_str(cit.get("principle_extracted", ""))
+                valid_contexts = {"relied_upon": "Relied upon", "distinguished": "Distinguished",
+                                  "overruled": "Overruled", "referred": "Referred"}
+                context_display = valid_contexts.get(context, "Referred")
+
+                if case_name:
+                    citation_objs.append(Citation(
+                        citing_judgment=judgment,
+                        cited_case=None,
+                        cited_case_name_raw=case_name,
+                        citation_id_raw=citation_ref,
+                        citation_context=context_display,
+                        principle_extracted=principle,
+                    ))
+        Citation.objects.bulk_create(citation_objs)
+        print(f"  [Extractor] Saved {len(citation_objs)} citation records.")
+
+    judgment.extraction_confidence = 0.95
+    judgment.processing_status = "completed"
+    judgment.save()
+
+    return extracted_data
