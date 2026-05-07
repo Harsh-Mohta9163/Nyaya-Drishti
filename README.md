@@ -146,6 +146,18 @@ The **Verify Actions** tab provides:
 
 ---
 
+## 🔒 Data Privacy & Government Compliance (On-Premise Deployment)
+
+A critical architectural advantage of **Nyaya-Drishti** is its adherence to strict data privacy and residency requirements for Indian digital public infrastructure.
+
+While cloud-based inference APIs (like NVIDIA NIM and Groq) are supported for rapid prototyping, the system is explicitly designed around **open-weights models** (Llama 3.1 8B and Llama 3.3 70B). 
+
+For production, the government can host these LLMs entirely locally on their own **on-premise, air-gapped servers** using tools like `vLLM` or `Ollama`. 
+* **100% Data Privacy**: Sensitive court documents, directives, and legal strategies never leave the government's internal network.
+* **No Third-Party Cloud Dependency**: Zero reliance on external commercial AI providers like OpenAI, Google, or Anthropic.
+
+---
+
 ## Tech Stack
 
 | Layer | Technology | Purpose |
@@ -157,7 +169,7 @@ The **Verify Actions** tab provides:
 | **Auth** | SimpleJWT | Token-based authentication with role-based access |
 | **PDF Parsing** | PyMuPDF4LLM | Layout-aware PDF → Markdown conversion |
 | **LLM (Extraction)** | Groq Llama 3.1 8B + NVIDIA Llama 3.3 70B | 4-agent structured extraction pipeline |
-| **LLM (Recommendation)** | Google Gemini 2.5 Pro | 4-agent RAG recommendation pipeline |
+| **LLM (Recommendation)** | Llama 3.3 70B | 4-agent RAG recommendation pipeline |
 | **Embeddings** | InLegalBERT (law-ai/InLegalBERT) | 768-dim legal domain embeddings (runs locally) |
 | **Vector Store** | ChromaDB (persistent, local) | Dense vector similarity search |
 | **Sparse Retrieval** | BM25Okapi (rank-bm25) | Keyword-based retrieval |
