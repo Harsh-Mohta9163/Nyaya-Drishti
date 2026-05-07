@@ -1,0 +1,816 @@
+
+<style>
+  h2.sr-only{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0,0,0,0)}
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:var(--font-sans)}
+  .root{padding:1rem 0}
+  .tabs{display:flex;gap:4px;border-bottom:0.5px solid var(--color-border-tertiary);margin-bottom:1.5rem;flex-wrap:wrap}
+  .tab{padding:6px 14px;font-size:13px;background:none;border:none;color:var(--color-text-secondary);cursor:pointer;border-radius:var(--border-radius-md) var(--border-radius-md) 0 0;white-space:nowrap}
+  .tab.active{color:var(--color-text-primary);background:var(--color-background-secondary);font-weight:500}
+  .tab:hover:not(.active){color:var(--color-text-primary)}
+  .panel{display:none}
+  .panel.active{display:block}
+  .section-title{font-size:15px;font-weight:500;color:var(--color-text-primary);margin-bottom:4px}
+  .section-sub{font-size:13px;color:var(--color-text-secondary);margin-bottom:16px;line-height:1.5}
+  .grid2{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:12px;margin-bottom:16px}
+  .grid3{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px;margin-bottom:16px}
+  .card{background:var(--color-background-primary);border:0.5px solid var(--color-border-tertiary);border-radius:var(--border-radius-lg);padding:14px 16px}
+  .card-title{font-size:13px;font-weight:500;color:var(--color-text-primary);margin-bottom:6px;display:flex;align-items:center;gap:8px}
+  .card-body{font-size:12px;color:var(--color-text-secondary);line-height:1.6}
+  .badge{display:inline-block;font-size:11px;font-weight:500;padding:2px 8px;border-radius:4px}
+  .badge-blue{background:var(--color-background-info);color:var(--color-text-info)}
+  .badge-green{background:var(--color-background-success);color:var(--color-text-success)}
+  .badge-amber{background:var(--color-background-warning);color:var(--color-text-warning)}
+  .badge-red{background:var(--color-background-danger);color:var(--color-text-danger)}
+  .badge-gray{background:var(--color-background-secondary);color:var(--color-text-secondary)}
+  .tech-pill{display:inline-block;font-size:11px;padding:2px 7px;border:0.5px solid var(--color-border-secondary);border-radius:4px;margin:2px;color:var(--color-text-secondary)}
+  .row{display:flex;gap:12px;margin-bottom:12px;flex-wrap:wrap}
+  .flow-row{display:flex;align-items:center;gap:6px;margin-bottom:10px;flex-wrap:wrap}
+  .flow-box{background:var(--color-background-secondary);border:0.5px solid var(--color-border-tertiary);border-radius:6px;padding:6px 10px;font-size:12px;color:var(--color-text-primary)}
+  .flow-arrow{color:var(--color-text-tertiary);font-size:16px;flex-shrink:0}
+  .note{background:var(--color-background-info);border:0.5px solid var(--color-border-info);border-radius:var(--border-radius-md);padding:10px 14px;font-size:12px;color:var(--color-text-info);margin-bottom:14px;line-height:1.6}
+  .warn{background:var(--color-background-warning);border:0.5px solid var(--color-border-warning);border-radius:var(--border-radius-md);padding:10px 14px;font-size:12px;color:var(--color-text-warning);margin-bottom:14px;line-height:1.6}
+  .agent-card{border:0.5px solid var(--color-border-tertiary);border-radius:var(--border-radius-lg);padding:14px 16px;margin-bottom:10px;background:var(--color-background-primary)}
+  .agent-header{display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:8px;gap:8px}
+  .agent-name{font-size:13px;font-weight:500;color:var(--color-text-primary)}
+  .agent-input{font-size:12px;color:var(--color-text-secondary);margin-bottom:4px}
+  .agent-output{font-size:12px;color:var(--color-text-secondary)}
+  .steps{counter-reset:step}
+  .step{counter-increment:step;display:flex;gap:12px;margin-bottom:12px;align-items:flex-start}
+  .step-num{flex-shrink:0;width:22px;height:22px;background:var(--color-background-secondary);border:0.5px solid var(--color-border-secondary);border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:500;color:var(--color-text-secondary)}
+  .step-content{flex:1}
+  .step-title{font-size:13px;font-weight:500;color:var(--color-text-primary);margin-bottom:3px}
+  .step-body{font-size:12px;color:var(--color-text-secondary);line-height:1.6}
+  .divider{border:none;border-top:0.5px solid var(--color-border-tertiary);margin:16px 0}
+  .mono{font-family:var(--font-mono);font-size:11px;background:var(--color-background-secondary);padding:8px 12px;border-radius:var(--border-radius-md);margin-top:6px;line-height:1.6;color:var(--color-text-secondary);white-space:pre-wrap;overflow-x:auto}
+  .kv{display:flex;gap:6px;font-size:12px;margin-bottom:4px}
+  .kv-key{color:var(--color-text-secondary);min-width:120px;flex-shrink:0}
+  .kv-val{color:var(--color-text-primary)}
+  .output-block{border:0.5px solid var(--color-border-tertiary);border-radius:var(--border-radius-lg);padding:16px;background:var(--color-background-primary)}
+  .verdict{display:flex;align-items:center;gap:10px;padding:12px 16px;border-radius:var(--border-radius-md);margin-bottom:12px;border:0.5px solid var(--color-border-warning)}
+  .verdict-label{font-size:18px;font-weight:500}
+  .verdict-conf{font-size:12px;color:var(--color-text-secondary)}
+</style>
+
+<div class="root">
+  <h2 class="sr-only">Court judgment AI system — full RAG pipeline architecture</h2>
+
+  <div style="margin-bottom:1rem">
+    <p class="section-title" style="font-size:17px">Court AI — RAG pipeline architecture</p>
+    <p class="section-sub">End-to-end design: from SC/HC data ingestion to comply/appeal recommendation.</p>
+  </div>
+
+  <div class="tabs" id="tabs">
+    <button class="tab active" onclick="switchTab(0)">Overview</button>
+    <button class="tab" onclick="switchTab(1)">Data layer</button>
+    <button class="tab" onclick="switchTab(2)">Metadata (no LLM)</button>
+    <button class="tab" onclick="switchTab(3)">Retrieval</button>
+    <button class="tab" onclick="switchTab(4)">Agent pipeline</button>
+    <button class="tab" onclick="switchTab(5)">Output schema</button>
+    <button class="tab" onclick="switchTab(6)">Tech stack</button>
+  </div>
+
+  <!-- PANEL 0: OVERVIEW -->
+  <div class="panel active" id="p0">
+    <svg width="100%" viewBox="0 0 680 520" role="img">
+      <title>System overview architecture diagram</title>
+      <desc>Data flows from SC/HC sources through ingestion, metadata extraction, vector store, retrieval, multi-agent pipeline, and final recommendation.</desc>
+      <defs>
+        <marker id="arr" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+          <path d="M2 1L8 5L2 9" fill="none" stroke="context-stroke" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+        </marker>
+      </defs>
+
+      <!-- Layer labels -->
+      <text class="ts" x="20" y="72" fill="#888" dominant-baseline="central">Ingest</text>
+      <text class="ts" x="20" y="162" fill="#888" dominant-baseline="central">Store</text>
+      <text class="ts" x="20" y="262" fill="#888" dominant-baseline="central">Query</text>
+      <text class="ts" x="20" y="362" fill="#888" dominant-baseline="central">Agents</text>
+      <text class="ts" x="20" y="462" fill="#888" dominant-baseline="central">Output</text>
+
+      <!-- Lane dividers -->
+      <line x1="70" y1="110" x2="650" y2="110" stroke-width="0.5" class="arr" style="stroke:var(--color-border-tertiary)"/>
+      <line x1="70" y1="210" x2="650" y2="210" stroke-width="0.5" class="arr" style="stroke:var(--color-border-tertiary)"/>
+      <line x1="70" y1="310" x2="650" y2="310" stroke-width="0.5" class="arr" style="stroke:var(--color-border-tertiary)"/>
+      <line x1="70" y1="410" x2="650" y2="410" stroke-width="0.5" class="arr" style="stroke:var(--color-border-tertiary)"/>
+
+      <!-- INGEST LAYER -->
+      <g class="c-teal">
+        <rect x="80" y="50" width="110" height="44" rx="8" stroke-width="0.5"/>
+        <text class="th" x="135" y="68" text-anchor="middle" dominant-baseline="central">SC judgments</text>
+        <text class="ts" x="135" y="84" text-anchor="middle" dominant-baseline="central">All years · JUDIS</text>
+      </g>
+      <g class="c-teal">
+        <rect x="210" y="50" width="110" height="44" rx="8" stroke-width="0.5"/>
+        <text class="th" x="265" y="68" text-anchor="middle" dominant-baseline="central">HC judgments</text>
+        <text class="ts" x="265" y="84" text-anchor="middle" dominant-baseline="central">All states · eCourts</text>
+      </g>
+      <g class="c-gray">
+        <rect x="340" y="50" width="110" height="44" rx="8" stroke-width="0.5"/>
+        <text class="th" x="395" y="68" text-anchor="middle" dominant-baseline="central">PDF extract</text>
+        <text class="ts" x="395" y="84" text-anchor="middle" dominant-baseline="central">pdfplumber · Tika</text>
+      </g>
+      <g class="c-gray">
+        <rect x="470" y="50" width="130" height="44" rx="8" stroke-width="0.5"/>
+        <text class="th" x="535" y="68" text-anchor="middle" dominant-baseline="central">Metadata classify</text>
+        <text class="ts" x="535" y="84" text-anchor="middle" dominant-baseline="central">Regex + DistilBERT</text>
+      </g>
+      <line x1="190" y1="72" x2="208" y2="72" stroke-width="1" style="stroke:var(--color-text-tertiary)" marker-end="url(#arr)"/>
+      <line x1="320" y1="72" x2="338" y2="72" stroke-width="1" style="stroke:var(--color-text-tertiary)" marker-end="url(#arr)"/>
+      <line x1="450" y1="72" x2="468" y2="72" stroke-width="1" style="stroke:var(--color-text-tertiary)" marker-end="url(#arr)"/>
+
+      <!-- STORE LAYER -->
+      <g class="c-blue">
+        <rect x="80" y="130" width="130" height="56" rx="8" stroke-width="0.5"/>
+        <text class="th" x="145" y="150" text-anchor="middle" dominant-baseline="central">pgvector (hot)</text>
+        <text class="ts" x="145" y="166" text-anchor="middle" dominant-baseline="central">SC + HC last 10yr</text>
+        <text class="ts" x="145" y="179" text-anchor="middle" dominant-baseline="central">chunks + embeddings</text>
+      </g>
+      <g class="c-gray">
+        <rect x="230" y="130" width="130" height="56" rx="8" stroke-width="0.5"/>
+        <text class="th" x="295" y="150" text-anchor="middle" dominant-baseline="central">MinIO / S3 (cold)</text>
+        <text class="ts" x="295" y="166" text-anchor="middle" dominant-baseline="central">HC &gt;10yr raw PDFs</text>
+        <text class="ts" x="295" y="179" text-anchor="middle" dominant-baseline="central">on-demand embed</text>
+      </g>
+      <g class="c-amber">
+        <rect x="380" y="130" width="120" height="56" rx="8" stroke-width="0.5"/>
+        <text class="th" x="440" y="150" text-anchor="middle" dominant-baseline="central">Parquet store</text>
+        <text class="ts" x="440" y="166" text-anchor="middle" dominant-baseline="central">Columnar metadata</text>
+        <text class="ts" x="440" y="179" text-anchor="middle" dominant-baseline="central">Snappy compressed</text>
+      </g>
+      <g class="c-purple">
+        <rect x="520" y="130" width="110" height="56" rx="8" stroke-width="0.5"/>
+        <text class="th" x="575" y="150" text-anchor="middle" dominant-baseline="central">BM25 index</text>
+        <text class="ts" x="575" y="166" text-anchor="middle" dominant-baseline="central">PG full-text search</text>
+        <text class="ts" x="575" y="179" text-anchor="middle" dominant-baseline="central">tsvector + GIN</text>
+      </g>
+      <line x1="395" y1="94" x2="145" y2="128" stroke-width="1" style="stroke:var(--color-text-tertiary)" marker-end="url(#arr)"/>
+      <line x1="395" y1="94" x2="295" y2="128" stroke-width="1" style="stroke:var(--color-text-tertiary)" marker-end="url(#arr)"/>
+      <line x1="395" y1="94" x2="440" y2="128" stroke-width="1" style="stroke:var(--color-text-tertiary)" marker-end="url(#arr)"/>
+      <line x1="395" y1="94" x2="575" y2="128" stroke-width="1" style="stroke:var(--color-text-tertiary)" marker-end="url(#arr)"/>
+
+      <!-- QUERY LAYER -->
+      <g class="c-coral">
+        <rect x="80" y="228" width="120" height="56" rx="8" stroke-width="0.5"/>
+        <text class="th" x="140" y="248" text-anchor="middle" dominant-baseline="central">Upload + extract</text>
+        <text class="ts" x="140" y="264" text-anchor="middle" dominant-baseline="central">Structured JSON</text>
+        <text class="ts" x="140" y="277" text-anchor="middle" dominant-baseline="central">(your existing flow)</text>
+      </g>
+      <g class="c-gray">
+        <rect x="220" y="228" width="120" height="56" rx="8" stroke-width="0.5"/>
+        <text class="th" x="280" y="248" text-anchor="middle" dominant-baseline="central">Pre-filter</text>
+        <text class="ts" x="280" y="264" text-anchor="middle" dominant-baseline="central">Parquet metadata</text>
+        <text class="ts" x="280" y="277" text-anchor="middle" dominant-baseline="central">+ cluster ID</text>
+      </g>
+      <g class="c-blue">
+        <rect x="360" y="228" width="120" height="56" rx="8" stroke-width="0.5"/>
+        <text class="th" x="420" y="248" text-anchor="middle" dominant-baseline="central">Hybrid retrieval</text>
+        <text class="ts" x="420" y="264" text-anchor="middle" dominant-baseline="central">BM25 + dense RRF</text>
+        <text class="ts" x="420" y="277" text-anchor="middle" dominant-baseline="central">top 200 candidates</text>
+      </g>
+      <g class="c-purple">
+        <rect x="500" y="228" width="130" height="56" rx="8" stroke-width="0.5"/>
+        <text class="th" x="565" y="248" text-anchor="middle" dominant-baseline="central">Cross-encoder</text>
+        <text class="ts" x="565" y="264" text-anchor="middle" dominant-baseline="central">Rerank → top 20</text>
+        <text class="ts" x="565" y="277" text-anchor="middle" dominant-baseline="central">legal-ms-marco</text>
+      </g>
+      <line x1="200" y1="256" x2="218" y2="256" stroke-width="1" style="stroke:var(--color-text-tertiary)" marker-end="url(#arr)"/>
+      <line x1="340" y1="256" x2="358" y2="256" stroke-width="1" style="stroke:var(--color-text-tertiary)" marker-end="url(#arr)"/>
+      <line x1="480" y1="256" x2="498" y2="256" stroke-width="1" style="stroke:var(--color-text-tertiary)" marker-end="url(#arr)"/>
+
+      <!-- AGENT LAYER -->
+      <g class="c-gray">
+        <rect x="80" y="328" width="100" height="56" rx="8" stroke-width="0.5"/>
+        <text class="th" x="130" y="348" text-anchor="middle" dominant-baseline="central">Agent 1</text>
+        <text class="ts" x="130" y="364" text-anchor="middle" dominant-baseline="central">Historical</text>
+        <text class="ts" x="130" y="377" text-anchor="middle" dominant-baseline="central">research</text>
+      </g>
+      <g class="c-gray">
+        <rect x="196" y="328" width="100" height="56" rx="8" stroke-width="0.5"/>
+        <text class="th" x="246" y="348" text-anchor="middle" dominant-baseline="central">Rules engine</text>
+        <text class="ts" x="246" y="364" text-anchor="middle" dominant-baseline="central">Win/loss stats</text>
+        <text class="ts" x="246" y="377" text-anchor="middle" dominant-baseline="central">Limitation calc</text>
+      </g>
+      <g class="c-teal">
+        <rect x="312" y="328" width="100" height="56" rx="8" stroke-width="0.5"/>
+        <text class="th" x="362" y="348" text-anchor="middle" dominant-baseline="central">Agent 2</text>
+        <text class="ts" x="362" y="364" text-anchor="middle" dominant-baseline="central">Argument</text>
+        <text class="ts" x="362" y="377" text-anchor="middle" dominant-baseline="central">mapper</text>
+      </g>
+      <g class="c-teal">
+        <rect x="428" y="328" width="100" height="56" rx="8" stroke-width="0.5"/>
+        <text class="th" x="478" y="348" text-anchor="middle" dominant-baseline="central">Agent 3</text>
+        <text class="ts" x="478" y="364" text-anchor="middle" dominant-baseline="central">Adversarial</text>
+        <text class="ts" x="478" y="377" text-anchor="middle" dominant-baseline="central">analysis</text>
+      </g>
+      <g class="c-coral">
+        <rect x="544" y="328" width="100" height="56" rx="8" stroke-width="0.5"/>
+        <text class="th" x="594" y="348" text-anchor="middle" dominant-baseline="central">Agent 4</text>
+        <text class="ts" x="594" y="364" text-anchor="middle" dominant-baseline="central">Recommend</text>
+        <text class="ts" x="594" y="377" text-anchor="middle" dominant-baseline="central">synthesis</text>
+      </g>
+      <!-- Agent connections (top-20 → agents) -->
+      <line x1="565" y1="284" x2="130" y2="326" stroke-width="0.8" style="stroke:var(--color-text-tertiary)" marker-end="url(#arr)"/>
+      <line x1="565" y1="284" x2="246" y2="326" stroke-width="0.8" style="stroke:var(--color-text-tertiary)" marker-end="url(#arr)"/>
+      <line x1="565" y1="284" x2="362" y2="326" stroke-width="0.8" style="stroke:var(--color-text-tertiary)" marker-end="url(#arr)"/>
+      <line x1="565" y1="284" x2="478" y2="326" stroke-width="0.8" style="stroke:var(--color-text-tertiary)" marker-end="url(#arr)"/>
+      <line x1="565" y1="284" x2="594" y2="326" stroke-width="0.8" style="stroke:var(--color-text-tertiary)" marker-end="url(#arr)"/>
+
+      <!-- OUTPUT LAYER -->
+      <g class="c-amber">
+        <rect x="80" y="428" width="180" height="56" rx="8" stroke-width="0.5"/>
+        <text class="th" x="170" y="448" text-anchor="middle" dominant-baseline="central">Comply / Appeal verdict</text>
+        <text class="ts" x="170" y="464" text-anchor="middle" dominant-baseline="central">With confidence + reasoning</text>
+        <text class="ts" x="170" y="477" text-anchor="middle" dominant-baseline="central">Full citations chain</text>
+      </g>
+      <g class="c-blue">
+        <rect x="280" y="428" width="160" height="56" rx="8" stroke-width="0.5"/>
+        <text class="th" x="360" y="448" text-anchor="middle" dominant-baseline="central">Action plan</text>
+        <text class="ts" x="360" y="464" text-anchor="middle" dominant-baseline="central">Directives + deadlines</text>
+        <text class="ts" x="360" y="477" text-anchor="middle" dominant-baseline="central">Responsible dept</text>
+      </g>
+      <g class="c-gray">
+        <rect x="460" y="428" width="180" height="56" rx="8" stroke-width="0.5"/>
+        <text class="th" x="550" y="448" text-anchor="middle" dominant-baseline="central">Human verification</text>
+        <text class="ts" x="550" y="464" text-anchor="middle" dominant-baseline="central">Approve / Edit / Reject</text>
+        <text class="ts" x="550" y="477" text-anchor="middle" dominant-baseline="central">CCMS dashboard</text>
+      </g>
+      <line x1="594" y1="384" x2="550" y2="426" stroke-width="1" style="stroke:var(--color-text-tertiary)" marker-end="url(#arr)"/>
+      <line x1="594" y1="384" x2="360" y2="426" stroke-width="1" style="stroke:var(--color-text-tertiary)" marker-end="url(#arr)"/>
+      <line x1="594" y1="384" x2="170" y2="426" stroke-width="1" style="stroke:var(--color-text-tertiary)" marker-end="url(#arr)"/>
+    </svg>
+    <p style="font-size:12px;color:var(--color-text-tertiary);margin-top:6px">Click a tab above to deep-dive any layer.</p>
+  </div>
+
+  <!-- PANEL 1: DATA LAYER -->
+  <div class="panel" id="p1">
+    <p class="section-title">Data layer — storage architecture</p>
+    <p class="section-sub">Tiered hot/cold strategy. Parquet for queryable metadata; pgvector for live similarity search. No need to load cold embeddings unless retrieved.</p>
+
+    <div class="note"><i class="ti ti-info-circle" aria-hidden="true"></i> Scale estimate: SC ~3M judgments (all years), HC ~15M judgments (all states). Chunked at 512 tokens, 128 overlap → roughly 80–120M vectors in hot store. Use <strong>pgvector with HNSW</strong> (not IVFFlat) at this scale — HNSW gives better recall without full scan.</div>
+
+    <div class="grid2">
+      <div class="card">
+        <div class="card-title"><i class="ti ti-flame" aria-hidden="true"></i> Hot storage — pgvector <span class="badge badge-blue">primary</span></div>
+        <div class="card-body">
+          <div class="kv"><span class="kv-key">Contents</span><span class="kv-val">All SC (all years) + HC last 10 years</span></div>
+          <div class="kv"><span class="kv-key">Format</span><span class="kv-val">Chunked text + vector(1024) embeddings</span></div>
+          <div class="kv"><span class="kv-key">Index</span><span class="kv-val">HNSW (m=16, ef_construction=128)</span></div>
+          <div class="kv"><span class="kv-key">Metadata cols</span><span class="kv-val">case_id, court, date, area_law_id, case_type_id, outcome, is_appealed, appeal_outcome, cluster_id</span></div>
+          <div class="kv"><span class="kv-key">Est. size</span><span class="kv-val">~40M vectors · ~200GB on disk</span></div>
+          <div class="kv"><span class="kv-key">BM25 index</span><span class="kv-val">PG tsvector + GIN on full text column</span></div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-title"><i class="ti ti-snowflake" aria-hidden="true"></i> Cold storage — MinIO/S3 <span class="badge badge-gray">archive</span></div>
+        <div class="card-body">
+          <div class="kv"><span class="kv-key">Contents</span><span class="kv-val">HC judgments &gt;10 years old</span></div>
+          <div class="kv"><span class="kv-key">Format</span><span class="kv-val">Parquet partitioned by court/year + raw PDFs</span></div>
+          <div class="kv"><span class="kv-key">Embeddings</span><span class="kv-val">NOT pre-computed. On retrieval demand, compute + cache 48hr in Redis</span></div>
+          <div class="kv"><span class="kv-key">Trigger</span><span class="kv-val">Only if hot store returns &lt;5 matches with score &gt;0.75 — fall through to cold</span></div>
+          <div class="kv"><span class="kv-key">Partition key</span><span class="kv-val">court_code / year / area_law_id</span></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card" style="margin-bottom:12px">
+      <div class="card-title"><i class="ti ti-table" aria-hidden="true"></i> Parquet metadata schema — queryable layer</div>
+      <div class="card-body">
+        <p style="margin-bottom:8px">One Parquet file per court-year partition. Snappy compressed. Used for fast pre-filtering before vector search. Queryable with DuckDB directly from S3.</p>
+        <div class="mono">case_id         STRING   -- unique hash of case_number + court + date
+case_number     STRING   -- "WP No. 1283 of 2024"
+court_code      STRING   -- "KHC", "SC", "BHC" etc.
+date_of_order   DATE     
+area_law_id     INT8     -- classifier output (0-47 categories)
+case_type_id    INT8     -- writ/appeal/revision etc.
+doc_type_id     INT8     -- judgment/order/interlocutory
+outcome         INT8     -- 0=dismissed 1=allowed 2=partly_allowed
+is_appealed     BOOL     -- was this judgment further appealed?
+appeal_outcome  INT8     -- -1=unknown 0=dismissed 1=allowed
+winning_party   INT8     -- 0=petitioner 1=respondent 2=neither
+statute_ids     INT32[]  -- compressed list of statute IDs
+citation_ids    STRING[] -- cited case IDs
+cluster_id      INT16    -- offline k-means cluster assignment
+text_path       STRING   -- S3 URI to full text
+chunk_ids       STRING[] -- pgvector row IDs for hot cases</div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-title"><i class="ti ti-refresh" aria-hidden="true"></i> Ingestion pipeline — batch flow</div>
+      <div class="card-body">
+        <div class="steps">
+          <div class="step"><div class="step-num">1</div><div class="step-content"><div class="step-title">Download</div><div class="step-body">Scrape JUDIS (SC), eCourts APIs, and state HC portals. Store raw PDFs in MinIO. Track last-fetched cursor per court.</div></div></div>
+          <div class="step"><div class="step-num">2</div><div class="step-content"><div class="step-title">Text extraction</div><div class="step-body">pdfplumber for digital PDFs, Tesseract OCR fallback for scanned. Detect language (most HCs have vernacular portions) and extract English sections.</div></div></div>
+          <div class="step"><div class="step-num">3</div><div class="step-content"><div class="step-title">Chunking</div><div class="step-body">Semantic chunking at paragraph boundaries, not fixed tokens. Max 512 tokens, min 128 tokens. Overlap of 64 tokens between adjacent chunks. Store parent-doc reference.</div></div></div>
+          <div class="step"><div class="step-num">4</div><div class="step-content"><div class="step-title">Metadata extraction</div><div class="step-body">Regex + lightweight classifier pipeline (see Metadata tab). Writes Parquet row. No LLM at this stage.</div></div></div>
+          <div class="step"><div class="step-num">5</div><div class="step-content"><div class="step-title">Embedding (hot only)</div><div class="step-body">Batch embed with InLegalBERT on GPU. Write to pgvector. Cold cases skip this — embed on demand.</div></div></div>
+          <div class="step"><div class="step-num">6</div><div class="step-content"><div class="step-title">Offline clustering</div><div class="step-body">Weekly k-means (k=500) on all hot embeddings. Assign cluster_id to each case in Parquet. Used as first-pass filter in retrieval.</div></div></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- PANEL 2: METADATA (NO LLM) -->
+  <div class="panel" id="p2">
+    <p class="section-title">Lightweight metadata extraction — no LLM required</p>
+    <p class="section-sub">The challenge: extract area_of_law, case_type, and outcome for millions of documents cheaply. Solution: a three-layer cascade of increasing cost.</p>
+
+    <div class="warn"><i class="ti ti-alert-triangle" aria-hidden="true"></i> Key insight: for many fields, metadata IS NOT needed for quality retrieval. Use offline clustering (k-means on embeddings) as a semantic pre-filter instead of explicit labels. Clustering naturally separates service law, property law, criminal matters, etc. without any manual annotation.</div>
+
+    <div class="grid3">
+      <div class="card">
+        <div class="card-title"><i class="ti ti-code" aria-hidden="true"></i> Layer 1 — regex patterns</div>
+        <div class="card-body" style="font-size:12px">
+          <p style="margin-bottom:6px">Extracts 80% of metadata at near-zero cost.</p>
+          <p>• Case number (all court formats)</p>
+          <p>• Date of order (multiple date formats)</p>
+          <p>• Court name (finite dictionary of ~50 courts)</p>
+          <p>• Presiding judge names</p>
+          <p>• Citation patterns (SCC, AIR, SC, HC)</p>
+          <p>• Disposition words (dismissed/allowed/partly)</p>
+          <p>• Petition type from case number prefix</p>
+          <p style="margin-top:6px">Speed: ~50,000 docs/min on single CPU</p>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-title"><i class="ti ti-brain" aria-hidden="true"></i> Layer 2 — DistilBERT classifier</div>
+        <div class="card-body" style="font-size:12px">
+          <p style="margin-bottom:6px">Fine-tuned on ILDC dataset (Indian Legal Documents Corpus, ~35k labeled cases).</p>
+          <p>• Area of law (47 categories)</p>
+          <p>• Case type (writ/appeal/revision/SLP)</p>
+          <p>• Document type (judgment/order/interim)</p>
+          <p style="margin-top:6px">Model: DistilBERT (66M params) — 4× faster than BERT, 97% of accuracy. Input: first 512 tokens of judgment (preamble + headnote).</p>
+          <p style="margin-top:6px">Speed: ~3,000 docs/min on A100 GPU</p>
+          <p>Training data: ILDC + LEGAL-BERT fine-tune</p>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-title"><i class="ti ti-topology-star" aria-hidden="true"></i> Layer 3 — cluster assignment</div>
+        <div class="card-body" style="font-size:12px">
+          <p style="margin-bottom:6px">Backup when classifier is uncertain (confidence &lt;0.7).</p>
+          <p>• Embed first 512 tokens with InLegalBERT</p>
+          <p>• Assign nearest cluster_id from weekly k-means centroids</p>
+          <p>• cluster_id acts as a soft metadata substitute — cases in same cluster share legal domain even without explicit labels</p>
+          <p style="margin-top:6px">k=500 clusters gives fine-grained topic separation without explicit labeling.</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="card" style="margin-bottom:12px">
+      <div class="card-title"><i class="ti ti-list-check" aria-hidden="true"></i> Field-by-field extraction strategy</div>
+      <div class="card-body">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px 16px">
+          <div><div class="kv"><span class="kv-key" style="min-width:140px">case_number</span><span class="kv-val"><span class="badge badge-green">regex</span></span></div></div>
+          <div><div class="kv"><span class="kv-key" style="min-width:140px">date_of_order</span><span class="kv-val"><span class="badge badge-green">regex</span></span></div></div>
+          <div><div class="kv"><span class="kv-key" style="min-width:140px">court_name</span><span class="kv-val"><span class="badge badge-green">regex + dictionary</span></span></div></div>
+          <div><div class="kv"><span class="kv-key" style="min-width:140px">presiding_judges</span><span class="kv-val"><span class="badge badge-green">regex + NER</span></span></div></div>
+          <div><div class="kv"><span class="kv-key" style="min-width:140px">petitioner/respondent</span><span class="kv-val"><span class="badge badge-green">regex header parse</span></span></div></div>
+          <div><div class="kv"><span class="kv-key" style="min-width:140px">disposition</span><span class="kv-val"><span class="badge badge-green">regex on last page</span></span></div></div>
+          <div><div class="kv"><span class="kv-key" style="min-width:140px">citations</span><span class="kv-val"><span class="badge badge-green">regex + citation DB</span></span></div></div>
+          <div><div class="kv"><span class="kv-key" style="min-width:140px">statute_refs</span><span class="kv-val"><span class="badge badge-amber">keyword dict (3000+ Acts)</span></span></div></div>
+          <div><div class="kv"><span class="kv-key" style="min-width:140px">area_of_law</span><span class="kv-val"><span class="badge badge-blue">DistilBERT classifier</span></span></div></div>
+          <div><div class="kv"><span class="kv-key" style="min-width:140px">case_type</span><span class="kv-val"><span class="badge badge-blue">DistilBERT + regex prefix</span></span></div></div>
+          <div><div class="kv"><span class="kv-key" style="min-width:140px">doc_type</span><span class="kv-val"><span class="badge badge-blue">DistilBERT classifier</span></span></div></div>
+          <div><div class="kv"><span class="kv-key" style="min-width:140px">cluster_id</span><span class="kv-val"><span class="badge badge-gray">k-means assignment</span></span></div></div>
+          <div><div class="kv"><span class="kv-key" style="min-width:140px">is_appealed</span><span class="kv-val"><span class="badge badge-amber">citation graph traversal</span></span></div></div>
+          <div><div class="kv"><span class="kv-key" style="min-width:140px">appeal_outcome</span><span class="kv-val"><span class="badge badge-amber">citation graph + regex</span></span></div></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-title"><i class="ti ti-git-branch" aria-hidden="true"></i> Citation graph — building appeal lineage</div>
+      <div class="card-body">
+        <p style="font-size:12px;line-height:1.6;margin-bottom:8px">Build a directed graph: if case B's text cites case A (extracted via regex), draw edge A→B. If B "reversed" or "set aside" A (keyword detection), mark edge as appeal_overturned. This graph lets you look up whether any HC judgment was subsequently appealed to SC — without an LLM on any document.</p>
+        <div class="mono">citation_edges(
+  from_case_id  STRING,    -- case that was appealed
+  to_case_id    STRING,    -- appellate judgment
+  edge_type     ENUM,      -- 'appeal', 'reference', 'relied_on'
+  outcome       ENUM       -- 'reversed', 'confirmed', 'modified'
+)
+-- Index: from_case_id → fast "was this appealed?" lookup</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- PANEL 3: RETRIEVAL -->
+  <div class="panel" id="p3">
+    <p class="section-title">Retrieval pipeline — hybrid search with semantic safety</p>
+    <p class="section-sub">Five-stage funnel: metadata pre-filter → BM25 shortlist → dense retrieval → RRF fusion → cross-encoder reranking. Each stage shrinks the candidate pool while improving relevance.</p>
+
+    <div class="note"><i class="ti ti-bulb" aria-hidden="true"></i> The core challenge you identified — preventing semantic contamination across unrelated legal domains — is solved by <strong>cluster-gated retrieval</strong>: restrict search to the same cluster(s) as the query before running any similarity computation.</div>
+
+    <div class="steps">
+      <div class="step">
+        <div class="step-num">1</div>
+        <div class="step-content">
+          <div class="step-title">Query preparation — from your extracted JSON</div>
+          <div class="step-body">Your extraction pipeline already gives you area_law, case_type, primary_statute, court_directions, citations. Build two query forms:
+          <br><strong>Lexical query</strong>: statute names + legal issue keywords + court direction verbs → BM25
+          <br><strong>Semantic query</strong>: embed the ratio_decidendi + issues_framed (most discriminative sections)
+          <br>Also extract cluster_id by embedding ratio_decidendi and finding nearest k-means centroid.</div>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num">2</div>
+        <div class="step-content">
+          <div class="step-title">Stage 1 — metadata pre-filter (if available)</div>
+          <div class="step-body">SQL filter on Parquet / pgvector metadata table before any vector ops:
+          <div class="mono">WHERE cluster_id IN (query_cluster, nearest_2_clusters)
+  AND date_of_order >= NOW() - INTERVAL '10 years'  -- hot store default
+  AND court_code IN ('SC', same_HC_code)            -- jurisdiction filter
+  AND (area_law_id = query_area_law OR area_law_id IS NULL)
+-- If area_law_id missing → cluster_id alone provides isolation</div>
+          This reduces search space from 40M → ~100K-500K cases before any embedding comparison.</div>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num">3</div>
+        <div class="step-content">
+          <div class="step-title">Stage 2 — hybrid retrieval with RRF fusion</div>
+          <div class="step-body">Run BM25 + dense retrieval in parallel on the pre-filtered set, then fuse with Reciprocal Rank Fusion (not weighted sum — RRF is more robust to score scale differences).
+          <div class="mono">-- Dense (pgvector)
+SELECT case_id, 1 - (embedding &lt;=&gt; query_vec) AS dense_score
+FROM case_chunks WHERE cluster_id = ANY(...)
+ORDER BY embedding &lt;=&gt; query_vec LIMIT 200;
+
+-- BM25 (postgres full-text)
+SELECT case_id, ts_rank(fts_vector, query_tsquery) AS bm25_score
+FROM case_chunks WHERE cluster_id = ANY(...) LIMIT 200;
+
+-- RRF: score = 1/(60+rank_dense) + 1/(60+rank_bm25)
+-- Take top 100 by RRF score</div></div>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num">4</div>
+        <div class="step-content">
+          <div class="step-title">Stage 3 — parent document aggregation</div>
+          <div class="step-body">Chunks point back to parent cases. Aggregate chunk scores per case: use max(chunk_score) per case, not sum — you want the single most-relevant passage to determine case relevance. Deduplicate to get top 50 unique cases.</div>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num">5</div>
+        <div class="step-content">
+          <div class="step-title">Stage 4 — cross-encoder reranking → top 20</div>
+          <div class="step-body">Cross-encoder takes (query_text, candidate_text) pairs and produces a more accurate relevance score than embedding cosine similarity. Query text = ratio_decidendi + issues. Candidate text = top-3 chunks from each case.
+          <br>Model: <strong>cross-encoder/ms-marco-MiniLM-L-12-v2</strong> fine-tuned on Indian legal pairs (or use as-is — generalises well). Reduces top-50 → top-20 with significantly better precision.
+          <br>Cost: 50 forward passes, fast at inference (~2s on GPU).</div>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num">6</div>
+        <div class="step-content">
+          <div class="step-title">Stage 5 — diversity and appeal-lineage filter</div>
+          <div class="step-body">Final post-processing before agent input:
+          <br>• MMR (Maximal Marginal Relevance) — ensure top-20 aren't all from the same sub-statute or same year
+          <br>• Boost cases where is_appealed=true and appeal_outcome is known — most valuable for comply/appeal analysis
+          <br>• Boost SC cases over HC cases (more authoritative precedent)
+          <br>Output: top-20 cases with appeal lineage, win/loss history, and top-3 relevant chunks each</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-title"><i class="ti ti-shield-check" aria-hidden="true"></i> How cluster-gating prevents cross-domain contamination</div>
+      <div class="card-body" style="font-size:12px;line-height:1.6">
+        A gratuity dispute and a land acquisition case might share words like "government", "order", "directions", "compliance" — these would score high on BM25 and even moderately on dense retrieval without domain isolation.
+        <br><br>
+        Cluster-gating (k=500 clusters) naturally separates these: the embedding space for service law cases clusters far from property law cases. By restricting Stage 1 to the query's nearest 3 clusters, you ensure all 200 BM25 + dense candidates are semantically proximate to the query domain — even if individual cases lack explicit area_of_law labels.
+        <br><br>
+        This is better than hard metadata filtering because: (a) it works even when labels are missing, (b) it handles edge cases and multi-domain cases naturally, and (c) cluster boundaries are learned from actual case content, not a rigid taxonomy.
+      </div>
+    </div>
+  </div>
+
+  <!-- PANEL 4: AGENT PIPELINE -->
+  <div class="panel" id="p4">
+    <p class="section-title">Multi-agent RAG pipeline — 4 agents + 1 rules engine</p>
+    <p class="section-sub">Orchestrated by LangGraph. Agents 1 and Rules Engine run in parallel. Agent 2 waits for both. Agents 3 and 4 are sequential. LLM: Llama 3.3 70B for Agents 1-3, Llama 3.1 405B for Agent 4.</p>
+
+    <div class="flow-row">
+      <div class="flow-box">Extracted JSON<br><span style="font-size:11px;color:var(--color-text-tertiary)">your extraction</span></div>
+      <span class="flow-arrow">→</span>
+      <div class="flow-box">Top-20 cases<br><span style="font-size:11px;color:var(--color-text-tertiary)">from retrieval</span></div>
+      <span class="flow-arrow">→</span>
+      <div class="flow-box" style="border-color:var(--color-border-info)">Agent 1 ‖ Rules<br><span style="font-size:11px;color:var(--color-text-tertiary)">parallel</span></div>
+      <span class="flow-arrow">→</span>
+      <div class="flow-box" style="border-color:var(--color-border-info)">Agent 2<br><span style="font-size:11px;color:var(--color-text-tertiary)">argument map</span></div>
+      <span class="flow-arrow">→</span>
+      <div class="flow-box" style="border-color:var(--color-border-info)">Agent 3<br><span style="font-size:11px;color:var(--color-text-tertiary)">adversarial</span></div>
+      <span class="flow-arrow">→</span>
+      <div class="flow-box" style="border-color:var(--color-border-warning)">Agent 4<br><span style="font-size:11px;color:var(--color-text-tertiary)">recommendation</span></div>
+    </div>
+
+    <div class="agent-card">
+      <div class="agent-header">
+        <div>
+          <div class="agent-name">Agent 1 — Historical Research Agent <span class="badge badge-blue" style="margin-left:6px">parallel</span></div>
+          <div class="agent-input" style="margin-top:4px">Input: top-20 case texts + metadata</div>
+        </div>
+        <span class="badge badge-gray">Llama 3.3 70B</span>
+      </div>
+      <div class="card-body">
+        For each of the 20 similar cases, extract: key legal arguments used, statutes relied on, key holdings, whether the government was petitioner or respondent, what the final outcome was, and (from citation graph) whether it was further appealed and the outcome. Produces a structured per-case research report. This is a map operation — each case processed in a single prompt, results collated.
+        <div class="mono">Output per case: {case_id, arguments_for_government, arguments_against_government,
+  key_holdings[], statutes_cited[], government_role, outcome,
+  was_appealed, appeal_outcome, distinguishing_factors[]}</div>
+      </div>
+    </div>
+
+    <div class="agent-card">
+      <div class="agent-header">
+        <div>
+          <div class="agent-name">Rules Engine — Statistical Analyzer <span class="badge badge-amber" style="margin-left:6px">parallel</span></div>
+          <div class="agent-input" style="margin-top:4px">Input: appeal_outcome fields from top-20 + current case metadata</div>
+        </div>
+        <span class="badge badge-gray">deterministic Python</span>
+      </div>
+      <div class="card-body">
+        NOT an LLM. Pure Python calculations. Produces hard numbers that agents cannot reliably compute:
+        <div class="mono">win_rate_on_appeal = count(appeal_outcome='allowed') / count(is_appealed=True)
+lose_rate_on_appeal = count(appeal_outcome='dismissed') / count(is_appealed=True)
+limitation_deadline = date_of_order + statute_limitation_period(appeal_type)
+  # Service law HC→DB: 30 days; HC→SC SLP: 90 days; etc.
+days_remaining = limitation_deadline - today()
+financial_exposure = sum(financial_implications[])
+govt_as_petitioner_win_rate = ... (filtered by government_role=petitioner)</div>
+        Output: hard stats dict passed to every subsequent agent as grounding context.
+      </div>
+    </div>
+
+    <div class="agent-card">
+      <div class="agent-header">
+        <div>
+          <div class="agent-name">Agent 2 — Legal Argument Mapper</div>
+          <div class="agent-input" style="margin-top:4px">Input: Agent 1 output (all 20 case reports) + current case JSON</div>
+        </div>
+        <span class="badge badge-gray">Llama 3.3 70B</span>
+      </div>
+      <div class="card-body">
+        Synthesizes across all 20 cases to build a structured argument landscape. Groups winning arguments (pro-appeal) and losing arguments (pro-comply) by legal principle. Maps citations that the current case could rely on vs. citations that cut against. Identifies which statutes/principles were consistently upheld vs. rejected in similar cases.
+        <div class="mono">Output: {
+  appeal_arguments: [{principle, cases_supporting[], citations[], strength}],
+  comply_arguments: [{principle, cases_supporting[], citations[], strength}],
+  current_case_citations_analysis: {supportive[], adverse[], neutral[]},
+  key_distinguishing_factors: []  // ways current case differs from similar
+}</div>
+      </div>
+    </div>
+
+    <div class="agent-card">
+      <div class="agent-header">
+        <div>
+          <div class="agent-name">Agent 3 — Adversarial Analysis Agent</div>
+          <div class="agent-input" style="margin-top:4px">Input: current case JSON + Agent 2 argument map + Rules Engine stats</div>
+        </div>
+        <span class="badge badge-gray">Llama 3.3 70B</span>
+      </div>
+      <div class="card-body">
+        Plays devil's advocate in both directions. For appeal path: what are the realistic grounds? What's the probability of success given the win_rate and distinguishing factors? What are the procedural risks (limitation period, court fees, further delay)? For comply path: what are the risks of non-compliance (contempt, interest, further litigation)? Are there alternative routes (modification application, review petition, compliance with stay)?
+        <div class="mono">Output: {
+  appeal_viability: {score_0_to_10, grounds[], risks[], procedural_notes},
+  comply_viability: {score_0_to_10, compliance_steps[], contempt_risk, interest_cost},
+  alternative_routes: [{type, description, pros[], cons[]}],
+  loopholes_in_judgment: [],
+  strongest_appeal_ground: string,
+  red_flags: []  // reasons that make appeal risky
+}</div>
+      </div>
+    </div>
+
+    <div class="agent-card" style="border-color:var(--color-border-warning)">
+      <div class="agent-header">
+        <div>
+          <div class="agent-name">Agent 4 — Recommendation Synthesis Agent <span class="badge badge-amber" style="margin-left:6px">final</span></div>
+          <div class="agent-input" style="margin-top:4px">Input: ALL previous outputs (Agents 1-3 + Rules Engine)</div>
+        </div>
+        <span class="badge badge-gray">Llama 3.1 405B (or Llama 3.3 70B)</span>
+      </div>
+      <div class="card-body">
+        Synthesizes a final verdict. Uses rules engine numbers as hard constraints (e.g., if days_remaining &lt; 7, appeal urgency is CRITICAL regardless of merits). Uses agent scores as soft signals. Generates a structured recommendation with full traceable reasoning — every claim must cite specific cases or stats from prior agents.
+        <div class="mono">Output: {
+  verdict: "APPEAL" | "COMPLY" | "COMPLY_WITH_MODIFICATION" | "REVIEW_PETITION",
+  confidence: float,   // 0.0-1.0
+  urgency: "CRITICAL" | "HIGH" | "MEDIUM",
+  deadline: date,
+  primary_reasoning: string,  // 3-5 sentence summary
+  detailed_reasoning: {       // full chain-of-thought
+    statistical_basis: ...,   // from rules engine
+    precedent_analysis: ...,  // from agents 1-2
+    risk_assessment: ...,     // from agent 3
+    recommended_grounds: []   // if appeal: specific grounds to file
+  },
+  citations_used: [],
+  cases_relied_on: [],
+  action_plan: [...]           // merged with your directive extraction
+}</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- PANEL 5: OUTPUT SCHEMA -->
+  <div class="panel" id="p5">
+    <p class="section-title">Final output schema — recommendation + action plan</p>
+    <p class="section-sub">Structured JSON output that merges AI recommendation with the action plan directives already extracted from your pipeline. Ready for CCMS dashboard ingestion.</p>
+
+    <div class="output-block">
+      <div class="verdict" style="background:var(--color-background-warning)">
+        <div>
+          <div class="verdict-label" style="color:var(--color-text-warning)">APPEAL — Division Bench</div>
+          <div class="verdict-conf">Confidence: 0.74 · Urgency: HIGH · Deadline: 2024-04-26 (42 days remaining)</div>
+        </div>
+      </div>
+
+      <div class="mono">{
+  "recommendation_id": "uuid",
+  "case_id": "e4f1a2b3-...",
+  "generated_at": "2024-03-15T10:30:00Z",
+  "status": "PENDING_VERIFICATION",
+
+  "verdict": {
+    "decision": "APPEAL",
+    "appeal_to": "Division Bench",       // or "Supreme Court SLP"
+    "confidence": 0.74,
+    "urgency": "HIGH",
+    "limitation_deadline": "2024-04-26",
+    "days_remaining": 42
+  },
+
+  "statistical_basis": {
+    "similar_cases_analyzed": 20,
+    "cases_with_appeal_data": 15,
+    "government_appeal_win_rate": 0.67,
+    "govt_win_when_gratuity_case": 0.41,  // narrower filter
+    "financial_exposure_if_comply": 1620000  // Rs. with interest
+  },
+
+  "primary_reasoning": "Based on 15 similar service law cases, the government has a 67% appeal success rate at Division Bench level. However, in gratuity-specific cases, the win rate drops to 41%. The primary appeal ground is the KAT having failed to consider the pending inquiry, which distinguishes this from State of Jharkhand vs. Jitendra Kumar Srivastava. Limitation period of 30 days requires urgent action by 26 April 2024.",
+
+  "appeal_grounds": [
+    {
+      "ground": "Inquiry was initiated prior to retirement, not post-retirement as held",
+      "strength": "HIGH",
+      "supporting_cases": ["WP 4521/2019 (HC Karnataka)", "SLP 3301/2020 (SC)"]
+    },
+    {
+      "ground": "KAT failed to consider Rule 43(b) applicability to pending inquiries",
+      "strength": "MEDIUM",
+      "supporting_cases": ["OA 789/2022 (KAT)"]
+    }
+  ],
+
+  "alternative_routes": [
+    {
+      "type": "STAY_APPLICATION",
+      "description": "File stay of execution while appeal is pending to prevent immediate payment",
+      "recommended": true
+    },
+    {
+      "type": "MODIFICATION_APPLICATION",
+      "description": "Apply to modify 8% interest to 6% (statutory rate)",
+      "recommended": true
+    }
+  ],
+
+  "action_plan": {
+    "immediate_actions": [
+      {
+        "priority": 1,
+        "action": "File appeal in Division Bench with stay application",
+        "deadline": "2024-04-26",
+        "responsible_dept": "Government Pleader's Office",
+        "original_directive": null
+      },
+      {
+        "priority": 2,
+        "action": "Release withheld gratuity IF appeal not filed within limitation",
+        "deadline": "2024-04-26",
+        "responsible_dept": "State of Karnataka (DoPT)",
+        "original_directive": "Release gratuity amount with 8% interest within 6 weeks"
+      }
+    ],
+    "court_directions": [...],  // your existing extracted directives, unchanged
+    "financial_actions": [
+      {
+        "action": "Provision Rs. 15,00,000 + interest in contingency budget",
+        "amount": 1620000,
+        "reason": "Compliance fallback if appeal fails"
+      }
+    ]
+  },
+
+  "sources": {
+    "cases_relied_on": [...],
+    "citations_chain": [...],
+    "retrieval_metadata": {
+      "top_20_case_ids": [...],
+      "retrieval_scores": [...],
+      "cluster_id_used": 247
+    }
+  },
+
+  "verification": {
+    "status": "PENDING",
+    "reviewer_id": null,
+    "edits": [],
+    "approved_at": null
+  }
+}</div>
+    </div>
+  </div>
+
+  <!-- PANEL 6: TECH STACK -->
+  <div class="panel" id="p6">
+    <p class="section-title">Technology stack recommendations</p>
+    <p class="section-sub">Best tools for each layer given your existing Nvidia NIM + Llama 3.3 70B + PostgreSQL setup.</p>
+
+    <div class="grid2">
+      <div class="card">
+        <div class="card-title"><i class="ti ti-vector" aria-hidden="true"></i> Embeddings</div>
+        <div class="card-body">
+          <p style="margin-bottom:6px"><strong style="font-weight:500">Primary:</strong> <span class="tech-pill">law-ai/InLegalBERT</span></p>
+          <p style="font-size:12px;margin-bottom:8px">Fine-tuned on Indian legal corpus. 768-dim. Best recall on ILDC benchmark. Available on HuggingFace.</p>
+          <p style="margin-bottom:6px"><strong style="font-weight:500">Alternative:</strong> <span class="tech-pill">nomic-embed-text-v1.5</span></p>
+          <p style="font-size:12px">8192 token context — can embed entire short judgments as single vector. Better for long-context retrieval.</p>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-title"><i class="ti ti-arrows-sort" aria-hidden="true"></i> Cross-encoder reranker</div>
+        <div class="card-body">
+          <p style="margin-bottom:6px"><strong style="font-weight:500">Primary:</strong> <span class="tech-pill">cross-encoder/ms-marco-MiniLM-L-12-v2</span></p>
+          <p style="font-size:12px;margin-bottom:8px">Fast, accurate on passage reranking. 6-layer MiniLM — 4× faster than BERT cross-encoder with minimal accuracy loss. Works well zero-shot on legal text.</p>
+          <p style="margin-bottom:6px"><strong style="font-weight:500">Better (if time):</strong> Fine-tune on Indian legal QA pairs from ILDC/LegalLens dataset.</p>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-title"><i class="ti ti-database" aria-hidden="true"></i> Vector database</div>
+        <div class="card-body">
+          <p style="font-size:12px;margin-bottom:6px">You already have PostgreSQL. Add pgvector extension and use HNSW index.</p>
+          <div class="mono" style="font-size:11px">CREATE INDEX ON case_chunks
+USING hnsw (embedding vector_cosine_ops)
+WITH (m=16, ef_construction=128);</div>
+          <p style="font-size:12px;margin-top:8px">At 40M vectors, pgvector HNSW is competitive with Pinecone/Qdrant and saves infra complexity.</p>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-title"><i class="ti ti-robot" aria-hidden="true"></i> LLM — agent pipeline</div>
+        <div class="card-body">
+          <p style="margin-bottom:6px"><strong style="font-weight:500">Agents 1-3:</strong> <span class="tech-pill">Llama 3.3 70B (Nvidia NIM)</span></p>
+          <p style="font-size:12px;margin-bottom:8px">128K context. 70B has strong instruction following for structured JSON output. Use NIM API for throughput.</p>
+          <p style="margin-bottom:6px"><strong style="font-weight:500">Agent 4 (final):</strong> <span class="tech-pill">Llama 3.1 405B</span> or <span class="tech-pill">Llama 3.3 70B</span></p>
+          <p style="font-size:12px">405B gives better reasoning chains but higher latency. For hackathon demo, 70B is sufficient.</p>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-title"><i class="ti ti-binary-tree" aria-hidden="true"></i> Agent orchestration</div>
+        <div class="card-body">
+          <p style="margin-bottom:6px"><strong style="font-weight:500">Recommended:</strong> <span class="tech-pill">LangGraph</span></p>
+          <p style="font-size:12px;margin-bottom:8px">Supports parallel node execution (Agents 1 + Rules Engine run concurrently), conditional edges (cold storage fallback), and state persistence between nodes.</p>
+          <p style="font-size:12px">Alternative: <span class="tech-pill">CrewAI</span> — simpler setup, less control over parallel execution.</p>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-title"><i class="ti ti-file-spreadsheet" aria-hidden="true"></i> Parquet + batch processing</div>
+        <div class="card-body">
+          <p style="margin-bottom:6px"><strong style="font-weight:500">Query engine:</strong> <span class="tech-pill">DuckDB</span></p>
+          <p style="font-size:12px;margin-bottom:8px">Query Parquet files directly from S3 without loading into memory. Sub-second aggregations on tens of millions of rows. Ideal for the pre-filter step.</p>
+          <p style="font-size:12px"><strong style="font-weight:500">Ingestion batch:</strong> <span class="tech-pill">Apache Spark</span> or <span class="tech-pill">Ray Data</span> for parallel PDF processing at scale.</p>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-title"><i class="ti ti-brain" aria-hidden="true"></i> Metadata classifier</div>
+        <div class="card-body">
+          <p style="margin-bottom:6px"><strong style="font-weight:500">Model:</strong> <span class="tech-pill">distilbert-base-uncased</span> fine-tuned on ILDC</p>
+          <p style="font-size:12px;margin-bottom:8px">Dataset: <strong style="font-weight:500">ILDC (Indian Legal Documents Corpus)</strong> — 35k labeled SC cases with 9 categories. Fine-tune for area_of_law + case_type in ~2hrs on A100.</p>
+          <p style="font-size:12px">For hackathon: use a keyword-based heuristic as baseline, replace with fine-tuned classifier in production.</p>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-title"><i class="ti ti-cluster" aria-hidden="true"></i> Offline clustering</div>
+        <div class="card-body">
+          <p style="margin-bottom:6px"><strong style="font-weight:500">Algorithm:</strong> <span class="tech-pill">k-means (k=500)</span> via FAISS</p>
+          <p style="font-size:12px;margin-bottom:8px">FAISS k-means scales to 40M vectors efficiently. Run weekly as a batch job. Store centroids in PostgreSQL. For each new case, centroid assignment is a single nearest-neighbor lookup — microseconds.</p>
+          <p style="font-size:12px">Alternative: HDBSCAN for density-based clustering — finds natural cluster count but harder to assign new points.</p>
+        </div>
+      </div>
+    </div>
+
+    <hr class="divider">
+    <p class="section-title" style="margin-bottom:8px">Implementation priority for hackathon</p>
+    <div class="steps">
+      <div class="step"><div class="step-num">1</div><div class="step-content"><div class="step-title">Mock the data store</div><div class="step-body">For demo, use a curated dataset of 500-1000 SC/HC cases in a chosen area (service law). Full ingestion pipeline can be shown architecturally.</div></div></div>
+      <div class="step"><div class="step-num">2</div><div class="step-content"><div class="step-title">Build retrieval first</div><div class="step-body">Keyword-based pre-filter + pgvector similarity + cross-encoder. This is the backbone — demo it working with real results.</div></div></div>
+      <div class="step"><div class="step-num">3</div><div class="step-content"><div class="step-title">Agent 4 is the showpiece</div><div class="step-body">For demo, you can hardcode Agent 1 output and have Agent 4 (Recommendation) produce the live result. The verdict + reasoning is what impresses evaluators.</div></div></div>
+      <div class="step"><div class="step-num">4</div><div class="step-content"><div class="step-title">Rules engine is your differentiator</div><div class="step-body">Real limitation period calculation with actual dates is concrete and verifiable. Evaluators can check the math. Shows you understand the domain.</div></div></div>
+    </div>
+  </div>
+</div>
+
+<script>
+function switchTab(idx) {
+  document.querySelectorAll('.tab').forEach((t,i) => t.classList.toggle('active', i===idx));
+  document.querySelectorAll('.panel').forEach((p,i) => p.classList.toggle('active', i===idx));
+}
+</script>

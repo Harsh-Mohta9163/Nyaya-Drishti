@@ -1,5 +1,6 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion } from 'motion/react';
+import { apiGetRecommendation } from '../api';
 
 const PrecedentCard = ({ 
   id, 
@@ -101,7 +102,32 @@ const PrecedentCard = ({
   );
 };
 
-export const Precedents = () => {
+export const Precedents = ({ caseId = "mock-id" }: { caseId?: string }) => {
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [recommendation, setRecommendation] = useState<any>(null);
+
+  useEffect(() => {
+    const fetchRecommendation = async () => {
+      setLoading(true);
+      try {
+        const data = await apiGetRecommendation({
+          case_id: caseId,
+          area_of_law: 'constitutional',
+          case_text: 'The petitioner filed a writ petition challenging the arbitrary dismissal from service without due process or a proper inquiry under Article 311 of the Constitution.'
+        });
+        setRecommendation(data);
+      } catch (err: any) {
+        console.error(err);
+        setError(err.message);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchRecommendation();
+  }, [caseId]);
+
   return (
     <div className="flex flex-col lg:flex-row gap-10 py-8">
       {/* Main content */}
@@ -114,6 +140,7 @@ export const Precedents = () => {
             Similar Cases & RAG Evidence
           </h2>
           <div className="flex items-center gap-3">
+            {loading && <span className="text-primary-blue text-xs animate-pulse">Running AI Inference (Llama 70B)...</span>}
             <span className="text-[10px] font-black uppercase tracking-widest text-on-surface-variant">Sort by:</span>
             <select className="bg-surface-container/50 border border-outline-variant/30 rounded-lg px-3 py-1.5 text-[10px] font-bold text-on-surface-variant uppercase tracking-widest outline-none focus:border-primary-blue/50">
               <option>Similarity Score</option>
@@ -123,7 +150,27 @@ export const Precedents = () => {
           </div>
         </div>
 
+        {error && (
+          <div className="p-4 bg-error-red/10 border border-error-red/30 rounded-xl text-error-red text-sm">
+            Error loading RAG recommendations: {error}
+          </div>
+        )}
+
         <div className="space-y-6">
+          {recommendation && recommendation.verdict && (
+            <div className="p-6 mb-6 bg-primary-blue/5 border border-primary-blue/20 rounded-2xl">
+              <h3 className="text-primary-blue font-bold mb-2">Live AI Recommendation</h3>
+              <p className="text-on-surface-variant text-sm mb-4">{recommendation.primary_reasoning}</p>
+              <div className="flex gap-4">
+                <span className="px-3 py-1 bg-surface-dim rounded-lg text-xs font-bold border border-outline-variant/30 text-on-surface">
+                  Decision: <span className="text-primary-blue">{recommendation.verdict.decision}</span>
+                </span>
+                <span className="px-3 py-1 bg-surface-dim rounded-lg text-xs font-bold border border-outline-variant/30 text-on-surface">
+                  Analyzed Precedents: <span className="text-amber-400">{recommendation.statistical_basis?.similar_cases_analyzed || 0}</span>
+                </span>
+              </div>
+            </div>
+          )}
           <PrecedentCard 
             id="#SC-2022-81"
             title="ABC Corp vs Union of India"

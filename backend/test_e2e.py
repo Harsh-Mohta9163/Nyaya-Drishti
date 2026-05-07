@@ -116,8 +116,8 @@ def stage_4_rag_retrieval(case_text: str) -> list:
 def stage_5_recommendation(case_id: str, case_text: str, area_of_law: str, court: str, **kwargs) -> dict:
     """Full 4-Agent Recommendation Pipeline V2."""
     print(f"\n  🧠 Stage 5: 4-Agent Recommendation Pipeline V2...")
-    print(f"     Agent 1 (Research/NVIDIA) → Agent 2 (Arguments/NVIDIA) → Agent 3 (Risk/NVIDIA) → Agent 4 (Synthesis/Gemini)")
-    print(f"     This will take 2-4 minutes (3 NVIDIA + 1 Gemini call)...\n")
+    print(f"     Agent 1 (Research/NVIDIA) → Agent 2 (Arguments/NVIDIA) → Agent 3 (Risk/NVIDIA) → Agent 4 (Synthesis/NVIDIA)")
+    print(f"     This will take 2-4 minutes (4 NVIDIA Llama 3.3 70B calls)...\n")
 
     result = generate_recommendation(
         case_id=case_id,

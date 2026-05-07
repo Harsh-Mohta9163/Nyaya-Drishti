@@ -156,53 +156,16 @@ def _call_nvidia(prompt: str, response_model, system_prompt: str, model: str = "
             time.sleep(8 * (attempt + 1))
 
 
-def _call_gemini(prompt: str, response_model, system_prompt: str) -> BaseModel:
-    """Call Gemini 2.5 Pro for the final synthesis agent."""
-    try:
-        from google import genai
-    except ImportError:
-        logger.warning("google-genai not installed, falling back to NVIDIA")
-        return _call_nvidia(prompt, response_model, system_prompt)
-
-    api_key = getattr(settings, "GEMINI_API_KEY", "")
-    if not api_key:
-        logger.warning("No GEMINI_API_KEY, falling back to NVIDIA")
-        return _call_nvidia(prompt, response_model, system_prompt)
-
-    example_json = _build_example_json(response_model)
-    full_prompt = f"{system_prompt}\n\n{prompt}\n\nRespond ONLY with valid JSON matching this structure:\n{example_json}"
-
-    client = genai.Client(api_key=api_key)
-    models_to_try = [
-        getattr(settings, "GEMINI_PRO_MODEL", "gemini-2.5-pro"),
-        getattr(settings, "GEMINI_FLASH_MODEL", "gemini-2.5-flash"),
-    ]
-
-    for model_name in models_to_try:
+def _call_synthesis(prompt: str, response_model, system_prompt: str) -> BaseModel:
+    """Call NVIDIA NIM for the synthesis agent (Agent 4).
+    Uses Llama 3.3 70B as the primary model.
+    """
+    # Primary: Llama 3.3 70B (best available on NVIDIA NIM for reasoning)
+    for model in ["meta/llama-3.3-70b-instruct"]:
         try:
-            logger.info(f"[Gemini] Calling {model_name} for {response_model.__name__}")
-            response = client.models.generate_content(
-                model=model_name,
-                contents=full_prompt,
-                config=genai.types.GenerateContentConfig(
-                    temperature=0.15,
-                    response_mime_type="application/json",
-                ),
-            )
-            content = response.text
-            logger.info(f"[Gemini] Response ({len(content)} chars): {content[:150]}...")
-            return response_model.model_validate_json(content)
+            return _call_nvidia(prompt, response_model, system_prompt, model=model)
         except Exception as e:
-            logger.warning(f"[Gemini] {model_name} failed: {e}")
-            time.sleep(3)
-
-    # Final fallback: NVIDIA DeepSeek V4 Pro → Llama 3.3 70B
-    logger.warning("[Gemini] All Gemini models failed. Falling back to NVIDIA.")
-    for fallback_model in ["deepseek-ai/deepseek-v4-pro", "meta/llama-3.3-70b-instruct"]:
-        try:
-            return _call_nvidia(prompt, response_model, system_prompt, model=fallback_model)
-        except Exception as e:
-            logger.warning(f"[NVIDIA Fallback] {fallback_model} failed: {e}")
+            logger.warning(f"[Synthesis] {model} failed: {e}")
     raise RuntimeError("All LLM providers failed for Agent 4")
 
 
@@ -263,13 +226,40 @@ def generate_recommendation(
     appeal_info = _determine_appeal_forum(court, bench, case_type)
 
     # ---------------------------------------------------------
-    # Stage 1: RAG Retrieval
+    # Stage 1: RAG Retrieval (with dedup + score threshold)
     # ---------------------------------------------------------
     rag = HybridRAGEngine()
-    retrieved_chunks = rag.retrieve(case_text[:2000], top_k=10, filters=None)
+    raw_chunks = rag.retrieve(case_text[:2000], top_k=15, filters=None)
+
+    # Group by case_id to provide multiple chunks per case (broader context)
+    grouped_cases = {}
+    for c in (raw_chunks or []):
+        cid = c.get('metadata', {}).get('case_id', c.get('metadata', {}).get('title', ''))
+        score = c.get('score', 0)
+        
+        if score < 1.0:
+            logger.info(f"Dropping weak chunk (score {score:.2f}): {cid}")
+            continue
+            
+        if cid not in grouped_cases:
+            grouped_cases[cid] = {
+                "metadata": c.get('metadata', {}),
+                "score": score,
+                "texts": []
+            }
+            
+        # Keep up to 3 chunks per case
+        if len(grouped_cases[cid]["texts"]) < 3:
+            grouped_cases[cid]["texts"].append(c.get('text', ''))
+
+    # Flatten and sort by highest score
+    retrieved_chunks = list(grouped_cases.values())
+    retrieved_chunks.sort(key=lambda x: x["score"], reverse=True)
+    retrieved_chunks = retrieved_chunks[:8]  # Cap at 8 unique cases
+    logger.info(f"RAG: {len(raw_chunks or [])} raw → {len(retrieved_chunks)} unique grouped precedents")
 
     if not retrieved_chunks:
-        logger.warning("No precedents found.")
+        logger.warning("No strong precedents found.")
         stuffed_context = "No direct precedents found in the database."
     else:
         stuffed_context = "\n\n".join([
@@ -279,7 +269,7 @@ def generate_recommendation(
             f"Court: {c['metadata'].get('court', 'Unknown')}\n"
             f"Outcome: {c['metadata'].get('disposal_nature', 'Unknown')}\n"
             f"Similarity Score: {c.get('score', 0):.2f}\n"
-            f"Judgment Text:\n{c['text'][:800]}"
+            f"Judgment Excerpts:\n" + "\n[...] ".join(c['texts'])[:2500]
             for i, c in enumerate(retrieved_chunks)
         ])
 
@@ -297,11 +287,12 @@ def generate_recommendation(
             break
 
     store = DuckDBStore(data_dir=parquet_dir) if parquet_dir else DuckDBStore()
-    # Don't filter by broken area_of_law — compute overall stats
-    stats = store.compute_win_rates(area_of_law="", court=court)
-    if stats.get("error"):
-        # Try without court filter
+    # Try with area_of_law filter first, then without
+    stats = store.compute_win_rates(area_of_law=area_of_law, court="")
+    if stats.get("error") or stats.get("total_cases_analyzed", 0) == 0:
+        # Retry without area_of_law filter to get overall corpus stats
         stats = store.compute_win_rates(area_of_law="", court="")
+    logger.info(f"DuckDB stats: {stats}")
     stats_text = json.dumps(stats, indent=2) if not stats.get("error") else "No statistical data available."
 
     # ---------------------------------------------------------
@@ -403,9 +394,9 @@ Assess all risks and limitations."""
     agent3_out = _call_nvidia(agent3_prompt, Agent3Output, agent3_sys)
 
     # ---------------------------------------------------------
-    # AGENT 4: Chief Legal Advisor (Gemini 2.5 Pro)
+    # AGENT 4: Chief Legal Advisor (NVIDIA Llama 3.3 70B)
     # ---------------------------------------------------------
-    logger.info("Running Agent 4 (Chief Legal Advisor — Gemini 2.5 Pro)...")
+    logger.info("Running Agent 4 (Chief Legal Advisor — NVIDIA Llama 3.3 70B)...")
     agent4_sys = """You are the Chief Legal Advisor to the Government of India, responsible for making the final decision on whether to APPEAL or COMPLY with a court order.
 
 YOUR TASK: Synthesize ALL inputs from the previous 3 agents and make a definitive recommendation.
@@ -470,7 +461,7 @@ Procedural Issues: {json.dumps(agent3_out.procedural_loopholes, indent=2)}
 
 Make your final recommendation. Remember: use the CORRECT NEXT APPELLATE FORUM from the case details."""
 
-    agent4_out = _call_gemini(agent4_prompt, Agent4Output, agent4_sys)
+    agent4_out = _call_synthesis(agent4_prompt, Agent4Output, agent4_sys)
 
     # ---------------------------------------------------------
     # Limitation Deadline Calculation
