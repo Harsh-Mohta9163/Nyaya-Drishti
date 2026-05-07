@@ -12,7 +12,7 @@
 
 ---
 
-## 📋 Problem Statement
+## Problem Statement
 
 The **Court Case Monitoring System (CCMS)** — integrated with the High Court's CIS — automatically fetches judgment PDFs once a case is disposed. These judgments contain critical directives requiring timely administrative decisions: whether to comply, who is responsible, whether to appeal, and the limitation period.
 
@@ -26,7 +26,7 @@ The **Court Case Monitoring System (CCMS)** — integrated with the High Court's
 
 ---
 
-## 🏗️ System Architecture
+## System Architecture
 
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
@@ -44,20 +44,20 @@ The **Court Case Monitoring System (CCMS)** — integrated with the High Court's
 │                                                   │                 │
 │  ┌────────────────────────────────────────────────▼──────────────┐  │
 │  │           4-AGENT EXTRACTION PIPELINE                         │  │
-│  │  Agent 1: Registry Clerk (Groq 8B) → metadata, parties       │  │
-│  │  Agent 2: Legal Analyst  (NVIDIA 70B) → facts, issues        │  │
-│  │  Agent 3: Precedent Scholar (NVIDIA 70B) → ratio, citations  │  │
-│  │  Agent 4: Compliance Officer (Groq 8B) → directives, risk    │  │
+│  │  Agent 1: Registry Clerk → metadata, parties       │  │
+│  │  Agent 2: Legal Analyst  → facts, issues        │  │
+│  │  Agent 3: Precedent Scholar → ratio, citations  │  │
+│  │  Agent 4: Compliance Officer → directives, risk    │  │
 │  └──────────────────────────────────────────────────────────────┘  │
 │                                                                     │
 │  ┌──────────────────────────────────────────────────────────────┐  │
 │  │        4-AGENT RAG RECOMMENDATION PIPELINE V2                 │  │
 │  │  Hybrid RAG: BM25 + InLegalBERT Dense + RRF + Cross-Encoder  │  │
 │  │  DuckDB Parquet Analytics (win-rate stats from 50K+ cases)    │  │
-│  │  Agent 1: Precedent Researcher (Gemini 2.5 Pro)               │  │
-│  │  Agent 2: Devil's Advocate (Gemini 2.5 Pro)                   │  │
-│  │  Agent 3: Risk Auditor (Gemini 2.5 Pro)                       │  │
-│  │  Agent 4: Decision Synthesizer (Gemini 2.5 Pro)               │  │
+│  │  Agent 1: Precedent Researcher                                  │  │
+│  │  Agent 2: Devil's Advocate                                      │  │
+│  │  Agent 3: Risk Auditor                                        │  │
+│  │  Agent 4: Decision Synthesizer                                  │  │
 │  └──────────────────────────────────────────────────────────────┘  │
 │                                                                     │
 │  ┌────────────────┐  ┌──────────────────┐  ┌────────────────────┐  │
@@ -77,7 +77,7 @@ The **Court Case Monitoring System (CCMS)** — integrated with the High Court's
 
 ---
 
-## 🔄 End-to-End Flow
+## End-to-End Flow
 
 ### Phase 1 — Extract (Understand the Judgment)
 
@@ -116,7 +116,7 @@ Extracted Judgment Data
         ├─→ Court Hierarchy Logic ──→ Correct appellate forum
         │     (Single Judge → Division Bench → Supreme Court)
         │
-        └─→ 4-Agent Recommendation Pipeline V2 (Gemini 2.5 Pro)
+        └─→ 4-Agent Recommendation Pipeline V2 (Llama 3.3 70B)
               Agent 1: Precedent Researcher → trend analysis
               Agent 2: Devil's Advocate → pro/con arguments
               Agent 3: Risk Auditor → contempt/financial risk
@@ -146,7 +146,7 @@ The **Verify Actions** tab provides:
 
 ---
 
-## 🛠️ Tech Stack
+## Tech Stack
 
 | Layer | Technology | Purpose |
 |-------|-----------|---------|
@@ -171,7 +171,7 @@ The **Verify Actions** tab provides:
 
 ---
 
-## 📁 Project Structure
+## Project Structure
 
 ```
 Nyaya-Drishti/
@@ -229,13 +229,13 @@ Nyaya-Drishti/
 
 ---
 
-## 🚀 Getting Started
+## Getting Started
 
 ### Prerequisites
 
 - Python 3.12+
 - Node.js 20+
-- API keys for: **NVIDIA NIM** (Llama 70B), **Groq** (Llama 8B), **Google Gemini** (2.5 Pro)
+- API keys for: **NVIDIA NIM** (Llama 70B), **Groq** (Llama 8B)
 
 ### 1. Backend Setup
 
@@ -308,15 +308,14 @@ python manage.py import_kaggle_embeddings --path /path/to/downloaded/
 
 ---
 
-## 🌐 Deployed URL
+## Deployed URL
 
-> **[Deployment URL will be added here]**
+> **Live Demo:** [Nyaya Drishti Portal](https://nyaya-drishti.onrender.com/)
 >
-> _Backend: Render · Frontend: Vercel/Netlify_
 
 ---
 
-## 📊 Evaluation Criteria Mapping
+## Evaluation Criteria Mapping
 
 ### 1. Accuracy of Extraction
 
@@ -369,7 +368,7 @@ python manage.py import_kaggle_embeddings --path /path/to/downloaded/
 
 ---
 
-## 🔑 API Endpoints
+## API Endpoints
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
@@ -387,13 +386,12 @@ python manage.py import_kaggle_embeddings --path /path/to/downloaded/
 
 ---
 
-## 🤖 ML Models Used
+## ML Models Used
 
 | Model | Source | Purpose | Runs On |
 |-------|--------|---------|---------|
 | **Llama 3.1 8B Instant** | Groq Cloud | Fast extraction (Agents 1 & 4) | Cloud API |
 | **Llama 3.3 70B Instruct** | NVIDIA NIM | Complex reasoning (Agents 2 & 3) | Cloud API |
-| **Gemini 2.5 Pro** | Google AI | RAG recommendation pipeline (4 agents) | Cloud API |
 | **InLegalBERT** | `law-ai/InLegalBERT` | Legal embeddings (768-dim) | Local (CPU/GPU) |
 | **InLegalBERT (fine-tuned)** | Custom training | Contempt risk classification | Local (CPU) |
 | **ms-marco-MiniLM-L-6-v2** | `cross-encoder/` | Cross-encoder reranking | Local (CPU) |
@@ -401,12 +399,12 @@ python manage.py import_kaggle_embeddings --path /path/to/downloaded/
 
 ---
 
-## 👥 Team
+## Team
 
 Built for the **Centre for e-Governance Hackathon** — Theme 11: Court Judgments to Verified Action Plans.
 
 ---
 
-## 📄 License
+## License
 
 This project is licensed under the MIT License.
