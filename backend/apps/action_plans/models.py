@@ -71,6 +71,9 @@ class ActionPlan(models.Model):
     appeal_strategy = models.TextField(blank=True)
     appeal_precedents = models.JSONField(default=list)
     
+    # RAG Pipeline output cache
+    full_rag_recommendation = models.JSONField(null=True, blank=True)
+    
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

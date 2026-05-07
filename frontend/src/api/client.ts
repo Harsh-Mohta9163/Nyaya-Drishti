@@ -156,6 +156,14 @@ export async function fetchCase(caseId: string): Promise<CaseData> {
 }
 
 /**
+ * Call the RAG Recommendation Pipeline for a specific case.
+ * POST /api/action-plans/{caseId}/recommend/
+ */
+export async function fetchRecommendation(caseId: string): Promise<any> {
+  return apiPost<any>(`/api/action-plans/${caseId}/recommend/`, {});
+}
+
+/**
  * Upload a PDF and run the full extraction pipeline.
  * POST /api/cases/extract/ with multipart form containing pdf_file.
  * Returns the fully extracted CaseData.

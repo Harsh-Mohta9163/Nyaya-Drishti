@@ -39,6 +39,7 @@ class GenerateRecommendationView(APIView):
         
         # If pk is provided, try to load from DB
         case_id = request.data.get("case_id", "mock-id")
+        case = None
         if pk:
             from apps.cases.models import Case
             try:
@@ -46,8 +47,28 @@ class GenerateRecommendationView(APIView):
                 case_id = case.cnr_number or str(case.id)
                 if hasattr(case, 'facts') and case.facts:
                     case_text = case.facts
+                # Use judgment's summary_of_facts if facts is empty
+                elif case.judgments.exists() and case.judgments.first().summary_of_facts:
+                    case_text = case.judgments.first().summary_of_facts
+                    
+                court = case.court_name or court
+                area_of_law = case.area_of_law or area_of_law
             except Exception:
                 pass
+                
+        # Check cache if we have a valid case
+        action_plan = None
+        if case and case.judgments.exists():
+            judgment = case.judgments.first()
+            from apps.action_plans.models import ActionPlan
+            action_plan, _ = ActionPlan.objects.get_or_create(
+                judgment=judgment,
+                defaults={"recommendation": "PENDING", "ccms_stage": "Extraction"}
+            )
+            
+            # If we already have the full recommendation cached, return it directly
+            if action_plan.full_rag_recommendation:
+                return Response(action_plan.full_rag_recommendation, status=status.HTTP_200_OK)
                 
         try:
             recommendation = generate_recommendation(
@@ -56,6 +77,14 @@ class GenerateRecommendationView(APIView):
                 area_of_law=area_of_law,
                 court=court
             )
+            
+            # Cache it
+            if action_plan:
+                action_plan.full_rag_recommendation = recommendation
+                # Update high-level fields too
+                action_plan.recommendation = recommendation.get("verdict", {}).get("decision", "PENDING")
+                action_plan.save()
+                
             return Response(recommendation, status=status.HTTP_200_OK)
         except Exception as e:
             import traceback

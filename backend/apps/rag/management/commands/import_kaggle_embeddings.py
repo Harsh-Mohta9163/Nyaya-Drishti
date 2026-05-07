@@ -16,9 +16,12 @@ class Command(BaseCommand):
     def add_arguments(self, parser):
         parser.add_argument("--path", type=str, required=True,
                           help="Path to folder containing sc_embeddings.parquet and/or hc_embeddings.parquet")
+        parser.add_argument("--offset", type=int, default=0,
+                          help="Offset to start importing from (useful for resuming)")
 
     def handle(self, *args, **options):
         import_path = options["path"]
+        offset = options["offset"]
         
         # Import ChromaDB with the InLegalBERT embedding function
         from apps.action_plans.services.rag_engine import _get_collection, _rebuild_bm25
@@ -36,9 +39,12 @@ class Command(BaseCommand):
             df = pd.read_parquet(filepath)
             self.stdout.write(f"  Loaded {len(df)} chunks")
             
+            # Apply offset if provided
+            start_idx = offset if offset > 0 else 0
+            
             # Process in batches to avoid memory issues
             batch_size = 500
-            for i in range(0, len(df), batch_size):
+            for i in range(start_idx, len(df), batch_size):
                 batch = df.iloc[i:i+batch_size]
                 
                 ids = batch['chunk_id'].tolist()
