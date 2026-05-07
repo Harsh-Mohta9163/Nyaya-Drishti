@@ -62,53 +62,32 @@
         }
       },
       "properties": {
-        "disposition": {
-          "description": "Outcome word: 'Allowed', 'Dismissed', 'Partly Allowed', 'Disposed of', 'Remanded'.",
-          "title": "Disposition",
-          "type": "string"
-        },
-        "winning_party_type": {
-          "description": "Who won: 'Petitioner', 'Respondent', 'None'.",
-          "title": "Winning Party Type",
-          "type": "string"
-        },
-        "court_directions": {
-          "description": "List of ACTIONABLE compliance directives.",
-          "items": {
-            "$ref": "#/$defs/DirectiveExtraction"
+        "court_directions": [
+          {
+            "text": "The respondent-State be permitted to proceed with appointing teachers from 13352 selected candidates as per the list dated 08.03.2023 produced at Annexure-R6 to the affidavit.",
+            "responsible_entity": "Respondent-State",
+            "action_required": "Proceed with appointing teachers from 13352 selected candidates",
+            "deadline_mentioned": null
           },
-          "title": "Court Directions",
-          "type": "array"
-        },
-        "financial_implications": {
-          "description": "Any monetary orders: costs, fines, deposits.",
-          "items": {
-            "type": "string"
+          {
+            "text": "The appointment of the candidates who have not submitted the caste cum income certificate in the form prescribed in the notification and which is not in terms of Government Order dated 12.12.1986, and who are included in the list in view of the order passed by learned Single Judge be deferred until the outcome of the result of the challenge.",
+            "responsible_entity": "Respondent-State",
+            "action_required": "Deferred appointment of candidates without caste cum income certificate",
+            "deadline_mentioned": null
           },
-          "title": "Financial Implications",
-          "type": "array"
-        },
-        "contempt_indicators": {
-          "description": "Phrases suggesting contempt risk: compliance warnings, personal appearance.",
-          "items": {
-            "type": "string"
-          },
-          "title": "Contempt Indicators",
-          "type": "array"
-        },
-        "contempt_risk": {
-          "description": "'High', 'Medium', or 'Low' risk.",
-          "title": "Contempt Risk",
-          "type": "string"
-        },
-        "entities": {
-          "description": "Additional named entities in the operative order (departments, officials).",
-          "items": {
-            "type": "string"
-          },
-          "title": "Entities",
-          "type": "array"
-        }
+          {
+            "text": "If in the event the eligibility of such candidates who have not furnished the caste cum income certificate in the prescribed form is held to be invalid, such posts may be filled from amongst the candidates who have been excluded on merits and the candidates who have submitted certificates in the prescribed form.",
+            "responsible_entity": "Respondent-State",
+            "action_required": "Fill posts from candidates excluded on merits or with certificates",
+            "deadline_mentioned": null
+          }
+        ],
+        "financial_implications": [],
+        "contempt_indicators": [],
+        "contempt_risk": "Low",
+        "entities": [],
+        "disposition": "Partly Allowed",
+        "winning_party_type": "Respondent-State"
       },
       "required": [
         "disposition",
@@ -120,153 +99,156 @@
         "entities"
       ],
       "title": "ComplianceExtraction",
-      "type": "object",
-      "court_directions": [
-        {
-          "text": "The respondent-State be permitted to proceed with appointing teachers from 13352 selected candidates as per the list dated 08.03.2023 produced at Annexure-R6 to the affidavit.",
-          "responsible_entity": "Respondent-State",
-          "action_required": "Proceed with appointing teachers from 13352 selected candidates",
-          "deadline_mentioned": null
-        },
-        {
-          "text": "The appointment of the candidates who have not submitted the caste cum income certificate in the form prescribed in the notification and which is not in terms of Government Order dated 12.12.1986, and who are included in the list in view of the order passed by learned Single Judge be deferred until the outcome of the result of the challenge.",
-          "responsible_entity": "Respondent-State",
-          "action_required": "Deferred appointment of candidates without caste cum income certificate",
-          "deadline_mentioned": null
-        },
-        {
-          "text": "If in the event the eligibility of such candidates who have not furnished the caste cum income certificate in the prescribed form is held to be invalid, such posts may be filled from amongst the candidates who have been excluded on merits and the candidates who have submitted certificates in the prescribed form.",
-          "responsible_entity": "Respondent-State",
-          "action_required": "Fill posts from candidates excluded on merits or with certificates",
-          "deadline_mentioned": null
-        }
-      ],
-      "disposition": "Partly Allowed",
-      "winning_party_type": "Respondent-State",
-      "financial_implications": [],
-      "contempt_indicators": [],
-      "contempt_risk": "Low",
-      "entities": []
+      "type": "object"
     },
     "analyst": {
-      "summary_of_facts": "The Karnataka High Court heard a batch of writ appeals challenging the order of a single judge, which quashed the provisional selection list for the recruitment of Graduate Primary School Teachers. The appellants, who were not parties to the writ petition, argued that the writ petition was not maintainable due to the bar contained under Article 323A of the Constitution of India and Section 15 of the Administrative Tribunals Act, 1985. The court considered the nature and scope of the issue involved, the applicable provisions of law, and the judgments of the Apex Court. The court ultimately set aside the impugned order and permitted the respondent-State to proceed with appointing teachers from the selected candidates, subject to certain conditions.",
+      "summary_of_facts": "The Karnataka High Court heard a series of writ appeals challenging an order passed by a single judge, which quashed a provisional selection list for the recruitment of Graduate Primary School Teachers. The appeals were filed by candidates who were not parties to the original writ petition. The court considered the maintainability of the writ petition, the jurisdiction of the Deputy Director of Public Instruction to interpret caste and income certificates, and the validity of the Government Order dated 12.12.1986. The court ultimately set aside the impugned order and permitted the State Government to proceed with appointing teachers from a list of 13,352 selected candidates, while deferring the appointment of candidates who had not submitted the required caste cum income certificate.",
       "issues_framed": [
-        "Whether the writ petition is maintainable in view of the bar contained under Article 323A of the Constitution of India and in view of Section 15 of the Act, 1985.",
-        "Whether a validly issued income certificate in terms of Government Order dated 12.12.1986 could have been invalidated by the learned Single Judge without there being a challenge to the said Government Order.",
-        "Whether without impleading the appellants who are the selected candidates, as party/respondents to the writ petition, the provisional list could have been set aside."
+        "Whether the writ petition is maintainable in view of the bar contained under Article 323A of the Constitution of India and in view of Section 15 of the Act, 1985?",
+        "Whether a validly issued income certificate in terms of Government Order dated 12.12.1986 could have been invalidated by the learned Single Judge without there being a challenge to the said Government Order?",
+        "Whether without impleading the appellants who are the selected candidates, as party/respondents to the writ petition, the provisional list could have been set aside?"
       ]
     },
     "scholar": {
-      "ratio_decidendi": "The court held that the writ petition filed by the respondent Nos. 27 to 47 seeking reliefs was not entertainable under Article 226 of the Constitution of India, as the matter pertained to the process of recruitment to civil services, which falls within the exclusive jurisdiction of the Administrative Tribunal under the Administrative Tribunals Act, 1985.",
+      "ratio_decidendi": "The court held that the writ petition was not maintainable under Article 226 of the Constitution of India, as the matter pertained to a service concerning a post of civil service of the state, which falls within the jurisdiction of the Administrative Tribunal. The court also held that the decision of the selecting authority to consider the caste and income of the husband of a married woman candidate was in accordance with the Government Order dated 12.12.1986, and that the learned Single Judge erred in quashing the notification without there being a challenge to the said Government Order.",
       "area_of_law": "Service Law",
-      "primary_statute": "Administrative Tribunals Act, 1985",
+      "primary_statute": "Karnataka Education Department Services (Department of Public Instruction) (Recruitment) Rules, 1967",
       "citations": [
         {
-          "case_name": "L.Chandra Kumar Vs. Union of India",
+          "case_name": "L. Chandra Kumar vs. Union of India",
           "citation_ref": "(1997) 3 SCC 261",
           "context": "relied_upon",
-          "principle_extracted": null
+          "principle_extracted": "The Administrative Tribunals have jurisdiction to consider all matters covered under the Act, including issues relating to constitutional validity of provisions relating to recruitment of employees and regulations governing service conditions."
         },
         {
-          "case_name": "T.K.Rangarajan Vs State of Tamil Nadu and others",
+          "case_name": "T.K. Rangarajan vs. State of Tamil Nadu",
           "citation_ref": "(2003) 6 SCC 581",
           "context": "distinguished",
-          "principle_extracted": null
+          "principle_extracted": "The High Court has jurisdiction to entertain a petition under Article 226 of the Constitution of India in an unprecedented extraordinary situation having no parallel."
         },
         {
-          "case_name": "Surinder Singh Vs Punjab State Electricity Board and others",
-          "citation_ref": "(2014) 15 SCC 767",
-          "context": "referred",
-          "principle_extracted": null
-        },
-        {
-          "case_name": "Sunitha Singh Vs State of UP",
-          "citation_ref": "(2018) 2 SCC 493",
-          "context": "referred",
-          "principle_extracted": null
-        },
-        {
-          "case_name": "State of Karnataka Vs Smt.Yoeshwari and anr",
-          "citation_ref": "W.P.No.24115/2018 and connected cases",
-          "context": "referred",
-          "principle_extracted": null
-        },
-        {
-          "case_name": "Executive Director, Karnataka Examination Authority and Selection Authority, Malleswaram, Bangalore Vs State of Karnataka and anr",
-          "citation_ref": "(2018) SCC Online Karnataka 4112",
-          "context": "referred",
-          "principle_extracted": null
-        },
-        {
-          "case_name": "Union of India Vs Alapan Bandyopadhyaya",
+          "case_name": "Union of India vs. Alapan Bandyopadhyay",
           "citation_ref": "(2022) 3 SCC 133",
           "context": "relied_upon",
-          "principle_extracted": null
-        },
-        {
-          "case_name": "Rajendra Diwan vs. Pradeep Kumar Ranibala",
-          "citation_ref": "(2019) 20 SCC 143",
-          "context": "referred",
-          "principle_extracted": null
+          "principle_extracted": "The Administrative Tribunals have jurisdiction to consider all matters covered under the Act, and the High Court's jurisdiction is limited to judicial review of the decisions of the Tribunals."
         }
       ],
       "entities": [
-        "Administrative Tribunal",
-        "Karnataka Education Department Services",
+        "Karnataka Education Department",
         "Department of Public Instruction",
-        "Karnataka State Civil Services Act, 1978",
-        "Article 323A of the Constitution of India",
-        "Article 16(4) of the Constitution of India",
-        "Karnataka Scheduled Castes, Scheduled Tribes and other Backward Classes (Reservation of Appointments etc.) Act, 1990",
-        "Karnataka Scheduled Caste, Scheduled Tribes and Backward Classes (Reservation of Appointment etc.) Rules, 1992"
+        "Administrative Tribunal",
+        "High Court of Karnataka"
       ]
     }
   },
   "rag_chunks_count": 10,
   "recommendation": {
-    "recommendation_id": "b3f1cd12-c075-414c-8e90-5c5fa2df4e2d",
+    "recommendation_id": "e08b4e40-2251-43bf-a377-e77ea7c0b301",
     "case_id": "WA No. 305 of 2023",
     "status": "COMPLETED",
     "verdict": {
       "decision": "APPEAL",
       "appeal_to": "Supreme Court of India",
-      "confidence": 0.65,
+      "confidence": 0.7,
       "urgency": "HIGH",
       "limitation_deadline": "2026-08-05",
       "days_remaining": 90
     },
     "statistical_basis": {
-      "similar_cases_analyzed": 10,
-      "government_appeal_win_rate": 0,
-      "dismissed_rate": 0,
-      "total_cases_in_corpus": 0,
+      "similar_cases_analyzed": 8,
+      "government_appeal_win_rate": 0.38,
+      "dismissed_rate": 0.17,
+      "total_cases_in_corpus": 24439,
       "financial_exposure_if_comply": 0
     },
-    "primary_reasoning": "The Division Bench order, while partly allowing the appeal, contains a significant procedural error by not impleading the selected candidates (appellants), which violates principles of natural justice under Article 14. This constitutes a clear legal error, as the candidates' rights were directly affected without a hearing. Although the balance of arguments is mixed, the strong procedural ground and the fact that the case was partly allowed (indicating a reversible error) tilt the scales towards an appeal. The risk of letting this precedent stand on procedural fairness outweighs the moderate financial risk of litigation.",
+    "primary_reasoning": "The Division Bench of the High Court of Karnataka set aside the provisional selection list, which may be considered a strong compliance directive. However, the balance of arguments is assessed as balanced, and the win rate in similar cases is 38%, which is relatively high. Considering the strong appeal grounds, including the potential error in setting aside the provisional selection list without considering the validity of the Government Order dated 12.12.1986, and the support from precedents such as STATE OF U.P. AND ORS. versus BHARAT SINGH AND ORS., an appeal to the Supreme Court of India is recommended. The contempt risk is low, and the financial risk is manageable, which further supports the decision to appeal.",
     "appeal_grounds": [
-      "Violation of principles of natural justice: The Division Bench set aside the single judge's order and permitted appointments without impleading the selected candidates, denying them the right to be heard, which is a fundamental flaw under Article 14 of the Constitution.",
-      "Jurisdictional error: The court overreached by effectively validating the selection process despite the bar on judicial review under Article 323A and Section 15 of the Administrative Tribunals Act, 1985, without proper adjudication on this point.",
-      "Perverse interpretation of precedent: The decision fails to correctly apply the ratio from cases like Khunjamayum Bimoti Devi, which emphasize procedural fairness for affected parties, and instead relies on a pragmatic but legally unsound balancing act."
+      "The High Court erred in setting aside the provisional selection list without considering the validity of the Government Order dated 12.12.1986",
+      "The writ petition was not maintainable in view of the bar contained under Article 323A of the Constitution of India and Section 15 of the Act, 1985",
+      "The learned Single Judge exceeded its jurisdiction by invalidating the income certificates without a challenge to the Government Order"
     ],
     "alternative_routes": [
-      "File a review petition before the same Division Bench of the Karnataka High Court, citing the procedural error of non-joinder, though this is less likely to succeed given the bench's stance.",
-      "Seek impleadment in the original writ petition before the single judge and request a recall of the Division Bench's order, though this is procedurally complex and time-consuming."
+      "Filing a review petition before the Division Bench of the High Court of Karnataka"
     ],
     "action_plan": {
       "immediate_actions": [
-        "Instruct the legal team to draft the Special Leave Petition (SLP) within 30 days, focusing on the natural justice violation and jurisdictional overreach.",
-        "Collect and certify all relevant documents, including the Division Bench order, single judge order, and proof of non-impleadment, within 15 days.",
-        "Engage a Senior Advocate specializing in service law and constitutional matters for the Supreme Court within 7 days."
+        "Prepare and file a Special Leave Petition under Article 136 of the Constitution of India before the Supreme Court of India within 90 days from the date of the order",
+        "Notify all stakeholders, including the selected candidates and the State Government, about the decision to appeal"
       ],
       "financial_actions": [
-        "Allocate a budget of \u20b95-10 lakhs for Supreme Court litigation, including court fees, advocate fees, and miscellaneous expenses.",
-        "Assess the potential financial liability if the appeal fails, including costs for re-conducting the selection process or compensating affected parties, and set aside a contingency fund."
+        "Allocate funds for the appeal proceedings, including court fees and legal expenses"
       ]
     },
-    "risk_summary": "The primary risk is the Supreme Court dismissing the SLP, which would solidify the Division Bench's order and expose the state to contempt if appointments are delayed. The limitation period of 90 days is critical; missing it would bar the appeal. The moderate financial risk is outweighed by the high legal risk of allowing a procedurally flawed order to stand, which could set a dangerous precedent for future selection challenges.",
+    "risk_summary": "The appeal carries a moderate level of risk, including the risk of dismissal, contempt of court proceedings, and financial losses. However, the potential benefits of a successful appeal, including the appointment of selected candidates and the upholding of the Government Order dated 12.12.1986, outweigh the risks.",
     "agent_outputs": {
       "precedent_strength": "MODERATE",
-      "overall_trend": "Precedents suggest that courts generally allow appeals in cases where the selection process is challenged, but the outcome depends on the specific facts and circumstances of each case.",
+      "overall_trend": "The precedents suggest that the courts generally dismiss appeals related to service law and recruitment issues, but there are instances where the courts have allowed appeals and supported the position of the selected candidates.",
+      "precedents": [
+        {
+          "case_id": "ESCR010005322011",
+          "case_title": "STATE OF U.P. AND ORS. versus BHARAT SINGH AND ORS.",
+          "relevance": "Moderate",
+          "key_holding": "The Supreme Court stayed the interim direction of the High Court, allowing the State to appoint selected candidates as principals, subject to the outcome of the appeals.",
+          "outcome": "APPEAL_ALLOWED",
+          "applicability": "SUPPORTS"
+        },
+        {
+          "case_id": "ESCR010004162024",
+          "case_title": "ALI HOSSAIN MANDAL & ORS. versus WEST BENGAL BOARD OF PRIMARY EDUCATION & ORS.",
+          "relevance": "High",
+          "key_holding": "The Division Bench of the High Court directed that the balance vacancies be treated exclusively as part of the 16,500 vacancies pertaining to TET-2014 candidates.",
+          "outcome": "APPEAL_DISMISSED",
+          "applicability": "UNDERMINES"
+        },
+        {
+          "case_id": "ESCR010005392024",
+          "case_title": "MUKUL KUMAR TYAGI versus THE STATE OF UTTAR PRADESH AND OTHERS",
+          "relevance": "Moderate",
+          "key_holding": "The Supreme Court allowed the appeals, setting aside the judgment and order of the Division Bench of the Allahabad High Court.",
+          "outcome": "APPEAL_ALLOWED",
+          "applicability": "SUPPORTS"
+        },
+        {
+          "case_id": "ESCR010003882005",
+          "case_title": "SRI M. PURANDARA AND ORS. versus MAHADESHA S. AND ORS.",
+          "relevance": "High",
+          "key_holding": "The Supreme Court held that the High Court adjudicated an issue that was not the subject-matter of challenge, and persons affected by the decision were not impleaded as parties.",
+          "outcome": "APPEAL_DISMISSED",
+          "applicability": "UNDERMINES"
+        },
+        {
+          "case_id": "ESCR010009622008",
+          "case_title": "DHANANJAY MALIK AND ORS. versus STATE OF UTTARANCHAL AND ORS.",
+          "relevance": "Moderate",
+          "key_holding": "The Supreme Court stayed the operation of the High Court's order, allowing the selected candidates to continue holding their posts.",
+          "outcome": "APPEAL_ALLOWED",
+          "applicability": "SUPPORTS"
+        },
+        {
+          "case_id": "ESCR010004842005",
+          "case_title": "K. CHANNEGOWDA AND ORS. versus KARNATAKA PUBLIC SERVICE COMMISSION AND ORS.",
+          "relevance": "High",
+          "key_holding": "The Supreme Court dismissed the appeals, upholding the High Court's decision to transfer the writ petitions to the Karnataka Administrative Tribunal.",
+          "outcome": "APPEAL_DISMISSED",
+          "applicability": "UNDERMINES"
+        },
+        {
+          "case_id": "ESCR010001062010",
+          "case_title": "V. RANGANATHAN versus N. BASKARAN AND ORS.",
+          "relevance": "Moderate",
+          "key_holding": "The Supreme Court dismissed the special leave petition, holding that the appointment process was fair, transparent, and reasonable.",
+          "outcome": "APPEAL_DISMISSED",
+          "applicability": "UNDERMINES"
+        },
+        {
+          "case_id": "ESCR010003462007",
+          "case_title": "M.V. THIMMAIAH & ORS. versus UNION PUBLIC SERVICE COMMISSION & ORS.",
+          "relevance": "Moderate",
+          "key_holding": "The Supreme Court dismissed the appeals, upholding the High Court's decision to vacate the stay order passed by the Tribunal.",
+          "outcome": "APPEAL_DISMISSED",
+          "applicability": "UNDERMINES"
+        }
+      ],
       "balance_assessment": "BALANCED",
       "contempt_urgency": "LOW"
     }

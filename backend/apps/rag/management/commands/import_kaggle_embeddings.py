@@ -37,7 +37,9 @@ class Command(BaseCommand):
                 
             self.stdout.write(self.style.SUCCESS(f"\nImporting {filename}..."))
             df = pd.read_parquet(filepath)
-            self.stdout.write(f"  Loaded {len(df)} chunks")
+            before = len(df)
+            df = df.drop_duplicates(subset='chunk_id', keep='last')
+            self.stdout.write(f"  Loaded {before} → deduplicated to {len(df)} chunks")
             
             # Apply offset if provided
             start_idx = offset if offset > 0 else 0

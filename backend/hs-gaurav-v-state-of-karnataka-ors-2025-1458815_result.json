@@ -137,17 +137,16 @@
       "winning_party_type": "Respondent"
     },
     "analyst": {
-      "summary_of_facts": "The petitioners have challenged the decision of the Government of Karnataka to invite respondent No.4, Ms. Banu Mushtaq, as the chief guest to inaugurate the Dasara festivities at the Chamundeshwari Hills on 22.09.2025. The petitioners argue that inviting Ms. Mushtaq, a Muslim, to inaugurate the festivities, which involve Hindu religious rituals, hurts the sentiments of Hindus and offends Articles 25 and 26 of the Constitution of India. The respondents, on the other hand, argue that the festivities are a state-sponsored function and not a religious function of a particular temple or institution, and that Ms. Mushtaq is an accomplished author and a Booker Prize winner. The court has to decide whether the invitation to Ms. Mushtaq offends Articles 25 and 26 of the Constitution of India. The petitioners rely on the decisions of the Supreme Court in Commissioner, Hindu Religious Endowments, Madras v. Sri Lakshmindra Thirtha Swamiar of Sri Shirur Mutt and Adi Saiva Sivachariyargal Nala Sangam and others v. Government of Tamil Nadu and another, to support their contentions.",
+      "summary_of_facts": "The petitioners have challenged the decision of the Government of Karnataka to invite respondent No.4, Ms. Banu Mushtaq, as the chief guest for the Dasara festival inauguration at the Goddess Chamundeshwari Temple. The petitioners argue that inviting a non-Hindu person to participate in the inaugural ceremony, which involves Hindu religious rituals, hurts the sentiments of Hindus and offends Articles 25 and 26 of the Constitution of India. The respondent No.4 is an acclaimed author and a Booker Prize winner, and the decision to invite her was taken by a committee comprising elected representatives and government officials. The State government argues that the festivities are a state-sponsored function and not a religious function of a particular temple or institution, and that there can be no discrimination on the ground of religion or caste. The court has to decide whether the invitation to respondent No.4 offends Articles 25 and 26 of the Constitution of India.",
       "issues_framed": [
-        "Whether the invitation to Ms. Banu Mushtaq to inaugurate the Dasara festivities offends Articles 25 and 26 of the Constitution of India?",
-        "Whether the Dasara festivities, being a state-sponsored function, can be considered a religious function of a particular temple or institution?",
-        "Whether the right to freedom of conscience and the right to freely profess, practice, and propagate religion under Article 25 of the Constitution of India is curtailed by extending an invitation to a non-Hindu person to inaugurate the Dasara festivities?",
-        "Whether the management of religious affairs under Article 26 of the Constitution of India is affected by the invitation to Ms. Mushtaq to inaugurate the Dasara festivities?"
+        "Whether the invitation to respondent No.4, a non-Hindu person, to participate in the inaugural ceremony of the Dasara festival, which involves Hindu religious rituals, offends Articles 25 and 26 of the Constitution of India?",
+        "Whether the State government's decision to invite respondent No.4 as the chief guest for the Dasara festival inauguration is discriminatory and violates the principles of equality and freedom of religion?",
+        "Whether the Agamic traditions and rituals associated with the Dasara festival can be performed by a non-Hindu person, and if so, whether it would be in conformity with the constitutional mandates?"
       ]
     },
     "scholar": {
       "$schema": "http://json-schema.org/draft-07/schema#",
-      "ratio_decidendi": "The court held that the invitation to respondent No.4 to inaugurate the Dasara festivities does not offend Articles 25 and 26 of the Constitution of India. The court reasoned that the festivities are organized by the State and an accomplished person is called for the inaugural ceremony, and respondent No.4 is an acclaimed author and a Booker Prize winner. The court also noted that the decision to invite respondent No.4 was taken by a Committee comprising elected representatives from various parties and government officials.",
+      "ratio_decidendi": "The court held that the invitation to respondent No.4 to inaugurate the Dasara festivities does not offend Articles 25 and 26 of the Constitution of India. The court reasoned that the festivities are organized by the State and an accomplished person is called for the inaugural ceremony, and respondent No.4 is an acclaimed author and Booker Prize winner. The court also noted that the decision to invite respondent No.4 was taken by a Committee comprising elected representatives from various parties and Government officials.",
       "area_of_law": "Constitutional Law",
       "primary_statute": "The Constitution of India",
       "citations": [
@@ -177,60 +176,57 @@
         }
       ],
       "entities": [
-        "The Constitution of India",
-        "Article 25",
-        "Article 26",
-        "The State of Karnataka",
-        "The Department of Kannada and Culture",
-        "The Department of Religious Endowments",
-        "The Government of Tamil Nadu"
+        "State of Karnataka",
+        "Department of Kannada and Culture",
+        "Department of Culture",
+        "Government of Tamil Nadu",
+        "Supreme Court of India",
+        "High Court of Karnataka"
       ]
     }
   },
   "rag_chunks_count": 10,
   "recommendation": {
-    "recommendation_id": "79568b10-795f-4e7d-a553-91672520ca59",
+    "recommendation_id": "ac761b14-ae95-40a1-9af6-d1e8fbae9bb6",
     "case_id": "WP No. 27824 of 2025 C/W WP No. 27595 of 2025 WP No. 27692 of 2025",
     "status": "COMPLETED",
     "verdict": {
       "decision": "COMPLY",
-      "appeal_to": "Division Bench of the same High Court",
-      "confidence": 0.85,
-      "urgency": "LOW",
+      "appeal_to": "Division Bench of the High Court of Karnataka",
+      "confidence": 0.7,
+      "urgency": "MEDIUM",
       "limitation_deadline": "2026-06-06",
       "days_remaining": 30
     },
     "statistical_basis": {
-      "similar_cases_analyzed": 10,
-      "government_appeal_win_rate": 0,
-      "dismissed_rate": 0,
-      "total_cases_in_corpus": 0,
+      "similar_cases_analyzed": 0,
+      "government_appeal_win_rate": 0.38,
+      "dismissed_rate": 0.17,
+      "total_cases_in_corpus": 24439,
       "financial_exposure_if_comply": 0
     },
-    "primary_reasoning": "The Single Judge dismissed the petition, finding the Dasara festivities to be a state-sponsored secular event, not a religious function, thus no violation of Articles 25 and 26. Precedent research indicates a weak basis for appeal, and argument analysis strongly favors compliance, noting the court's well-reasoned decision. The risk of contempt is low, and the financial exposure is limited to appeal costs, making compliance the legally sound and prudent course.",
+    "primary_reasoning": "The case was dismissed and the precedents are weak, with no direct precedents found in the database. The balance of the case favors compliance, as the court's decision to dismiss the petition is well-reasoned, considering the Dasara festival as a state-sponsored function and not a religious function of a particular temple or institution. Although there are some strong pro-appeal arguments, such as the potential violation of Articles 25 and 26 of the Constitution of India, the contempt risk is low and the financial risk is limited to the costs of litigation. Given the weak precedents and the balance favoring compliance, recommending compliance with the court's decision is the most appropriate course of action.",
     "appeal_grounds": [
-      "The court failed to adequately address the petitioners' concerns regarding the potential violation of Articles 25 and 26 of the Constitution of India.",
-      "The court did not sufficiently consider the precedents cited by the petitioners, such as Commissioner, Hindu Religious Endowments, Madras v. Sri Lakshmindra Thirtha Swamiar of Sri Shirur Mutt."
+      "The court erred in dismissing the petition without adequately addressing the petitioners' concerns regarding the potential violation of Articles 25 and 26 of the Constitution of India"
     ],
     "alternative_routes": [
-      "File a review petition before the same Single Judge if any new grounds or errors apparent on the face of the record are discovered.",
-      "Engage in public interest advocacy or legislative consultation to clarify the scope of state-sponsored religious events."
+      "Filing a review petition before the same court"
     ],
     "action_plan": {
       "immediate_actions": [
-        "Accept the court's order and issue a formal communication confirming compliance.",
-        "Coordinate with the Department of Kannada and Culture to ensure the event proceeds as planned with Ms. Banu Mushtaq as chief guest.",
-        "Prepare a detailed legal note for the government file explaining the rationale for compliance and the low probability of success on appeal."
+        "Review the court's decision and assess the feasibility of filing an appeal",
+        "Consult with the petitioners and stakeholders to determine the best course of action"
       ],
       "financial_actions": [
-        "Allocate no funds for an appeal; redirect any reserved litigation budget to the event's cultural programming.",
-        "Ensure all event-related payments and contracts are processed without delay to avoid any breach of contract claims."
+        "Allocate funds for potential appeal costs",
+        "Assess the financial implications of non-compliance"
       ]
     },
-    "risk_summary": "The risk of appealing is a low probability of success with a high likelihood of the Division Bench affirming the Single Judge's secular interpretation of the event, potentially reinforcing the precedent against the petitioners. The risk of complying is minimal, limited to political or public sentiment, which is outweighed by the legal clarity and avoidance of unnecessary litigation costs.",
+    "risk_summary": "The risk of contempt is low, and the financial risk is limited to the costs of litigation. However, non-compliance may result in potential penalties and damage to the reputation of the state government.",
     "agent_outputs": {
       "precedent_strength": "WEAK",
-      "overall_trend": "Precedents suggest courts generally allow appeals in cases where the petitioners have locus standi and the respondents have erred in their decisions, but the current case's position is undermined by most precedents.",
+      "overall_trend": "Insufficient precedents to determine a clear trend, as no direct precedents were found in the database.",
+      "precedents": [],
       "balance_assessment": "COMPLIANCE_FAVORED",
       "contempt_urgency": "LOW"
     }
