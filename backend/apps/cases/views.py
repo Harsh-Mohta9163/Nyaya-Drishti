@@ -1,4 +1,5 @@
 import os
+import uuid
 import fitz  # PyMuPDF
 from django.http import FileResponse
 from django.shortcuts import get_object_or_404
@@ -98,10 +99,11 @@ class CaseExtractView(APIView):
 
         # 1. Create Judgment (and Case if we don't have metadata yet)
         # We will create a dummy case first, then update it after extraction
+        temp_id = uuid.uuid4().hex[:8]
         case = Case.objects.create(
-            court_name="Pending Extraction",
+            court_name=f"Pending Extraction {temp_id}",
             case_type="Pending",
-            case_number="Pending",
+            case_number=f"Pending {temp_id}",
             case_year=0,
             status=Case.Status.PENDING,
             uploaded_by=request.user if request.user.is_authenticated else None
