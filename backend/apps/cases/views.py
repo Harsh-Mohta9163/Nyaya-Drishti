@@ -23,46 +23,60 @@ from .services.extractor import extract_structured_data
 
 def _annotate_source_locations(pdf_path: str, directions: list[dict]) -> list[dict]:
     """
-    For each court direction, find its bounding box and char offset in the PDF.
-    Uses PyMuPDF page.search_for() for spatial location.
+    For each court direction, find ALL bounding boxes in the PDF using PyMuPDF.
+    Stores page number, page dimensions (for frontend scaling), and an array
+    of rects covering the full paragraph — not just the first line.
     """
     try:
         doc = fitz.open(pdf_path)
-        char_offset = 0  # running char count across pages
-
-        # Build a page-text map for char offsets
-        page_texts = []
-        for page in doc:
-            t = page.get_text("text")
-            page_texts.append((page.number, t, char_offset))
-            char_offset += len(t)
 
         for direction in directions:
-            snippet = (direction.get("text") or "")[:80]  # use first 80 chars to search
-            if not snippet:
+            text = (direction.get("text") or "").strip()
+            if not text:
+                direction["source_location"] = None
                 continue
 
             found = False
             for page in doc:
-                rects = page.search_for(snippet)
-                if rects:
-                    r = rects[0]  # first occurrence
-                    # Character offset in full text
-                    page_num, page_text, page_char_start = page_texts[page.number]
-                    local_idx = page_text.find(snippet[:40])
-                    char_start = page_char_start + local_idx if local_idx != -1 else -1
+                # Try progressively shorter snippets for robustness
+                for snippet_len in [120, 80, 50, 30]:
+                    snippet = text[:snippet_len].strip()
+                    if not snippet:
+                        continue
+                    rects = page.search_for(snippet)
+                    if not rects:
+                        continue
 
+                    # Collect all rects for the beginning of the text
+                    all_rects = [{"x0": round(r.x0, 2), "y0": round(r.y0, 2),
+                                  "x1": round(r.x1, 2), "y1": round(r.y1, 2)}
+                                 for r in rects]
+
+                    # Search for later parts of the text to cover the full paragraph
+                    if len(text) > snippet_len:
+                        later = text[snippet_len:snippet_len + 60].strip()
+                        if later:
+                            for sl in [min(len(later), 50), 30]:
+                                more = page.search_for(later[:sl])
+                                if more:
+                                    for r in more:
+                                        rd = {"x0": round(r.x0, 2), "y0": round(r.y0, 2),
+                                              "x1": round(r.x1, 2), "y1": round(r.y1, 2)}
+                                        if rd not in all_rects:
+                                            all_rects.append(rd)
+                                    break
+
+                    page_rect = page.rect
                     direction["source_location"] = {
-                        "page": page.number + 1,  # 1-indexed for frontend
-                        "x0": round(r.x0, 2),
-                        "y0": round(r.y0, 2),
-                        "x1": round(r.x1, 2),
-                        "y1": round(r.y1, 2),
-                        "char_start": char_start,
-                        "char_end": char_start + len(snippet) if char_start != -1 else -1,
+                        "page": page.number + 1,          # 1-indexed
+                        "page_width": round(page_rect.width, 2),
+                        "page_height": round(page_rect.height, 2),
+                        "rects": all_rects,
                     }
                     found = True
-                    break
+                    break  # snippet_len loop
+                if found:
+                    break  # page loop
 
             if not found:
                 direction["source_location"] = None
@@ -135,40 +149,19 @@ class CaseExtractView(APIView):
                 operative_text=segments.get("operative_order", "")
             )
 
-            # 5. Update Case with Header info
-            if "header" in extracted_data:
-                h = extracted_data["header"]
-                case.case_number = h.get("case_number", "")
-                case.court_name = h.get("court_name", "")
-                case.case_type = h.get("case_type", "")
-                case.petitioner_name = h.get("petitioner_name", "")
-                case.respondent_name = h.get("respondent_name", "")
-                try:
-                    case.case_year = int(h.get("date_of_order", "2000")[:4])
-                except:
-                    case.case_year = 2000
-                case.save()
-                
-                judgment.date_of_order = h.get("date_of_order", "2000-01-01")
-                judgment.save()
+            # Refresh from DB — extract_structured_data saves internally
+            judgment.refresh_from_db()
+            case.refresh_from_db()
 
-            # 6. Source Highlighting
+            # 5. Source Highlighting — annotate with PyMuPDF bounding boxes
             if judgment.court_directions:
                 judgment.court_directions = _annotate_source_locations(pdf_path, judgment.court_directions)
                 judgment.save()
-                
-            # 7. Citations creation
-            if "_cases_cited" in extracted_data:
-                for cited_raw in extracted_data["_cases_cited"]:
-                    Citation.objects.create(
-                        citing_judgment=judgment,
-                        cited_case_name_raw=cited_raw
-                    )
 
-            judgment.processing_status = "complete"
-            judgment.save()
-            
-            # (TODO) Vectorize here in Phase 6.
+            # Ensure status is set (extractor sets "completed", normalize to "complete")
+            if judgment.processing_status not in ("failed",):
+                judgment.processing_status = "complete"
+                judgment.save()
 
             return Response(CaseSerializer(case).data, status=status.HTTP_201_CREATED)
 
@@ -244,3 +237,29 @@ class AppealStrategyView(APIView):
         action_plan.save()
         
         return Response(strategy)
+
+
+class ReAnnotateSourceView(APIView):
+    """Re-run PyMuPDF source annotation on existing court_directions for a case."""
+    authentication_classes = []
+    permission_classes = []
+
+    def post(self, request, pk, *args, **kwargs):
+        case = get_object_or_404(Case, pk=pk)
+        judgment = case.judgments.first()
+        if not judgment:
+            return Response({"error": "No judgment found"}, status=404)
+        if not judgment.court_directions:
+            return Response({"error": "No court directions to annotate"}, status=400)
+        if not judgment.pdf_file:
+            return Response({"error": "No PDF file associated"}, status=400)
+
+        try:
+            pdf_path = judgment.pdf_file.path
+            judgment.court_directions = _annotate_source_locations(
+                pdf_path, judgment.court_directions
+            )
+            judgment.save()
+            return Response(JudgmentSerializer(judgment).data)
+        except Exception as e:
+            return Response({"error": str(e)}, status=500)

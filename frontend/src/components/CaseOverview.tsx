@@ -66,12 +66,33 @@ export const CaseOverview = ({
   const summaryText = judgment?.summary_of_facts || judgment?.operative_order_text || '';
   const isVerified = verifiedActions && verifiedActions.length > 0 && verifiedActions.every(a => a.isVerified);
   
-  // Use RAG values if available, fallback to extractor
   const aiVerdict = recommendation?.verdict?.decision || 'PENDING';
   const confidence = recommendation?.verdict?.confidence ? Math.round(recommendation.verdict.confidence * 100) : 0;
-  const riskSummary = recommendation?.risk_summary || judgment?.ratio_decidendi || '';
   const contemptRisk = recommendation?.agent_outputs?.contempt_urgency || judgment?.contempt_risk || 'Low';
-  const similarCases = recommendation?.statistical_basis?.similar_cases_analyzed ? Array(recommendation.statistical_basis.similar_cases_analyzed).fill({}) : [];
+  const similarCases = recommendation?.agent_outputs?.precedents || [];
+  
+  // Combine verified actions from court directives and RAG immediate actions
+  const immediateActions = recommendation?.action_plan?.immediate_actions || [];
+  const financialActions = recommendation?.action_plan?.financial_actions || [];
+  
+  const ragActions = [
+    ...immediateActions.map((a: string, i: number) => ({
+      id: `rag-imm-${i}`,
+      title: 'Immediate Action',
+      description: a,
+      source: 'AI Recommendation',
+      tags: ['Action Plan']
+    })),
+    ...financialActions.map((a: string, i: number) => ({
+      id: `rag-fin-${i}`,
+      title: 'Financial Action',
+      description: a,
+      source: 'AI Recommendation',
+      tags: ['Financial']
+    }))
+  ];
+  
+  const roadmapActions = isVerified ? verifiedActions : ragActions;
 
 
   return (
@@ -183,7 +204,9 @@ export const CaseOverview = ({
                 <span className="material-symbols-outlined text-sm">psychology</span> Primary Reasoning
               </h4>
               <p className="text-sm text-on-surface/90 leading-relaxed font-medium">
-                {recommendation.primary_reasoning}
+                {Array.isArray(recommendation.primary_reasoning) 
+                  ? recommendation.primary_reasoning.join(' • ') 
+                  : recommendation.primary_reasoning}
               </p>
             </div>
             
@@ -276,9 +299,25 @@ export const CaseOverview = ({
             </div>
             
             {similarCases.length > 0 ? (
-               <div className="py-8 text-center text-primary-blue/80 font-bold text-sm">
-                 <span className="material-symbols-outlined block text-3xl mb-2">library_books</span>
-                 {similarCases.length} Precedent Cases analyzed. View Precedents tab.
+               <div className="pt-2">
+                 {similarCases.slice(0, 5).map((p: any, i: number) => {
+                   const score = p.relevance === 'High' ? 90 : p.relevance === 'Moderate' ? 75 : 55;
+                   const formattedOutcome = p.outcome === 'APPEAL_ALLOWED' ? 'Allowed' : p.outcome === 'APPEAL_DISMISSED' ? 'Dismissed' : p.outcome;
+                   return (
+                     <CaseRow 
+                       key={i}
+                       id={p.case_id || `PRE-${1000 + i}`}
+                       similarity={score - i}
+                       outcome={formattedOutcome}
+                       precedent={p.key_holding || p.applicability}
+                     />
+                   );
+                 })}
+                 {similarCases.length > 5 && (
+                   <button className="w-full mt-4 py-3 bg-surface-container/50 hover:bg-surface-container-high transition-colors text-primary-blue text-[10px] font-bold uppercase tracking-widest rounded-lg">
+                     View All {similarCases.length} Precedents
+                   </button>
+                 )}
                </div>
             ) : recommendation ? (
               <div className="py-8 text-center text-on-surface-variant opacity-50 text-sm">No strong precedents found in the 20-year corpus.</div>
@@ -300,11 +339,11 @@ export const CaseOverview = ({
           </div>
           
           <div className="flex-grow">
-            {isVerified ? (
+            {roadmapActions && roadmapActions.length > 0 ? (
               <div className="space-y-6">
-                {verifiedActions?.map((action, idx) => (
-                  <div key={action.id} className="relative pl-8">
-                    {idx !== verifiedActions.length - 1 && (
+                {roadmapActions.map((action: any, idx: number) => (
+                  <div key={action.id || idx} className="relative pl-8">
+                    {idx !== roadmapActions.length - 1 && (
                       <div className="absolute left-[11px] top-8 bottom-[-24px] w-0.5 bg-outline-variant/20"></div>
                     )}
                     <div className="absolute left-0 top-1.5 w-6 h-6 rounded-full bg-primary-blue flex items-center justify-center shadow-[0_0_10px_rgba(173,198,255,0.4)]">

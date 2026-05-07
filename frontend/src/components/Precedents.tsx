@@ -1,7 +1,5 @@
 import React, { useState, useEffect } from 'react';
 import { motion } from 'motion/react';
-import { apiGetRecommendation } from '../api';
-
 const PrecedentCard = ({ 
   id, 
   title, 
@@ -125,7 +123,7 @@ export const Precedents = ({
             Similar Cases & RAG Evidence
           </h2>
           <div className="flex items-center gap-3">
-            {loading && <span className="text-primary-blue text-xs animate-pulse">Running AI Inference (Llama 70B)...</span>}
+            {isGenerating && <span className="text-primary-blue text-xs animate-pulse">Running AI Inference (Llama 70B)...</span>}
             <span className="text-[10px] font-black uppercase tracking-widest text-on-surface-variant">Sort by:</span>
             <select className="bg-surface-container/50 border border-outline-variant/30 rounded-lg px-3 py-1.5 text-[10px] font-bold text-on-surface-variant uppercase tracking-widest outline-none focus:border-primary-blue/50">
               <option>Similarity Score</option>
@@ -180,20 +178,25 @@ export const Precedents = ({
                 </div>
               )}
               {precedents.map((p: any, i: number) => {
-                const isAllowed = p.outcome.toLowerCase().includes('allow') || p.outcome.toLowerCase().includes('upheld');
+                const isAllowed = p.outcome?.toLowerCase().includes('allow') || p.outcome?.toLowerCase().includes('upheld');
+                const score = p.relevance === 'High' ? 90 : p.relevance === 'Moderate' ? 75 : 55;
+                const yearMatch = p.case_id?.match(/\d{4}$/);
+                const year = yearMatch ? yearMatch[0] : '2023';
+                const formattedOutcome = p.outcome === 'APPEAL_ALLOWED' ? 'Allowed' : p.outcome === 'APPEAL_DISMISSED' ? 'Dismissed' : p.outcome;
+                
                 return (
                   <PrecedentCard 
                     key={i}
-                    id={`PRE-${1000 + i}`}
+                    id={p.case_id || `PRE-${1000 + i}`}
                     title={p.case_title || p.case}
-                    description={p.applicability}
-                    matchScore={85 - i * 5} 
-                    outcome={p.outcome}
+                    description={p.key_holding || p.applicability}
+                    matchScore={score - i} 
+                    outcome={formattedOutcome}
                     court="Supreme Court"
-                    year="2022"
+                    year={year}
                     borderClass={isAllowed ? "border-l-primary-blue" : "border-l-amber-400"}
                     scoreColor={isAllowed ? "text-primary-blue" : "text-amber-400"}
-                    evidencePoints={[p.applicability]}
+                    evidencePoints={[p.key_holding, p.applicability === 'SUPPORTS' ? 'Supports your case' : 'Undermines your case'].filter(Boolean)}
                   />
                 );
               })}
@@ -226,7 +229,7 @@ export const Precedents = ({
         <div className="glass-card p-6 border-outline-variant/20">
           <h3 className="text-[10px] font-black uppercase tracking-[0.2em] text-on-surface-variant mb-6">Active AI Filters</h3>
           <div className="flex flex-wrap gap-2">
-            {['Section 3(k)', 'Supreme Court', 'Neural Networks'].map(filter => (
+            {['Service Law', 'Supreme Court'].map(filter => (
               <span key={filter} className="pl-3 pr-2 py-1.5 rounded-lg bg-surface-container flex items-center gap-2 text-[10px] font-bold text-on-surface border border-outline-variant/30 group hover:border-primary-blue transition-colors cursor-pointer">
                 {filter}
                 <span className="material-symbols-outlined text-[12px] text-on-surface-variant group-hover:text-error-red">close</span>

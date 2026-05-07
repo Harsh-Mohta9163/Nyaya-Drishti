@@ -112,6 +112,7 @@ export interface JudgmentData {
   extraction_confidence: number;
   ocr_confidence: number | null;
   pdf_file: string;
+  pdf_storage_url: string;
   processing_status: string;
   outgoing_citations: any[];
   action_plan: any | null;
@@ -172,4 +173,13 @@ export async function extractCase(pdfFile: File): Promise<CaseData> {
   const formData = new FormData();
   formData.append('pdf_file', pdfFile);
   return apiPostForm<CaseData>('/api/cases/extract/', formData);
+}
+
+/**
+ * Re-annotate source locations for court directions using PyMuPDF.
+ * POST /api/cases/{caseId}/re-annotate/
+ * Call this for cases extracted before source highlighting was implemented.
+ */
+export async function reAnnotateSource(caseId: string): Promise<any> {
+  return apiPost<any>(`/api/cases/${caseId}/re-annotate/`, {});
 }

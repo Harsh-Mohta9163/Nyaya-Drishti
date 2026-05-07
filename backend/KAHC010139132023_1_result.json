@@ -102,35 +102,36 @@
       "type": "object"
     },
     "analyst": {
-      "summary_of_facts": "The Karnataka High Court heard a series of writ appeals challenging an order passed by a single judge, which quashed a provisional selection list for the recruitment of Graduate Primary School Teachers. The appeals were filed by candidates who were not parties to the original writ petition. The court considered the maintainability of the writ petition, the jurisdiction of the Deputy Director of Public Instruction to interpret caste and income certificates, and the validity of the Government Order dated 12.12.1986. The court ultimately set aside the impugned order and permitted the State Government to proceed with appointing teachers from a list of 13,352 selected candidates, while deferring the appointment of candidates who had not submitted the required caste cum income certificate.",
+      "summary_of_facts": "The Karnataka High Court heard a batch of writ appeals challenging the order of a learned Single Judge, which quashed the provisional selection list for recruitment to the post of Graduate Primary School Teachers. The appellants, who were not parties to the writ petition, argued that the writ petition was not maintainable due to the bar contained under Article 323A of the Constitution of India and Section 15 of the Administrative Tribunals Act, 1985. The court considered the nature and scope of the issue involved, the applicable provisions of law, and the judgments of the Apex Court, including L. Chandra Kumar vs. Union of India and T.K. Rangarajan vs. State of Tamil Nadu.",
       "issues_framed": [
-        "Whether the writ petition is maintainable in view of the bar contained under Article 323A of the Constitution of India and in view of Section 15 of the Act, 1985?",
-        "Whether a validly issued income certificate in terms of Government Order dated 12.12.1986 could have been invalidated by the learned Single Judge without there being a challenge to the said Government Order?",
-        "Whether without impleading the appellants who are the selected candidates, as party/respondents to the writ petition, the provisional list could have been set aside?"
+        "Whether the writ petition is maintainable in view of the bar contained under Article 323A of the Constitution of India and Section 15 of the Administrative Tribunals Act, 1985",
+        "Whether the caste and income of the husband of the female applicant should be taken into consideration or the caste and income of the parents",
+        "Whether the selecting authority-DDPI would get jurisdiction to interpret caste and income certificates issued by competent authorities",
+        "Whether without impleading proper and necessary parties, the provisional list could have been set aside"
       ]
     },
     "scholar": {
-      "ratio_decidendi": "The court held that the writ petition was not maintainable under Article 226 of the Constitution of India, as the matter pertained to a service concerning a post of civil service of the state, which falls within the jurisdiction of the Administrative Tribunal. The court also held that the decision of the selecting authority to consider the caste and income of the husband of a married woman candidate was in accordance with the Government Order dated 12.12.1986, and that the learned Single Judge erred in quashing the notification without there being a challenge to the said Government Order.",
+      "ratio_decidendi": "The court held that the writ petition was not maintainable under Article 226 of the Constitution of India, as the matter pertained to a service concerning a post of civil service of the state, and the Administrative Tribunal had exclusive jurisdiction over such matters. The court also held that the decision of the selecting authority to consider the caste and income of the husband of a married woman candidate was in accordance with the government order dated 12.12.1986, and that the writ petition was not entertainable.",
       "area_of_law": "Service Law",
       "primary_statute": "Karnataka Education Department Services (Department of Public Instruction) (Recruitment) Rules, 1967",
       "citations": [
         {
-          "case_name": "L. Chandra Kumar vs. Union of India",
+          "case_name": "L.Chandra Kumar Vs. Union of India",
           "citation_ref": "(1997) 3 SCC 261",
           "context": "relied_upon",
           "principle_extracted": "The Administrative Tribunals have jurisdiction to consider all matters covered under the Act, including issues relating to constitutional validity of provisions relating to recruitment of employees and regulations governing service conditions."
         },
         {
-          "case_name": "T.K. Rangarajan vs. State of Tamil Nadu",
+          "case_name": "T.K.Rangarajan Vs State of Tamil Nadu and others",
           "citation_ref": "(2003) 6 SCC 581",
           "context": "distinguished",
-          "principle_extracted": "The High Court has jurisdiction to entertain a petition under Article 226 of the Constitution of India in an unprecedented extraordinary situation having no parallel."
+          "principle_extracted": "The High Court has the power to exercise its extraordinary jurisdiction to meet unprecedented extraordinary situations having no parallel."
         },
         {
-          "case_name": "Union of India vs. Alapan Bandyopadhyay",
+          "case_name": "Union of India Vs Alapan Bandopadyaya",
           "citation_ref": "(2022) 3 SCC 133",
           "context": "relied_upon",
-          "principle_extracted": "The Administrative Tribunals have jurisdiction to consider all matters covered under the Act, and the High Court's jurisdiction is limited to judicial review of the decisions of the Tribunals."
+          "principle_extracted": "The Administrative Tribunals have the power to consider all decisions, including those passed under Section 25 of the Act, and the High Court's jurisdiction is limited to scrutiny of such decisions."
         }
       ],
       "entities": [
@@ -143,7 +144,7 @@
   },
   "rag_chunks_count": 10,
   "recommendation": {
-    "recommendation_id": "e08b4e40-2251-43bf-a377-e77ea7c0b301",
+    "recommendation_id": "2fa9023d-f077-4800-b559-d962576f87a3",
     "case_id": "WA No. 305 of 2023",
     "status": "COMPLETED",
     "verdict": {
@@ -155,97 +156,74 @@
       "days_remaining": 90
     },
     "statistical_basis": {
-      "similar_cases_analyzed": 8,
+      "similar_cases_analyzed": 5,
       "government_appeal_win_rate": 0.38,
       "dismissed_rate": 0.17,
       "total_cases_in_corpus": 24439,
       "financial_exposure_if_comply": 0
     },
-    "primary_reasoning": "The Division Bench of the High Court of Karnataka set aside the provisional selection list, which may be considered a strong compliance directive. However, the balance of arguments is assessed as balanced, and the win rate in similar cases is 38%, which is relatively high. Considering the strong appeal grounds, including the potential error in setting aside the provisional selection list without considering the validity of the Government Order dated 12.12.1986, and the support from precedents such as STATE OF U.P. AND ORS. versus BHARAT SINGH AND ORS., an appeal to the Supreme Court of India is recommended. The contempt risk is low, and the financial risk is manageable, which further supports the decision to appeal.",
+    "primary_reasoning": "The court's decision was based on the applicable provisions of law, but the appeal grounds, such as the bar contained under Article 323A of the Constitution of India and Section 15 of the Administrative Tribunals Act, 1985, and the jurisdiction of the selecting authority, DDPI, to interpret caste and income certificates, are strong enough to warrant an appeal. The balance of the case is neutral, and the precedents are moderate, with some supporting the appeal and others undermining it. The risk of contempt is low, and the financial risk is limited to costs and penalties for non-compliance.",
     "appeal_grounds": [
-      "The High Court erred in setting aside the provisional selection list without considering the validity of the Government Order dated 12.12.1986",
-      "The writ petition was not maintainable in view of the bar contained under Article 323A of the Constitution of India and Section 15 of the Act, 1985",
-      "The learned Single Judge exceeded its jurisdiction by invalidating the income certificates without a challenge to the Government Order"
+      "The court erred in not considering the bar contained under Article 323A of the Constitution of India and Section 15 of the Administrative Tribunals Act, 1985",
+      "The selecting authority, DDPI, has the jurisdiction to interpret caste and income certificates issued by competent authorities"
     ],
     "alternative_routes": [
-      "Filing a review petition before the Division Bench of the High Court of Karnataka"
+      "Filing a review petition",
+      "Filing a curative petition"
     ],
     "action_plan": {
       "immediate_actions": [
-        "Prepare and file a Special Leave Petition under Article 136 of the Constitution of India before the Supreme Court of India within 90 days from the date of the order",
-        "Notify all stakeholders, including the selected candidates and the State Government, about the decision to appeal"
+        "Filing a Special Leave Petition under Art. 136 to the Supreme Court of India within 90 days",
+        "Preparing the appeal grounds and arguments"
       ],
       "financial_actions": [
-        "Allocate funds for the appeal proceedings, including court fees and legal expenses"
+        "Allocating funds for the appeal process",
+        "Preparing for potential costs and penalties"
       ]
     },
-    "risk_summary": "The appeal carries a moderate level of risk, including the risk of dismissal, contempt of court proceedings, and financial losses. However, the potential benefits of a successful appeal, including the appointment of selected candidates and the upholding of the Government Order dated 12.12.1986, outweigh the risks.",
+    "risk_summary": "Low contempt risk, moderate financial risk, and a balanced case with moderate precedents",
     "agent_outputs": {
       "precedent_strength": "MODERATE",
-      "overall_trend": "The precedents suggest that the courts generally dismiss appeals related to service law and recruitment issues, but there are instances where the courts have allowed appeals and supported the position of the selected candidates.",
+      "overall_trend": "Precedents suggest that courts generally allow appeals in cases where the selection committee has acted arbitrarily or in violation of the rules, but dismiss appeals where the petitioners have not followed the proper procedure or have waived their rights.",
       "precedents": [
         {
-          "case_id": "ESCR010005322011",
-          "case_title": "STATE OF U.P. AND ORS. versus BHARAT SINGH AND ORS.",
-          "relevance": "Moderate",
-          "key_holding": "The Supreme Court stayed the interim direction of the High Court, allowing the State to appoint selected candidates as principals, subject to the outcome of the appeals.",
+          "case_id": "ESCR010001262023",
+          "case_title": "Sureshkumar Lalitkumar Patel & Ors. versus State of Gujarat & Ors.",
+          "relevance": "High",
+          "key_holding": "The court decided that the selection committee did not have the power to reduce the cut-off marks, and the state of Gujarat cannot usurp the power of the selection committee.",
           "outcome": "APPEAL_ALLOWED",
           "applicability": "SUPPORTS"
         },
         {
-          "case_id": "ESCR010004162024",
-          "case_title": "ALI HOSSAIN MANDAL & ORS. versus WEST BENGAL BOARD OF PRIMARY EDUCATION & ORS.",
-          "relevance": "High",
-          "key_holding": "The Division Bench of the High Court directed that the balance vacancies be treated exclusively as part of the 16,500 vacancies pertaining to TET-2014 candidates.",
-          "outcome": "APPEAL_DISMISSED",
+          "case_id": "ESCR010004252010",
+          "case_title": "State of Karnataka & Ors. versus Ganpathi Chaya Naik & Ors.",
+          "relevance": "Moderate",
+          "key_holding": "The court decided that the claim of the respondents for regularization of their services was not sustainable, as they were not recruited as per the recruitment rules.",
+          "outcome": "CASE_ALLOWED",
           "applicability": "UNDERMINES"
         },
         {
-          "case_id": "ESCR010005392024",
-          "case_title": "MUKUL KUMAR TYAGI versus THE STATE OF UTTAR PRADESH AND OTHERS",
-          "relevance": "Moderate",
-          "key_holding": "The Supreme Court allowed the appeals, setting aside the judgment and order of the Division Bench of the Allahabad High Court.",
-          "outcome": "APPEAL_ALLOWED",
+          "case_id": "ESCR010004782021",
+          "case_title": "Union of India and Others versus Methu Meda",
+          "relevance": "Low",
+          "key_holding": "The court decided that the respondent was not entitled for appointment until honourably acquitted, and the impugned orders passed by the high court were contrary to the law laid down in previous cases.",
+          "outcome": "LEAVE_GRANTED_AND_ALLOWED",
           "applicability": "SUPPORTS"
         },
         {
-          "case_id": "ESCR010003882005",
-          "case_title": "SRI M. PURANDARA AND ORS. versus MAHADESHA S. AND ORS.",
-          "relevance": "High",
-          "key_holding": "The Supreme Court held that the High Court adjudicated an issue that was not the subject-matter of challenge, and persons affected by the decision were not impleaded as parties.",
-          "outcome": "APPEAL_DISMISSED",
+          "case_id": "ESCR010001092011",
+          "case_title": "M/s. Royal Orchid Hotels Limited and Another versus G. Jayaram Reddy and Ors.",
+          "relevance": "Low",
+          "key_holding": "The court decided that the writ petition was highly belated, and the respondent had waived his right to challenge the acquisition proceedings by accepting the compensation.",
+          "outcome": "DISMISSED",
           "applicability": "UNDERMINES"
         },
         {
-          "case_id": "ESCR010009622008",
-          "case_title": "DHANANJAY MALIK AND ORS. versus STATE OF UTTARANCHAL AND ORS.",
+          "case_id": "ESCR010001822005",
+          "case_title": "Rajesh Kumar Gupta and Ors. versus State of U.P. and Ors.",
           "relevance": "Moderate",
-          "key_holding": "The Supreme Court stayed the operation of the High Court's order, allowing the selected candidates to continue holding their posts.",
-          "outcome": "APPEAL_ALLOWED",
-          "applicability": "SUPPORTS"
-        },
-        {
-          "case_id": "ESCR010004842005",
-          "case_title": "K. CHANNEGOWDA AND ORS. versus KARNATAKA PUBLIC SERVICE COMMISSION AND ORS.",
-          "relevance": "High",
-          "key_holding": "The Supreme Court dismissed the appeals, upholding the High Court's decision to transfer the writ petitions to the Karnataka Administrative Tribunal.",
-          "outcome": "APPEAL_DISMISSED",
-          "applicability": "UNDERMINES"
-        },
-        {
-          "case_id": "ESCR010001062010",
-          "case_title": "V. RANGANATHAN versus N. BASKARAN AND ORS.",
-          "relevance": "Moderate",
-          "key_holding": "The Supreme Court dismissed the special leave petition, holding that the appointment process was fair, transparent, and reasonable.",
-          "outcome": "APPEAL_DISMISSED",
-          "applicability": "UNDERMINES"
-        },
-        {
-          "case_id": "ESCR010003462007",
-          "case_title": "M.V. THIMMAIAH & ORS. versus UNION PUBLIC SERVICE COMMISSION & ORS.",
-          "relevance": "Moderate",
-          "key_holding": "The Supreme Court dismissed the appeals, upholding the High Court's decision to vacate the stay order passed by the Tribunal.",
-          "outcome": "APPEAL_DISMISSED",
+          "key_holding": "The court decided that the writ petitions were not maintainable in the absence of the selected candidates having been impleaded, and the writ petitioners were estopped from challenging the advertisement and selection made pursuant thereto.",
+          "outcome": "DISMISSED",
           "applicability": "UNDERMINES"
         }
       ],

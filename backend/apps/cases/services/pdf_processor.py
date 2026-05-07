@@ -18,8 +18,10 @@ def extract_text_from_pdf(pdf_path: str) -> str:
             
         md_text = pymupdf4llm.to_markdown(pdf_path)
         
-        if not md_text or not md_text.strip():
-            logger.warning("PyMuPDF4LLM returned empty text, falling back to legacy extraction")
+        # Check for meaningful content (not just whitespace/markdown headers)
+        stripped = md_text.strip() if md_text else ""
+        if len(stripped) < 100:
+            logger.warning(f"PyMuPDF4LLM returned only {len(stripped)} chars, falling back to legacy extraction")
             return _legacy_extract(pdf_path)
             
         return md_text

@@ -10,7 +10,7 @@ import { Routes, Route, Navigate, useNavigate } from 'react-router-dom';
 import { useAuth } from './context/AuthContext';
 import LoginPage from './LoginPage';
 import RegisterPage from './RegisterPage';
-import { fetchCase, CaseData, fetchRecommendation } from './api/client';
+import { fetchCase, CaseData, fetchRecommendation, reAnnotateSource } from './api/client';
 import { shortPartyTitle, extractCoreName } from './utils/truncate';
 
 import { Precedents } from './components/Precedents';
@@ -44,6 +44,8 @@ function MainApp() {
         } else {
           setRecommendation(null);
         }
+
+        // Auto-annotate removed — source locations are set during extraction
       })
       .catch(err => console.error('Failed to fetch case:', err));
   }, [selectedCaseId]);
@@ -91,12 +93,15 @@ function MainApp() {
     const dirs = judgment.court_directions ?? [];
     const mapped = dirs.map((d: any, i: number) => ({
       id: String(i + 1),
-      title: d.heading || d.text?.slice(0, 60) || `Direction ${i + 1}`,
-      source: d.source_location ? `Source: Page ${d.source_location.page}` : `Source: Direction ${i + 1}`,
+      title: d.action_required || d.text?.slice(0, 60) || `Direction ${i + 1}`,
+      source: d.responsible_entity || `Direction ${i + 1}`,
       description: d.text || d.description || '',
-      tags: d.departments || d.tags || [],
-      dueDate: d.deadline || '',
+      tags: [d.responsible_entity].filter(Boolean),
+      dueDate: d.deadline_mentioned || d.deadline || '',
       isVerified: false,
+      isHighPriority: !!(d.deadline_mentioned || d.deadline),
+      sourceLocation: d.source_location || null,  // PyMuPDF page + bbox
+      sourceText: d.text || '',  // verbatim text for text-search fallback
     }));
     setActions(mapped.length > 0 ? mapped : [{
       id: '1',
@@ -105,6 +110,8 @@ function MainApp() {
       description: judgment.operative_order_text || 'No operative order extracted.',
       tags: ['Legal Review'],
       isVerified: false,
+      sourceLocation: null,
+      sourceText: '',
     }]);
   }, [judgment?.id]);
 
@@ -250,11 +257,20 @@ function MainApp() {
                           {activeTab === 'verify' && (
                             <VerifyActions 
                               actions={actions}
-                              pdfUrl={judgment?.pdf_file || judgment?.pdf_storage_url}
+                              pdfUrl={
+                                judgment?.pdf_file 
+                                  ? (judgment.pdf_file.startsWith('http') 
+                                      ? judgment.pdf_file 
+                                      : `http://127.0.0.1:8000${judgment.pdf_file.startsWith('/') ? '' : '/media/'}${judgment.pdf_file}`)
+                                  : (judgment?.pdf_storage_url || null)
+                              }
                               highlightedPage={highlightedPage}
-                              onActionClick={(page) => {
+                              onActionClick={(pageNum) => {
+                                // If pageNum is actually an ID mapped from the generic click in VerifyActions,
+                                // we will estimate the page based on total pages. But for now we just use it as page number.
+                                // A typical judgment has directives in the last 20%. Let's just default to the page passed.
                                 setHighlightedPage(null);
-                                setTimeout(() => setHighlightedPage(page), 50);
+                                setTimeout(() => setHighlightedPage(Math.max(1, pageNum)), 50);
                               }}
                               onToggle={toggleAction}
                               onDelete={deleteAction}

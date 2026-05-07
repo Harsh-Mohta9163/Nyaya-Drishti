@@ -9,6 +9,7 @@ from .views import (
     CaseActionPlanView,
     ActionPlanReviewView,
     AppealStrategyView,
+    ReAnnotateSourceView,
 )
 
 urlpatterns = [
@@ -20,4 +21,5 @@ urlpatterns = [
     path("<uuid:pk>/action-plan/", CaseActionPlanView.as_view(), name="case-action-plan"),
     path("action-plans/<int:pk>/review/", ActionPlanReviewView.as_view(), name="action-plan-review"),
     path("<uuid:case_id>/judgments/<uuid:judgment_id>/appeal-strategy/", AppealStrategyView.as_view(), name="appeal-strategy"),
+    path("<uuid:pk>/re-annotate/", ReAnnotateSourceView.as_view(), name="re-annotate-source"),
 ]

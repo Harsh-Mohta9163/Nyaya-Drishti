@@ -20,7 +20,7 @@ from apps.cases.services.pdf_processor import extract_text_from_pdf
 from apps.cases.services.section_segmenter import segment_judgment
 from apps.cases.services.extractor import extract_structured_data
 from apps.cases.models import Case, Judgment
-from apps.action_plans.services.rag_engine import HybridRAGEngine, _rebuild_bm25
+from apps.action_plans.services.rag_engine import HybridRAGEngine
 from apps.action_plans.services.recommendation_pipeline import generate_recommendation
 
 DIVIDER = "=" * 80
@@ -95,8 +95,7 @@ def stage_3_extract(segments: dict) -> tuple:
 
 def stage_4_rag_retrieval(case_text: str) -> list:
     """Query ChromaDB with the extracted facts."""
-    print(f"\n  🔍 Stage 4: RAG Retrieval (ChromaDB + BM25 + Cross-Encoder)...")
-    _rebuild_bm25()
+    print(f"\n  🔍 Stage 4: RAG Retrieval (ChromaDB Dense + Cross-Encoder)...")
     rag = HybridRAGEngine()
     results = rag.retrieve(case_text[:2000], top_k=10, filters=None)
     print(f"     Retrieved {len(results)} chunks")
@@ -306,10 +305,8 @@ if __name__ == "__main__":
         print(f"  Processing PDF {i+1} of {len(PDFS)}")
         print(f"{'━' * 80}")
 
-        proceed = input(f"\n  Run pipeline for {pdf_info['label']}? [y/N]: ").strip().lower()
-        if proceed != 'y':
-            print("  Skipped.")
-            continue
+        # Automatically proceed without asking for 'y'
+        print(f"  Starting pipeline automatically...")
 
         try:
             run_full_pipeline(pdf_info)

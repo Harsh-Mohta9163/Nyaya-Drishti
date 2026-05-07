@@ -237,7 +237,10 @@ def generate_recommendation(
         cid = c.get('metadata', {}).get('case_id', c.get('metadata', {}).get('title', ''))
         score = c.get('score', 0)
         
-        if score < 1.0:
+        # Cross-encoder scores range from ~-10 to +10; 0+ is relevant.
+        # Only keep genuinely relevant chunks (positive score) to avoid
+        # noise diluting the synthesis agent's analysis.
+        if score < 0.0:
             logger.info(f"Dropping weak chunk (score {score:.2f}): {cid}")
             continue
             

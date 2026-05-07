@@ -29,14 +29,25 @@ logger = logging.getLogger(__name__)
 # Lazy globals (initialized on first use)
 _chroma_client = None
 _collection = None
+_embedder = None
 _bm25_index = None
 _bm25_corpus = []
 _bm25_doc_ids = []
 
 
+def _get_embedder():
+    """Lazy-load the InLegalBERT embedding function for manual query embedding."""
+    global _embedder
+    if _embedder is None:
+        _embedder = InLegalBERTEmbeddingFunction()
+    return _embedder
+
+
 def _get_collection():
     """Get or create the ChromaDB collection.
-    Uses InLegalBERT embedding function (768-dim).
+    Opens WITHOUT an embedding function to be compatible with Kaggle-created
+    collections that store pre-computed embeddings. Query embedding is done
+    manually via _get_embedder() before calling collection.query().
     No API key needed — runs 100% locally."""
     global _chroma_client, _collection
     if _collection is None:
@@ -47,26 +58,13 @@ def _get_collection():
         os.makedirs(db_path, exist_ok=True)
         _chroma_client = chromadb.PersistentClient(path=db_path)
         
-        # Load custom embedding function
-        ef = InLegalBERTEmbeddingFunction()
-        
-        try:
-            _collection = _chroma_client.get_or_create_collection(
-                name="karnataka_hc_judgments",
-                embedding_function=ef,
-                metadata={"hnsw:space": "cosine"},
-            )
-        except ValueError as e:
-            if "Embedding function conflict" in str(e):
-                logger.warning("Embedding function conflict detected. Recreating ChromaDB collection...")
-                _chroma_client.delete_collection("karnataka_hc_judgments")
-                _collection = _chroma_client.create_collection(
-                    name="karnataka_hc_judgments",
-                    embedding_function=ef,
-                    metadata={"hnsw:space": "cosine"},
-                )
-            else:
-                raise
+        # Open WITHOUT embedding_function to avoid conflict with Kaggle-imported data.
+        # Pre-computed embeddings are already stored; we embed queries manually.
+        _collection = _chroma_client.get_or_create_collection(
+            name="karnataka_hc_judgments",
+            metadata={"hnsw:space": "cosine"},
+        )
+        logger.info(f"ChromaDB collection loaded: {_collection.count()} chunks")
     return _collection
 
 
@@ -84,14 +82,9 @@ def reset_collection():
         logger.info("Deleted old karnataka_hc_judgments collection")
     except Exception:
         pass
-    try:
-        ef = InLegalBERTEmbeddingFunction()
-    except Exception:
-        ef = None
         
     _collection = _chroma_client.get_or_create_collection(
         name="karnataka_hc_judgments",
-        embedding_function=ef,
         metadata={"hnsw:space": "cosine"},
     )
     return _collection
@@ -159,106 +152,78 @@ class HybridRAGEngine:
 
     def retrieve(self, query: str, top_k: int = 5, filters: dict = None) -> list[dict]:
         """
-        Hybrid retrieval: DuckDB Pre-filter -> BM25 + Dense -> RRF -> Cross-Encoder.
-        Excludes reversed/overruled precedents automatically.
+        Fast retrieval: Dense vector search (ChromaDB) → Cross-Encoder reranking.
+        Skips BM25 to avoid loading 400k+ documents into memory.
         """
-        if _bm25_index is None:
-            _rebuild_bm25()
-
-        if not _bm25_doc_ids:
-            return []
-
-        # Default filter: valid precedents only
-        safe_filters = {}
-        # safe_filters = {"precedent_status": {"$in": ["good_law", "unknown", "modified"]}}
-        if filters:
-            safe_filters.update(filters)
-            
-        # Stage 1: DuckDB Pre-filtering (Optional)
-        # If area_of_law is provided, we can pre-filter candidates
-        candidate_ids = None
-        if filters and "area_of_law" in filters:
-            try:
-                store = DuckDBStore()
-                df = store.filter_cases(area_of_law=filters["area_of_law"], limit=5000)
-                if not df.empty:
-                    candidate_cnrs = df['cnr'].dropna().astype(str).tolist()
-                    if candidate_cnrs:
-                        # Vector ids are in format "{cnr}_chunk_{i}"
-                        # We cannot easily filter by prefix in Chroma where dict, 
-                        # but we can filter by the 'case_id' metadata field
-                        safe_filters["case_id"] = {"$in": candidate_cnrs[:100]} # Limit to 100 to avoid Chroma limits
-            except Exception as e:
-                logger.warning(f"DuckDB pre-filter failed, falling back to full corpus: {e}")
-
-        # 1. Dense Retrieval (top 50) — Chroma auto-embeds the query locally
+        # Embed query manually with InLegalBERT
+        embedder = _get_embedder()
+        query_embedding = embedder([query])[0]
+        
+        # Build query kwargs
+        n_candidates = min(100, max(top_k * 5, 50))  # Fetch more candidates for reranking
         kwargs = {
-            "query_texts": [query],
-            "n_results": min(100, len(_bm25_doc_ids)),
+            "query_embeddings": [query_embedding],
+            "n_results": n_candidates,
             "include": ["documents", "metadatas", "distances"],
         }
-        if safe_filters:
-            kwargs["where"] = safe_filters
-
-        dense_res = self.collection.query(**kwargs)
         
-        dense_scores = {}
-        if dense_res["ids"] and dense_res["ids"][0]:
-            for rank, (doc_id, dist) in enumerate(zip(dense_res["ids"][0], dense_res["distances"][0])):
-                dense_scores[doc_id] = {"rank": rank + 1, "dist": dist}
-
-        # 2. Sparse Retrieval (BM25)
-        query_tokens = query.lower().split()
-        bm25_scores_raw = _bm25_index.get_scores(query_tokens)
-
-        # 3. Reciprocal Rank Fusion (RRF)
-        k_rrf = 60
-        fused_scores = {}
-
-        bm25_ranked_idx = sorted(range(len(bm25_scores_raw)), key=lambda i: bm25_scores_raw[i], reverse=True)
-        for rank, idx in enumerate(bm25_ranked_idx[:50]):
-            doc_id = _bm25_doc_ids[idx]
-            if filters and doc_id not in dense_scores:
-                continue
-            fused_scores[doc_id] = fused_scores.get(doc_id, 0.0) + (1.0 / (k_rrf + rank + 1))
-
-        for doc_id, data in dense_scores.items():
-            rank = data["rank"]
-            fused_scores[doc_id] = fused_scores.get(doc_id, 0.0) + (1.0 / (k_rrf + rank))
-
-        # 4. Final Ranking (Top 100 for reranking)
-        top_ids = sorted(fused_scores.keys(), key=lambda d: fused_scores[d], reverse=True)[:100]
-
-        final_results = []
-        if top_ids:
-            fetched = self.collection.get(ids=top_ids, include=["documents", "metadatas"])
-            id_to_data = {
-                fetched["ids"][i]: {
-                    "id": fetched["ids"][i],
-                    "text": fetched["documents"][i],
-                    "metadata": fetched["metadatas"][i],
-                    "score": fused_scores[fetched["ids"][i]]
-                }
-                for i in range(len(fetched["ids"]))
-            }
+        # Apply metadata filters if any
+        if filters:
+            safe_filters = {}
+            # DuckDB pre-filtering for area_of_law (optional optimization)
+            if "area_of_law" in filters:
+                try:
+                    store = DuckDBStore()
+                    df = store.filter_cases(area_of_law=filters["area_of_law"], limit=5000)
+                    if not df.empty:
+                        candidate_cnrs = df['cnr'].dropna().astype(str).tolist()
+                        if candidate_cnrs:
+                            safe_filters["case_id"] = {"$in": candidate_cnrs[:100]}
+                except Exception as e:
+                    logger.warning(f"DuckDB pre-filter failed: {e}")
             
-            # Stage 3: Cross-Encoder Reranking
-            if _cross_encoder is not None and len(top_ids) > 0:
-                pairs = [[query, id_to_data[doc_id]["text"]] for doc_id in top_ids]
+            # Pass through other filters
+            for k, v in filters.items():
+                if k != "area_of_law":
+                    safe_filters[k] = v
+            
+            if safe_filters:
+                kwargs["where"] = safe_filters
+
+        # Dense retrieval via ChromaDB
+        try:
+            dense_res = self.collection.query(**kwargs)
+        except Exception as e:
+            logger.error(f"ChromaDB query failed: {e}")
+            return []
+        
+        if not dense_res["ids"] or not dense_res["ids"][0]:
+            return []
+        
+        # Build result list from dense retrieval
+        results = []
+        for i, (doc_id, doc, meta, dist) in enumerate(zip(
+            dense_res["ids"][0],
+            dense_res["documents"][0],
+            dense_res["metadatas"][0],
+            dense_res["distances"][0],
+        )):
+            results.append({
+                "id": doc_id,
+                "text": doc,
+                "metadata": meta,
+                "score": 1.0 - dist,  # Convert cosine distance to similarity
+            })
+        
+        # Cross-encoder reranking (optional, on small candidate set only)
+        if _cross_encoder is not None and len(results) > 0:
+            try:
+                pairs = [[query[:512], r["text"][:512]] for r in results]  # Truncate for speed
                 cross_scores = _cross_encoder.predict(pairs)
-                
-                # Combine RRF and cross-encoder scores
-                for idx, doc_id in enumerate(top_ids):
-                    id_to_data[doc_id]["score"] = float(cross_scores[idx])
-                    
-                # Re-sort by cross-encoder score
-                top_ids = sorted(top_ids, key=lambda d: id_to_data[d]["score"], reverse=True)
-                
-            # Limit to top_k
-            top_ids = top_ids[:top_k]
-            
-            for doc_id in top_ids:
-                if doc_id in id_to_data:
-                    final_results.append(id_to_data[doc_id])
-
-        return final_results
+                for idx, score in enumerate(cross_scores):
+                    results[idx]["score"] = float(score)
+                results.sort(key=lambda r: r["score"], reverse=True)
+            except Exception as e:
+                logger.warning(f"Cross-encoder reranking failed, using raw scores: {e}")
+        
+        return results[:top_k]
