@@ -1,6 +1,18 @@
 from rest_framework import serializers
 
-from .models import ActionPlan
+from .models import ActionPlan, CourtCalendar, LimitationRule
+
+
+class CourtCalendarSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = CourtCalendar
+        fields = "__all__"
+
+
+class LimitationRuleSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = LimitationRule
+        fields = "__all__"
 
 
 class ActionPlanSerializer(serializers.ModelSerializer):
@@ -8,17 +20,23 @@ class ActionPlanSerializer(serializers.ModelSerializer):
         model = ActionPlan
         fields = [
             "id",
-            "case",
+            "judgment",
             "recommendation",
             "recommendation_reasoning",
             "compliance_actions",
-            "legal_deadline",
-            "internal_deadline",
+            "compliance_deadline",
+            "compliance_action",
+            "statutory_appeal_deadline",
+            "statutory_period_type",
+            "internal_compliance_deadline",
+            "internal_appeal_deadline",
             "responsible_departments",
             "ccms_stage",
-            "contempt_risk",
             "similar_cases",
             "verification_status",
+            "appeal_viability",
+            "appeal_strategy",
+            "appeal_precedents",
             "created_at",
             "updated_at",
         ]

@@ -2,7 +2,7 @@ from django.conf import settings
 from django.db import models
 
 from apps.action_plans.models import ActionPlan
-from apps.cases.models import Case
+from apps.cases.models import Case, Judgment
 
 
 class ReviewLog(models.Model):
@@ -15,11 +15,12 @@ class ReviewLog(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
 
     def __str__(self) -> str:
-        return f"{self.action_plan.case.case_number} - {self.review_level} - {self.action}"
+        return f"{self.action_plan.judgment.case.case_number} - {self.review_level} - {self.action}"
 
 
 class TrainingPair(models.Model):
-    case = models.ForeignKey(Case, on_delete=models.CASCADE)
+    case = models.ForeignKey(Case, on_delete=models.CASCADE, null=True, blank=True)
+    judgment = models.ForeignKey(Judgment, on_delete=models.CASCADE, null=True, blank=True)
     field_name = models.CharField(max_length=100)
     ai_output = models.TextField()
     human_correction = models.TextField()

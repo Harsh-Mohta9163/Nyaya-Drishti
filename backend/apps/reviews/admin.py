@@ -11,5 +11,5 @@ class ReviewLogAdmin(admin.ModelAdmin):
 
 @admin.register(TrainingPair)
 class TrainingPairAdmin(admin.ModelAdmin):
-    list_display = ("case", "field_name", "used_for_training", "created_at")
+    list_display = ("case", "judgment", "field_name", "used_for_training", "created_at")
     list_filter = ("used_for_training",)

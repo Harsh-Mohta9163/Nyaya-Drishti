@@ -1,0 +1,224 @@
+{
+  "extraction": {
+    "registry": {
+      "case_number": "WP No. 27824 of 2025 C/W WP No. 27595 of 2025 WP No. 27692 of 2025",
+      "court_name": "High Court of Karnataka",
+      "bench": "Single Judge",
+      "presiding_judges": [
+        "THE HON'BLE MR. VIBHU BAKHRU, CHIEF JUSTICE",
+        "THE HON'BLE MR. JUSTICE C M JOSHI - WRIT PETITION NO. 27824 OF 2025 (GM RES)"
+      ],
+      "case_type": "Writ Petition",
+      "document_type": "Final Judgment",
+      "date_of_order": "2025-09-15",
+      "petitioner_name": "SRI H.S. GAURAV S/O H.G. SOMASHEKAR REDDY AGED ABOUT 28 YEARS",
+      "respondent_name": "THE STATE OF KARNATAKA REPRESENTED BY ITS CHIEF SECRETARY VIDHANA SOUDHA BENGALURU - 560 001. DEPARTMENT OF KANNADA AND CULTURE REPRESENTED BY ITS PRINCIPAL SECRETARY VIDHANA SOUDHA BENGALURU - 560 001. THE DISTRICT MAGISTRATE, CHAMARAJAPURAM MOHALLA CHAMRAJPURA MYSORE - 570 005.",
+      "appeal_type": "none",
+      "is_appeal_from_lower_court": false,
+      "lower_court_name": null,
+      "lower_court_case_number": null,
+      "lower_court_decision": null
+    },
+    "compliance": {
+      "$defs": {
+        "DirectiveExtraction": {
+          "properties": {
+            "text": {
+              "description": "The VERBATIM actionable directive from the order.",
+              "title": "Text",
+              "type": "string"
+            },
+            "responsible_entity": {
+              "description": "The specific department/party who must carry out the directive.",
+              "title": "Responsible Entity",
+              "type": "string"
+            },
+            "action_required": {
+              "description": "One-line plain English summary of what must be done.",
+              "title": "Action Required",
+              "type": "string"
+            },
+            "deadline_mentioned": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "description": "Exact phrase describing deadline, e.g. 'within 8 weeks'",
+              "title": "Deadline Mentioned"
+            }
+          },
+          "required": [
+            "text",
+            "responsible_entity",
+            "action_required"
+          ],
+          "title": "DirectiveExtraction",
+          "type": "object"
+        }
+      },
+      "properties": {
+        "disposition": {
+          "description": "Outcome word: 'Allowed', 'Dismissed', 'Partly Allowed', 'Disposed of', 'Remanded'.",
+          "title": "Disposition",
+          "type": "string"
+        },
+        "winning_party_type": {
+          "description": "Who won: 'Petitioner', 'Respondent', 'None'.",
+          "title": "Winning Party Type",
+          "type": "string"
+        },
+        "court_directions": {
+          "description": "List of ACTIONABLE compliance directives.",
+          "items": {
+            "$ref": "#/$defs/DirectiveExtraction"
+          },
+          "title": "Court Directions",
+          "type": "array"
+        },
+        "financial_implications": {
+          "description": "Any monetary orders: costs, fines, deposits.",
+          "items": {
+            "type": "string"
+          },
+          "title": "Financial Implications",
+          "type": "array"
+        },
+        "contempt_indicators": {
+          "description": "Phrases suggesting contempt risk: compliance warnings, personal appearance.",
+          "items": {
+            "type": "string"
+          },
+          "title": "Contempt Indicators",
+          "type": "array"
+        },
+        "contempt_risk": {
+          "description": "'High', 'Medium', or 'Low' risk.",
+          "title": "Contempt Risk",
+          "type": "string"
+        },
+        "entities": {
+          "description": "Additional named entities in the operative order (departments, officials).",
+          "items": {
+            "type": "string"
+          },
+          "title": "Entities",
+          "type": "array"
+        }
+      },
+      "required": [
+        "disposition",
+        "winning_party_type",
+        "court_directions",
+        "financial_implications",
+        "contempt_indicators",
+        "contempt_risk",
+        "entities"
+      ],
+      "title": "ComplianceExtraction",
+      "type": "object",
+      "court_directions": [
+        {
+          "text": "These petitions are unmerited and accordingly dismissed.",
+          "responsible_entity": "Court",
+          "action_required": "Dismiss the petitions",
+          "deadline_mentioned": null
+        }
+      ],
+      "financial_implications": [],
+      "contempt_indicators": [],
+      "contempt_risk": "Low",
+      "entities": [],
+      "disposition": "Dismissed",
+      "winning_party_type": "Respondent"
+    },
+    "analyst": {
+      "summary_of_facts": "The petitioners have challenged the decision of the Government of Karnataka to invite Ms. Banu Mushtaq as the chief guest for the Dasara festival inauguration at the Goddess Chamundeshwari Temple. The petitioners argue that inviting Ms. Mushtaq, a Muslim, to inaugurate the festivities of a predominantly Hindu festival, offends Articles 25 and 26 of the Constitution of India. The respondents, however, contend that the festivities are a state-sponsored function and not a religious function of a particular temple or institution, and that Ms. Mushtaq is an accomplished author and social activist. The court heard the arguments and considered the provisions of Articles 25 and 26 of the Constitution. The petitioners relied on previous court decisions, including those related to the management of Hindu religious institutions and the rights of religious denominations.",
+      "issues_framed": [
+        "Whether the invitation extended to Ms. Banu Mushtaq to inaugurate the Dasara festivities offends Articles 25 and 26 of the Constitution of India?",
+        "Whether the state-sponsored Dasara festivities can be considered a religious function of a particular temple or institution, and if so, what are the implications for the management of such events?",
+        "Whether the rights of religious denominations or sections thereof are curtailed or restricted by the invitation extended to Ms. Mushtaq, and if so, what are the consequences under Articles 25 and 26 of the Constitution?"
+      ]
+    },
+    "scholar": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "ratio_decidendi": "The court held that the invitation to respondent No.4 to inaugurate the Dasara festivities does not offend Articles 25 and 26 of the Constitution of India. The court reasoned that the festivities are organized by the State and an accomplished person is called for the inaugural ceremony, and respondent No.4 is an acclaimed author and a Booker Prize winner. The court also noted that the decision to invite respondent No.4 was taken by a Committee comprising elected representatives from various parties and Government officials.",
+      "area_of_law": "Constitutional Law",
+      "primary_statute": "The Constitution of India",
+      "citations": [
+        {
+          "case_name": "Commissioner, Hindu Religious Endowments, Madras v. Sri Lakshmindra Thirtha Swamiar of Sri Shirur Mutt",
+          "citation_ref": "(1954) 1 SCC 412",
+          "context": "distinguished",
+          "principle_extracted": "The court held that the Mathadhipati holds the Mutt property as a life tenancy and his possession is similar to that of a Hindu widow in respect of her husband's estate."
+        },
+        {
+          "case_name": "Adi Saiva Sivachariyargal Nala Sangam and others v. Government of Tamil Nadu and another",
+          "citation_ref": "(2016) 2 SCC 725",
+          "context": "distinguished",
+          "principle_extracted": "The court observed that exclusion of some and inclusion of a particular segment or denomination for appointment as Archaka would not violate Article 14 of the Constitution of India."
+        },
+        {
+          "case_name": "D. Senthilkumar v. Government of Tamil Nadu and others",
+          "citation_ref": "W.P.(MD)Nos.18485/2023",
+          "context": "relied_upon",
+          "principle_extracted": null
+        },
+        {
+          "case_name": "Sri. Venkataramana Devaru and others v. The State of Mysore and others",
+          "citation_ref": "AIR 1958 SC 255",
+          "context": "relied_upon",
+          "principle_extracted": null
+        }
+      ],
+      "entities": [
+        "State of Karnataka",
+        "Department of Kannada and Culture",
+        "Department of Religious Endowments",
+        "Government of Tamil Nadu"
+      ]
+    }
+  },
+  "rag_chunks_count": 10,
+  "recommendation": {
+    "recommendation_id": "bef08d21-15de-4eeb-bf6e-1993c9ed7b5f",
+    "case_id": "WP No. 27824 of 2025 C/W WP No. 27595 of 2025 WP No. 27692 of 2025",
+    "status": "COMPLETED",
+    "verdict": {
+      "decision": "APPEAL",
+      "appeal_to": "High Court",
+      "confidence": 0.6,
+      "urgency": "HIGH",
+      "limitation_deadline": "2026-06-06",
+      "days_remaining": 30
+    },
+    "statistical_basis": {
+      "similar_cases_analyzed": 10,
+      "government_appeal_win_rate": 0,
+      "financial_exposure_if_comply": 0
+    },
+    "primary_reasoning": "Based on the analysis of the petitioners' arguments and the potential violation of Articles 25 and 26 of the Constitution, as well as the consideration of historical precedents and the distinction between a state-sponsored function and a religious function of a particular temple or institution",
+    "appeal_grounds": [
+      "Violation of Articles 25 and 26 of the Constitution",
+      "Incorrect interpretation of the distinction between a state-sponsored function and a religious function"
+    ],
+    "alternative_routes": [
+      "File a review petition",
+      "Seek clarification from the court on the interpretation of Articles 25 and 26"
+    ],
+    "action_plan": {
+      "immediate_actions": [
+        "File appeal within 1 week",
+        "Prepare arguments and evidence to support the appeal"
+      ],
+      "financial_actions": [
+        "Budget allocation for appeal costs",
+        "Consider seeking legal aid or assistance"
+      ]
+    }
+  }
+}

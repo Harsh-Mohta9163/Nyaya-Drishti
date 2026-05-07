@@ -1,17 +1,12 @@
-from apps.cases.models import Case
-from apps.cases.models import ExtractedData
-
+from apps.cases.models import Case, Judgment
 from ..models import ActionPlan
 from .rag_engine import HybridRAGEngine
-from .risk_classifier import classify_contempt_risk
 from .rules_engine import compute_deadlines
-
 
 RAG_ENGINE = HybridRAGEngine()
 
-
-def _build_departments(extracted_data):
-    entities = extracted_data.entities if extracted_data else []
+def _build_departments(judgment):
+    entities = judgment.entities if judgment else []
     departments = []
     for entity in entities:
         if isinstance(entity, dict):
@@ -22,43 +17,49 @@ def _build_departments(extracted_data):
             departments.append(name)
     return departments or ["General Administration"]
 
-
-def generate_or_refresh_action_plan(case: Case):
-    try:
-        extracted_data = case.extracted_data
-    except ExtractedData.DoesNotExist:
-        extracted_data = None
-    operative_text = extracted_data.operative_order if extracted_data else ""
-    recommendation = "appeal" if "appeal" in (operative_text or "").lower() else "comply"
-    deadline_info = compute_deadlines(case.judgment_date, extracted_data.order_type if extracted_data else "", recommendation)
-    contempt_risk = classify_contempt_risk(operative_text)
-    raw_similar = RAG_ENGINE.query(operative_text or case.case_number, top_k=5)
+def generate_or_refresh_action_plan(judgment: Judgment):
+    operative_text = "\n".join([d.get("text", "") for d in judgment.court_directions])
+    
+    # 1. Determine Recommendation
+    # By default, use our appeal strategy from the model if available, else rules
+    action_plan, _ = ActionPlan.objects.get_or_create(judgment=judgment)
+    recommendation = action_plan.recommendation if action_plan.recommendation else ("Appeal" if "appeal" in operative_text.lower() else "Comply")
+    
+    # 2. Compute Deadlines using deterministic rules engine (Phase 9)
+    # The rules engine looks at LimitationRule and CourtCalendar
+    deadline_info = compute_deadlines(judgment.date_of_order, judgment.document_type, recommendation)
+    
+    # 3. Retrieve similar cases (RAG)
     similar_cases = []
-    for r in raw_similar:
-        meta = r.get("metadata", {})
-        similar_cases.append({
-            "case_number": meta.get("case_number", "Unknown Case"),
-            "summary": meta.get("summary", r.get("text", "")),
-            "similarity_score": r.get("score", 0.0),
-            "outcome": meta.get("outcome", "Unknown")
-        })
+    if judgment.summary_of_facts:
+        raw_similar = RAG_ENGINE.retrieve(judgment.summary_of_facts, top_k=5)
+        for r in raw_similar:
+            meta = r.get("metadata", {})
+            similar_cases.append({
+                "case_number": meta.get("case_number", "Unknown Case"),
+                "court_name": meta.get("court_name", "Unknown Court"),
+                "similarity_score": r.get("score", 0.0),
+                "disposition": meta.get("disposition", "Unknown")
+            })
 
-    compliance_actions = extracted_data.court_directions if extracted_data else []
-    action_plan, _ = ActionPlan.objects.update_or_create(
-        case=case,
-        defaults={
-            "recommendation": recommendation.title(),
-            "recommendation_reasoning": "Deterministic first-pass plan generated from extracted order text.",
-            "compliance_actions": compliance_actions,
-            "legal_deadline": deadline_info["legal_deadline"],
-            "internal_deadline": deadline_info["internal_deadline"],
-            "responsible_departments": _build_departments(extracted_data),
-            "ccms_stage": "Proposed for Appeal" if recommendation == "appeal" else "Order Compliance Stage",
-            "contempt_risk": contempt_risk,
-            "similar_cases": similar_cases,
-            "verification_status": "pending",
-        },
-    )
-    case.status = Case.Status.ACTION_CREATED
-    case.save(update_fields=["status", "updated_at"])
+    # 4. Update Action Plan
+    action_plan.recommendation = recommendation.title()
+    if not action_plan.recommendation_reasoning:
+        action_plan.recommendation_reasoning = "Deterministic first-pass plan generated."
+    
+    action_plan.compliance_actions = judgment.court_directions
+    
+    # NLP-based deadlines from extracted data vs Deterministic
+    # In a real app we'd merge them, but here we just take deterministic
+    action_plan.statutory_appeal_deadline = deadline_info["legal_deadline"]
+    action_plan.internal_appeal_deadline = deadline_info["internal_deadline"]
+    
+    action_plan.responsible_departments = _build_departments(judgment)
+    action_plan.ccms_stage = "Proposed for Appeal" if recommendation.lower() == "appeal" else "Order Compliance Stage"
+    action_plan.contempt_risk = judgment.contempt_risk
+    action_plan.similar_cases = similar_cases
+    if not action_plan.verification_status:
+        action_plan.verification_status = "pending"
+        
+    action_plan.save()
     return action_plan

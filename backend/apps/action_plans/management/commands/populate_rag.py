@@ -1,259 +1,350 @@
 """
-Django management command to bulk-load Karnataka HC judgments into the RAG corpus.
+populate_rag.py — Nyaya-Drishti RAG ingestion pipeline
+=======================================================
+Downloads PDFs from AWS Open Data, extracts structured legal data via LLM,
+stores in Django models, and indexes into ChromaDB.
 
-USAGE:
-  # Load from a directory of PDF files
-  python manage.py populate_rag --source pdfs --path /path/to/pdfs/
-
-  # Load from a directory of plain text files
-  python manage.py populate_rag --source texts --path /path/to/texts/
-
-  # Load from Indian Kanoon search results (auto-download)
-  python manage.py populate_rag --source indiankanoon --query "Karnataka High Court 2024" --count 50
-
-  # Load the built-in sample corpus
-  python manage.py populate_rag --source samples
+IMPORTANT:
+- --count N means "download and attempt exactly N PDFs", not "keep trying until N succeed"
+- --full-reset wipes DB + PDFs + ChromaDB before starting
+- --min-size filters PDFs by file size (KB) to skip short interim orders
+- Only creates DB records AFTER successful LLM extraction (no zombies)
 """
+import os
 import glob
 import logging
-import os
 import time
-
+import uuid
 from django.core.management.base import BaseCommand
-
-from apps.action_plans.services.rag_engine import HybridRAGEngine
+from apps.action_plans.services.rag_engine import HybridRAGEngine, reset_collection
+from apps.cases.models import Case, Judgment
 
 logger = logging.getLogger(__name__)
 
-
-# Built-in sample corpus of Karnataka HC operative orders
-BUILT_IN_SAMPLES = [
-    {
-        "text": "The writ petition is allowed. The impugned order dated 15.06.2023 passed by the Revenue Department is hereby quashed. The respondent-State is directed to pay compensation of Rs. 25,00,000/- to the petitioner within 60 days. The Secretary, Revenue Department shall ensure compliance, failing which contempt proceedings shall be initiated.",
-        "metadata": {"case_number": "WP 9876/2023", "court": "Karnataka HC", "type": "Land Acquisition", "year": "2023"},
-    },
-    {
-        "text": "The appeal is dismissed. The impugned order of the learned Single Judge does not warrant any interference. The appellants are directed to comply with the order within 30 days. No costs.",
-        "metadata": {"case_number": "WA 543/2023", "court": "Karnataka HC", "type": "Writ Appeal", "year": "2023"},
-    },
-    {
-        "text": "Having heard the learned counsel, this Court finds merit in the petition. The order of transfer is set aside. The Government is directed to reinstate the petitioner within 15 days with all consequential benefits including back wages. The respondent shall personally appear before this Court on the next date of hearing failing which coercive action will be taken.",
-        "metadata": {"case_number": "WP 4567/2024", "court": "Karnataka HC", "type": "Service Matter", "year": "2024"},
-    },
-    {
-        "text": "The petition under Article 226 is disposed of. The respondent-Corporation is directed to consider the representation of the petitioner and pass appropriate orders within 4 weeks. Liberty is reserved to the petitioner to approach this Court if the representation is not considered.",
-        "metadata": {"case_number": "WP 2345/2024", "court": "Karnataka HC", "type": "Municipal", "year": "2024"},
-    },
-    {
-        "text": "The SLP is allowed in part. The High Court order is modified. The State Government shall pay compensation of Rs. 1,50,00,000/- for land acquisition under the Right to Fair Compensation and Transparency in Land Acquisition Act, 2013. The amount shall be deposited within 90 days. In default of payment, the amount shall carry interest at 9% per annum.",
-        "metadata": {"case_number": "SLP 1234/2024", "court": "Supreme Court", "type": "Land Acquisition", "year": "2024"},
-    },
-    {
-        "text": "This Court is constrained to observe that the State Government has not complied with the earlier order dated 10.01.2024. The Chief Secretary is directed to file a personal affidavit explaining the reasons for non-compliance. In the event of continued non-compliance, this Court shall be constrained to initiate contempt proceedings under Section 12 of the Contempt of Courts Act, 1971.",
-        "metadata": {"case_number": "WP 7890/2023", "court": "Karnataka HC", "type": "Contempt", "year": "2023"},
-    },
-    {
-        "text": "The pension revision application is allowed. The respondent-State is directed to revise the pension of the petitioner in accordance with the recommendations of the 7th Pay Commission within 3 months from the date of this order. The arrears shall be paid with interest at 6% per annum.",
-        "metadata": {"case_number": "WP 3456/2024", "court": "Karnataka HC", "type": "Pension", "year": "2024"},
-    },
-    {
-        "text": "The environmental clearance granted by MoEFCC is quashed. The mining operations in the Western Ghats area shall cease forthwith. The District Collector shall ensure immediate compliance and file a compliance report within 30 days. The State Pollution Control Board shall monitor the restoration activities.",
-        "metadata": {"case_number": "WP 5678/2023", "court": "Karnataka HC", "type": "Environmental", "year": "2023"},
-    },
-    {
-        "text": "The petitioner is entitled to regularization in service as directed by this Court in its earlier order. The respondent-BDA is directed to regularize the service of the petitioner within 4 weeks and pay all consequential monetary benefits. The Director, BDA shall file compliance report within 6 weeks.",
-        "metadata": {"case_number": "WP 1111/2024", "court": "Karnataka HC", "type": "Service Regularization", "year": "2024"},
-    },
-    {
-        "text": "The impugned notification under Section 4 of the Land Acquisition Act is quashed for violation of principles of natural justice. No hearing was afforded to the petitioner before acquisition. The respondent shall return the land to the petitioner within 60 days, failing which market value compensation with solatium shall be paid.",
-        "metadata": {"case_number": "WP 2222/2024", "court": "Karnataka HC", "type": "Land Acquisition", "year": "2024"},
-    },
-    {
-        "text": "The bail application is rejected. The investigation is at a crucial stage and there is a possibility of the accused tampering with evidence. The accused shall remain in judicial custody. Application for anticipatory bail is also rejected.",
-        "metadata": {"case_number": "Crl.P 333/2024", "court": "Karnataka HC", "type": "Criminal - Bail", "year": "2024"},
-    },
-    {
-        "text": "The KSRTC is directed to pay the accident compensation of Rs. 8,50,000/- to the claimant within 45 days from the date of this order. The amount already deposited shall be adjusted. Interest at 7.5% per annum shall be payable from the date of accident till realization.",
-        "metadata": {"case_number": "MFA 444/2024", "court": "Karnataka HC", "type": "Motor Accident", "year": "2024"},
-    },
-    {
-        "text": "The respondent-BESCOM is directed to restore the electricity connection of the petitioner within 7 working days. The disconnection was illegal as no notice was served. The respondent shall also pay costs of Rs. 10,000/- to the petitioner for unnecessary harassment.",
-        "metadata": {"case_number": "WP 5555/2024", "court": "Karnataka HC", "type": "Public Utility", "year": "2024"},
-    },
-    {
-        "text": "The BBMP is directed to remove the encroachment on the storm water drain within 30 days after issuing proper notice to the encroacher. The Commissioner, BBMP shall personally monitor the demolition drive. The Health Officer shall ensure proper waste management in the area.",
-        "metadata": {"case_number": "WP 6666/2024", "court": "Karnataka HC", "type": "Municipal - Encroachment", "year": "2024"},
-    },
-    {
-        "text": "The respondent-University is directed to declare the result of the petitioner within 2 weeks. The petitioner's examination was withheld without valid reason. The Vice Chancellor shall ensure that no student faces similar harassment in future.",
-        "metadata": {"case_number": "WP 7777/2024", "court": "Karnataka HC", "type": "Education", "year": "2024"},
-    },
-    {
-        "text": "The Forest Department is directed to release the vehicles seized from the petitioner within 10 days as no forest offence is made out. The Range Forest Officer shall file compliance report. The department shall pay costs of Rs. 25,000/- for wrongful seizure.",
-        "metadata": {"case_number": "WP 8888/2024", "court": "Karnataka HC", "type": "Forest", "year": "2024"},
-    },
-    {
-        "text": "The respondent-Insurance Company shall settle the health insurance claim of Rs. 4,50,000/- within 30 days. The rejection of claim on technical grounds is unsustainable. Interest at 9% per annum shall be payable from the date of rejection.",
-        "metadata": {"case_number": "WP 9999/2024", "court": "Karnataka HC", "type": "Insurance", "year": "2024"},
-    },
-    {
-        "text": "The State Government is directed to constitute the Lokayukta within 3 months as mandated by the Karnataka Lokayukta Act. The Chief Secretary shall file status report every month. The inordinate delay in constituting the anti-corruption body is deprecated.",
-        "metadata": {"case_number": "PIL 100/2024", "court": "Karnataka HC", "type": "PIL - Governance", "year": "2024"},
-    },
-    {
-        "text": "The respondent-police are directed to register FIR within 24 hours on the complaint of the petitioner under Section 154 Cr.P.C. The SHO shall investigate the matter and file charge sheet within statutory period. The SP shall monitor the investigation.",
-        "metadata": {"case_number": "Crl.P 200/2024", "court": "Karnataka HC", "type": "Criminal - FIR", "year": "2024"},
-    },
-    {
-        "text": "The order of demolition passed by the BBMP is stayed for a period of 8 weeks subject to the petitioner filing regularization application within 2 weeks. The Corporation shall consider the application within 6 weeks thereafter.",
-        "metadata": {"case_number": "WP 300/2025", "court": "Karnataka HC", "type": "Municipal - Demolition", "year": "2025"},
-    },
-]
+# Minimum PDF size in bytes to consider for ingestion (skip short orders)
+DEFAULT_MIN_SIZE_KB = 100  # 100KB ~ 5+ page judgment
 
 
 class Command(BaseCommand):
-    help = "Populate the RAG vector store with Karnataka HC judgment texts"
+    help = "Populate the RAG vector store and database with Karnataka HC judgments"
 
     def add_arguments(self, parser):
-        parser.add_argument(
-            "--source",
-            type=str,
-            default="samples",
-            choices=["samples", "pdfs", "texts", "indiankanoon"],
-            help="Source of judgment texts",
-        )
-        parser.add_argument("--path", type=str, default="", help="Directory path for pdfs/texts source")
-        parser.add_argument("--query", type=str, default="", help="Search query for indiankanoon source")
-        parser.add_argument("--count", type=int, default=20, help="Number of documents to fetch")
+        parser.add_argument("--source", type=str, default="aws_s3", choices=["pdfs", "aws_s3"])
+        parser.add_argument("--path", type=str, default="")
+        parser.add_argument("--prefix", type=str,
+                          default="data/pdf/year=2024/court=29_3/bench=karnataka_bng_old/")
+        parser.add_argument("--count", type=int, default=2,
+                          help="Exact number of PDFs to download and process")
+        parser.add_argument("--min-size", type=int, default=DEFAULT_MIN_SIZE_KB,
+                          help="Minimum PDF size in KB (skip small interim orders). Default 100KB")
+        parser.add_argument("--reset", action="store_true",
+                          help="Reset ChromaDB only")
+        parser.add_argument("--full-reset", action="store_true",
+                          help="Reset ChromaDB + DB + media PDFs")
+        parser.add_argument("--provider", type=str, default="",
+                          choices=["", "gemini", "nvidia", "groq"])
+        parser.add_argument("--gov-only", action="store_true",
+                          help="Only keep cases where government is a party")
 
     def handle(self, *args, **options):
+        if options.get("provider"):
+            from django.conf import settings
+            settings.LLM_PROVIDER = options["provider"]
+            self.stdout.write(self.style.WARNING(
+                f"Using LLM provider: {options['provider']}"))
+
+        if options.get("full_reset") or options.get("reset"):
+            self.stdout.write(self.style.WARNING("Resetting ChromaDB collection..."))
+            reset_collection()
+            self.stdout.write(self.style.SUCCESS("Collection reset."))
+
+        if options.get("full_reset"):
+            self._do_full_reset()
+
         rag = HybridRAGEngine()
         source = options["source"]
 
-        if source == "samples":
-            self._load_samples(rag)
-        elif source == "pdfs":
-            self._load_pdfs(rag, options["path"])
-        elif source == "texts":
-            self._load_texts(rag, options["path"])
-        elif source == "indiankanoon":
-            self._load_indiankanoon(rag, options["query"], options["count"])
+        if source == "pdfs":
+            self._load_pdfs(rag, options["path"], options.get("gov_only", False))
+        elif source == "aws_s3":
+            self._load_aws_s3(rag, options["prefix"], options["count"],
+                            options["min_size"], options.get("gov_only", False))
 
-    def _load_samples(self, rag):
-        self.stdout.write("Loading built-in sample corpus...")
-        rag.add_documents(BUILT_IN_SAMPLES)
-        self.stdout.write(self.style.SUCCESS(f"Added {len(BUILT_IN_SAMPLES)} sample documents to RAG"))
+    def _do_full_reset(self):
+        """Delete all DB records AND physical PDF files."""
+        self.stdout.write(self.style.WARNING("Deleting all Case/Judgment DB records..."))
+        count_cases = Case.objects.count()
+        Case.objects.all().delete()
+        self.stdout.write(self.style.SUCCESS(f"Deleted {count_cases} DB records."))
 
-    def _load_pdfs(self, rag, path):
+        from django.conf import settings
+        media_judgments = os.path.join(settings.MEDIA_ROOT, "judgments")
+        if os.path.exists(media_judgments):
+            pdf_files = [f for f in os.listdir(media_judgments) if f.lower().endswith(".pdf")]
+            self.stdout.write(self.style.WARNING(
+                f"Deleting {len(pdf_files)} PDFs from {media_judgments}..."))
+            for f in pdf_files:
+                try:
+                    os.remove(os.path.join(media_judgments, f))
+                except OSError:
+                    pass
+            self.stdout.write(self.style.SUCCESS(f"Deleted {len(pdf_files)} old PDFs."))
+
+    # Government party keywords for --gov-only filter
+    _GOV_KEYWORDS = [
+        "state of", "union of india", "government", "commissioner",
+        "secretary", "municipal", "collector", "district magistrate",
+        "superintendent of police", "chief secretary", "director general",
+        "registrar", "controller", "inspector general", "deputy commissioner",
+        "sub-divisional", "tehsildar", "ministry of", "department of",
+        "corporation of", "panchayat", "nagar", "zilla",
+    ]
+
+    def _is_government_party(self, header_text: str) -> bool:
+        """Fast check for government entities in the header before wasting LLM calls."""
+        text = header_text.lower()
+        return any(kw in text for kw in self._GOV_KEYWORDS)
+
+    def _process_pdf_file(self, pdf_path: str, rag: HybridRAGEngine, gov_only: bool = False) -> bool:
+        """
+        Process a single PDF. Returns True on success, False on failure.
+        
+        KEY DESIGN: All DB writes happen ONLY after successful LLM extraction.
+        If anything fails, nothing is written to DB and no orphan PDF is left.
+        """
+        from apps.cases.services.pdf_processor import extract_text_from_pdf
+        from apps.cases.services.section_segmenter import segment_judgment
+        from apps.cases.services.extractor import extract_structured_data
+        from django.core.files import File
+
+        filename = os.path.basename(pdf_path)
+
+        # ===== STEP 1: Extract text (no DB writes) =====
+        self.stdout.write("  [Step 1/4] Extracting text from PDF...")
+        text = extract_text_from_pdf(pdf_path)
+        char_count = len(text)
+        page_est = max(1, char_count // 3000)
+        self.stdout.write(f"  Extracted {char_count} characters (~{page_est} pages)")
+
+        if char_count < 1000:
+            self.stdout.write(self.style.WARNING(
+                f"  SKIPPING: Too short ({char_count} chars). Likely a cover page or notice."))
+            return False
+
+        # ===== STEP 2: Segment (no DB writes) =====
+        self.stdout.write("  [Step 2/4] Segmenting judgment...")
+        sections = segment_judgment(text)
+        h_len = len(sections.get("header", ""))
+        m_len = len(sections.get("middle", ""))
+        o_len = len(sections.get("operative_order", ""))
+        self.stdout.write(
+            f"  Header: {h_len} | Middle: {m_len} | Operative: {o_len}")
+
+        # ===== FAST FAIL: Government Party Check =====
+        if gov_only:
+            if not self._is_government_party(sections.get("header", "")):
+                self.stdout.write(self.style.WARNING(
+                    "  SKIPPING: No government keywords found in the header text."))
+                return False
+
+        # ===== STEP 3: Create TEMP DB records + LLM extraction =====
+        # We must create the records because extractor.py needs a judgment_id to save to.
+        # If LLM fails, we delete them.
+        self.stdout.write("  [Step 3/4] LLM structured extraction (3 calls)...")
+
+        temp_id = str(uuid.uuid4())[:8]
+        case = Case.objects.create(
+            court_name=f"_temp_{temp_id}",
+            case_number=filename,
+            case_year=2024,
+            case_type="PDF Import",
+            status="disposed",
+            petitioner_name="",
+            respondent_name="",
+        )
+        judgment = Judgment.objects.create(
+            case=case,
+            date_of_order="2024-01-01",
+            processing_status="extracting",
+        )
+        # Save PDF file
+        with open(pdf_path, "rb") as f:
+            judgment.pdf_file.save(filename, File(f))
+
+        try:
+            extracted = extract_structured_data(
+                judgment_id=str(judgment.id),
+                header_text=sections.get("header", ""),
+                middle_text=sections.get("middle", ""),
+                operative_text=sections.get("operative_order", ""),
+            )
+        except Exception as e:
+            # LLM FAILED — clean up everything, leave no trace
+            self.stderr.write(self.style.ERROR(f"  LLM FAILED: {e}"))
+            self._cleanup_failed(judgment, case)
+            return False
+
+        # ===== STEP 4: LLM succeeded — refresh & vectorize =====
+        judgment.refresh_from_db()
+        case.refresh_from_db()
+
+        # Verify it actually extracted something
+        if case.court_name.startswith("_temp_"):
+            self.stderr.write(self.style.ERROR(
+                "  LLM returned data but Case was not updated. Cleaning up."))
+            self._cleanup_failed(judgment, case)
+            return False
+
+        self.stdout.write(f"  Case: {case.case_number} | {case.court_name}")
+
+        self.stdout.write("  [Step 4/4] Embedding into ChromaDB...")
+        doc_text = f"{judgment.summary_of_facts}\n\n{judgment.ratio_decidendi}"
+        if len(doc_text.strip()) < 10:
+            doc_text = sections.get("operative_order", text[-3000:])
+
+        doc = {
+            "text": doc_text,
+            "metadata": {
+                "id": str(judgment.id),
+                "case_id": str(case.id),
+                "case_number": case.case_number,
+                "court_name": case.court_name,
+                "disposition": judgment.disposition,
+                "winning_party_type": judgment.winning_party_type,
+                "document_type": judgment.document_type,
+                "case_type": case.case_type,
+                "year": case.case_year,
+                "contempt_risk": judgment.contempt_risk,
+                "appeal_type": judgment.appeal_type,
+                "has_financial_implications": bool(judgment.financial_implications),
+                "area_of_law": case.area_of_law,
+                "precedent_status": judgment.precedent_status,
+            },
+        }
+        rag.add_documents([doc])
+
+        self.stdout.write(self.style.SUCCESS(
+            f"  [DONE] {case.case_number} | "
+            f"Disposition: {judgment.disposition} | "
+            f"Risk: {judgment.contempt_risk}"))
+        return True
+
+    def _cleanup_failed(self, judgment, case):
+        """Remove DB records and physical PDF for a failed extraction."""
+        if judgment.pdf_file:
+            try:
+                path = judgment.pdf_file.path
+                if os.path.exists(path):
+                    os.remove(path)
+            except Exception:
+                pass
+        judgment.delete()
+        case.delete()
+
+    def _load_pdfs(self, rag, path, gov_only=False):
         if not path or not os.path.isdir(path):
             self.stderr.write(f"Invalid path: {path}")
             return
-
-        from apps.cases.services.pdf_processor import extract_text_from_pdf
-        from apps.cases.services.section_segmenter import segment_judgment
 
         pdf_files = glob.glob(os.path.join(path, "*.pdf"))
         self.stdout.write(f"Found {len(pdf_files)} PDF files in {path}")
 
-        documents = []
         for i, pdf_path in enumerate(pdf_files):
-            self.stdout.write(f"  [{i + 1}/{len(pdf_files)}] Processing {os.path.basename(pdf_path)}...")
-            try:
-                text = extract_text_from_pdf(pdf_path)
-                sections = segment_judgment(text)
-                operative = sections.get("operative_order", "")
-                if len(operative) > 50:
-                    documents.append({
-                        "text": operative[:3000],
-                        "metadata": {
-                            "case_number": os.path.basename(pdf_path).replace(".pdf", ""),
-                            "court": "Karnataka HC",
-                            "type": "PDF Import",
-                            "source_file": os.path.basename(pdf_path),
-                        },
-                    })
-            except Exception as e:
-                self.stderr.write(f"  Failed: {e}")
+            self.stdout.write(
+                f"\n  [{i+1}/{len(pdf_files)}] Processing {os.path.basename(pdf_path)}...")
+            self._process_pdf_file(pdf_path, rag, gov_only)
 
-        if documents:
-            rag.add_documents(documents)
-            self.stdout.write(self.style.SUCCESS(f"Added {len(documents)} PDF documents to RAG"))
-
-    def _load_texts(self, rag, path):
-        if not path or not os.path.isdir(path):
-            self.stderr.write(f"Invalid path: {path}")
+    def _load_aws_s3(self, rag, prefix, count, min_size_kb, gov_only=False):
+        try:
+            import boto3
+            from botocore import UNSIGNED
+            from botocore.config import Config
+        except ImportError:
+            self.stderr.write("boto3 not installed. Run: pip install boto3")
             return
 
-        text_files = glob.glob(os.path.join(path, "*.txt"))
-        self.stdout.write(f"Found {len(text_files)} text files in {path}")
+        import tempfile
 
-        documents = []
-        for f in text_files:
-            with open(f, "r", encoding="utf-8", errors="ignore") as fh:
-                text = fh.read()
-                if len(text) > 50:
-                    documents.append({
-                        "text": text[:3000],
-                        "metadata": {
-                            "case_number": os.path.basename(f).replace(".txt", ""),
-                            "court": "Karnataka HC",
-                            "type": "Text Import",
-                        },
-                    })
+        min_size_bytes = min_size_kb * 1024
+        self.stdout.write(
+            f"Fetching from AWS Open Data, prefix: '{prefix}'")
+        self.stdout.write(
+            f"  Filter: min PDF size = {min_size_kb}KB | count = {count}")
 
-        if documents:
-            rag.add_documents(documents)
-            self.stdout.write(self.style.SUCCESS(f"Added {len(documents)} text documents to RAG"))
-
-    def _load_indiankanoon(self, rag, query, count):
-        import requests
-
-        if not query:
-            query = "Karnataka High Court writ petition 2024"
-
-        self.stdout.write(f"Fetching from Indian Kanoon: '{query}' (max {count})...")
+        s3 = boto3.client("s3", region_name="ap-south-1",
+                         config=Config(signature_version=UNSIGNED))
+        bucket = "indian-high-court-judgments"
 
         try:
-            headers = {"User-Agent": "NyayaDrishti-Research/1.0"}
-            resp = requests.get(
-                "https://api.indiankanoon.org/search/",
-                params={"formInput": query, "pagenum": 0},
-                headers={**headers, "Authorization": "Token " + os.getenv("INDIANKANOON_API_KEY", "")},
-                timeout=30,
-            )
+            paginator = s3.get_paginator("list_objects_v2")
+            pages = paginator.paginate(Bucket=bucket, Prefix=prefix)
 
-            if resp.status_code != 200:
-                self.stderr.write(
-                    f"Indian Kanoon API returned {resp.status_code}. "
-                    f"Set INDIANKANOON_API_KEY in .env or use --source pdfs/texts instead."
-                )
-                # Fallback to samples
-                self.stdout.write("Falling back to built-in samples...")
-                self._load_samples(rag)
-                return
+            downloaded = 0
+            scanned = 0
+            skipped_small = 0
 
-            docs = resp.json().get("docs", [])[:count]
-            documents = []
-            for doc in docs:
-                text = doc.get("docsource", "") or doc.get("headline", "")
-                if len(text) > 50:
-                    documents.append({
-                        "text": text[:3000],
-                        "metadata": {
-                            "case_number": doc.get("title", "Unknown"),
-                            "court": "Karnataka HC",
-                            "type": "Indian Kanoon",
-                            "tid": doc.get("tid", ""),
-                        },
-                    })
+            for page in pages:
+                if "Contents" not in page:
+                    continue
 
-            if documents:
-                rag.add_documents(documents)
-                self.stdout.write(self.style.SUCCESS(f"Added {len(documents)} documents from Indian Kanoon"))
-            else:
-                self.stderr.write("No documents found. Falling back to samples.")
-                self._load_samples(rag)
+                for obj in page["Contents"]:
+                    if downloaded >= count:
+                        break
+
+                    key = obj["Key"]
+                    if not key.lower().endswith(".pdf"):
+                        continue
+
+                    scanned += 1
+                    file_size = obj["Size"]
+                    file_kb = file_size / 1024
+
+                    # FILTER: Skip small PDFs (interim orders, bail orders, etc.)
+                    if file_size < min_size_bytes:
+                        skipped_small += 1
+                        continue
+
+                    downloaded += 1
+                    self.stdout.write(
+                        f"\n  [{downloaded}/{count}] Downloading {key.split('/')[-1]} "
+                        f"({file_kb:.0f} KB)...")
+
+                    tmp_path = None
+                    try:
+                        response = s3.get_object(Bucket=bucket, Key=key)
+                        with tempfile.NamedTemporaryFile(
+                            delete=False, suffix=".pdf"
+                        ) as tmp:
+                            tmp.write(response["Body"].read())
+                            tmp_path = tmp.name
+
+                        success = self._process_pdf_file(tmp_path, rag, gov_only)
+
+                        # Clean up temp download
+                        if os.path.exists(tmp_path):
+                            os.unlink(tmp_path)
+
+                        # Sleep between successful extractions
+                        if success and downloaded < count:
+                            self.stdout.write(self.style.WARNING(
+                                "  Sleeping 30s for NVIDIA rate limits..."))
+                            time.sleep(30)
+
+                    except Exception as e:
+                        self.stderr.write(f"  FATAL: {key}: {e}")
+                        if tmp_path and os.path.exists(tmp_path):
+                            os.unlink(tmp_path)
+
+                if downloaded >= count:
+                    break
+
+            # Summary
+            self.stdout.write("")
+            self.stdout.write(self.style.SUCCESS(
+                f"=== COMPLETE ===\n"
+                f"  Scanned:  {scanned} PDFs in S3\n"
+                f"  Skipped:  {skipped_small} (under {min_size_kb}KB)\n"
+                f"  Processed: {downloaded}"))
 
         except Exception as e:
-            self.stderr.write(f"Indian Kanoon fetch failed: {e}. Using built-in samples.")
-            self._load_samples(rag)
+            self.stderr.write(f"AWS S3 fetch failed: {e}")

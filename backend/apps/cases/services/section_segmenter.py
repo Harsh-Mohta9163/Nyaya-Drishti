@@ -1,111 +1,165 @@
 """
-Structure-aware judgment segmenter.
+Structure-aware judgment segmenter — Bi-directional Scanning.
 
-Splits a Karnataka HC judgment into: header, facts, analysis, operative_order.
-The operative order is where 95 % of actionable directives live.
+Splits a Karnataka HC judgment into: header, body, operative_order.
+
+Algorithm:
+  1. HEADER END (top-down): Scan from top until first narrative trigger
+     ("This petition is filed...", "Heard learned counsel...", etc.)
+  2. OPERATIVE START (bottom-up): Scan from bottom until disposal trigger
+     ("For the foregoing reasons...", "ORDER", "Petition is allowed...", etc.)
+  3. BODY: Everything between header_end and operative_start.
+  4. OVERLAP: 10% bidirectional so no reasoning is lost at boundaries.
 """
 import re
 
-# Patterns that signal the start of the operative/order section
-_OPERATIVE_PATTERNS = [
-    r"\bORDER\b",
-    r"\bORDERED\b",
-    r"\bO\s*R\s*D\s*E\s*R\b",
-    r"\bDIRECTIONS?\b",
-    r"\boperative\s+portion\b",
-    r"\boperative\s+part\b",
-    r"\bhence[,;:\s]",
-    r"\btherefore[,;:\s]",
-    r"\bfor\s+the\s+reasons\s+(stated|mentioned|aforesaid)\b",
-    r"\bin\s+the\s+result\b",
-    r"\baccordingly[,;:\s]",
-    r"\bpetition\s+is\s+(allowed|dismissed|disposed)\b",
-    r"\bappeal\s+is\s+(allowed|dismissed|disposed)\b",
-    r"\bwrit\s+petition\s+is\s+(allowed|dismissed|disposed)\b",
-    r"\bthe\s+following\s+order\s+is\s+made\b",
-    r"\bi\s+pass\s+the\s+following\s+order\b",
+# ─── NARRATIVE TRIGGERS (top-down: marks where the facts/body begins) ───
+_NARRATIVE_TRIGGERS = [
+    r"This\s+(writ\s+)?petition\s+is\s+filed",
+    r"This\s+appeal\s+is\s+(filed|preferred|directed|directed\s+against)",
+    r"The\s+(brief\s+)?facts\s+(of\s+the\s+case|leading\s+to\s+this)",
+    r"The\s+petitioner\s+(herein\s+)?has\s+filed",
+    r"The\s+appellant\s+(herein\s+)?has\s+preferred",
+    r"Heard\s+(the\s+)?learned\s+(counsel|senior\s+counsel|advocate|Sr\.\s*Counsel)",
+    r"Having\s+heard\s+(the\s+)?learned",
+    r"Having\s+considered",
+    r"The\s+case\s+of\s+the\s+(petitioner|appellant|prosecution|respondent)",
+    r"The\s+(brief\s+)?background\s+of\s+the\s+case",
+    r"Sri\.?\s+\w+.*learned\s+(counsel|advocate)\s+for",
+    r"The\s+learned\s+(counsel|advocate)\s+for\s+the",
+    r"PRAYER\b",
+    r"FACTS\b",
+    r"BRIEF\s+FACTS",
+    r"BACKGROUND\b",
+    r"Factual\s+matrix\s+of\s+the\s+case",
+    r"The\s+short\s+facts\s+are",
+    r"It\s+is\s+the\s+case\s+of\s+the",
 ]
 
-_OPERATIVE_RE = re.compile("|".join(_OPERATIVE_PATTERNS), re.IGNORECASE)
-
-# Header patterns (case number, bench, parties)
-_HEADER_END_PATTERNS = [
-    r"\bTHIS\s+(WRIT\s+)?PETITION\b",
-    r"\bTHIS\s+APPEAL\b",
-    r"\bPRAYER\b",
-    r"\bBACKGROUND\b",
-    r"\bFACTS\b",
-    r"\bBRIEF\s+FACTS\b",
-    r"\bHaving\s+heard\b",
-    r"\bHaving\s+considered\b",
+# ─── DISPOSAL TRIGGERS (bottom-up: marks where the order begins) ───
+_DISPOSAL_TRIGGERS = [
+    # Strong standalone headings (most reliable)
+    r"^\s*\**\s*ORDER\s*\**\s*$",
+    r"^\s*\**\s*DIRECTIONS?\s*\**\s*$",
+    r"^\s*\**\s*OPERATIVE\s+PORTION\s*\**\s*$",
+    r"^\s*\**\s*FINAL\s+ORDER\s*\**\s*$",
+    # Formulaic preamble to the order
+    r"For\s+the\s+(foregoing|above|aforesaid)\s+reasons",
+    r"In\s+view\s+of\s+the\s+(above|foregoing|discussions?|observations?)",
+    r"In\s+the\s+result",
+    r"For\s+these\s+reasons",
+    r"I\s+(therefore\s+)?pass\s+the\s+following",
+    r"The\s+following\s+order\s+is\s+(made|passed)",
+    r"We\s+are\s+of\s+the\s+considered\s+view",
+    r"Consequently,?\s+the\s+(following|writ)",
+    # Disposition sentences
+    r"(Petition|Appeal|Writ\s+petition|W\.?P\.?|Application)\s+is\s+(hereby\s+)?(allowed|dismissed|disposed\s+of|partly\s+allowed|rejected)",
+    r"(Hence|Therefore|Accordingly),?\s+(this\s+|the\s+)?(petition|appeal|writ|application|W\.?P\.?)",
+    r"Accordingly,?\s+I\s+(pass|make|direct)",
+    r"Subject\s+to\s+the\s+above\s+(observations?|directions?)",
+    r"With\s+the\s+above\s+observations?",
+    r"The\s+writ\s+petition\s+stands\s+(dismissed|allowed|disposed)",
+    r"The\s+appeal\s+stands\s+(dismissed|allowed|disposed)",
 ]
 
-_HEADER_END_RE = re.compile("|".join(_HEADER_END_PATTERNS), re.IGNORECASE)
+_NARRATIVE_RE = re.compile("|".join(_NARRATIVE_TRIGGERS), re.IGNORECASE)
+_DISPOSAL_RE = re.compile("|".join(_DISPOSAL_TRIGGERS), re.IGNORECASE | re.MULTILINE)
 
 
 def segment_judgment(text: str) -> dict:
     """
-    Split judgment text into structured sections.
+    Split judgment text into structured sections using bi-directional scanning.
 
-    Returns dict with keys: header, facts, analysis, operative_order, full_text
+    Returns dict with keys: header, middle, operative_order, full_text
     """
     normalized = (text or "").strip()
     if not normalized:
         return {
             "header": "",
-            "facts": "",
-            "analysis": "",
+            "middle": "",
             "operative_order": "",
             "full_text": "",
         }
 
-    # --- Find header end ---
-    header_end = min(len(normalized), 2000)  # Default: first 2000 chars
-    for match in _HEADER_END_RE.finditer(normalized[:5000]):
-        header_end = match.start()
+    doc_len = len(normalized)
+
+    # ─── PHASE 1: Find header end (top-down) ───
+    # Scan the first 30% of the document for the first narrative trigger
+    scan_limit_header = min(doc_len, int(doc_len * 0.30))
+    header_end = min(doc_len, 2000)  # default fallback
+
+    for match in _NARRATIVE_RE.finditer(normalized[:scan_limit_header]):
+        # Take the FIRST match — this is where the body starts
+        # Back up to the start of the line containing the match
+        line_start = normalized.rfind("\n", 0, match.start())
+        header_end = max(0, line_start + 1) if line_start >= 0 else match.start()
         break
 
-    # --- Find operative order start ---
-    # Search from the LAST 60% of the document (operative orders are near the end)
-    search_start = max(0, int(len(normalized) * 0.4))
-    operative_start = len(normalized)
+    # ─── PHASE 2: Find operative start (bottom-up) ───
+    # Scan the last 50% of the document for the LAST disposal trigger
+    scan_start_operative = max(0, int(doc_len * 0.50))
+    operative_start = doc_len  # default: no operative section found
 
-    # Find ALL matches and pick the LAST major one
-    matches = list(_OPERATIVE_RE.finditer(normalized[search_start:]))
+    # Find ALL matches and pick the best one
+    matches = list(_DISPOSAL_RE.finditer(normalized[scan_start_operative:]))
     if matches:
-        # Prefer matches that look like standalone "ORDER" headings
+        # Strategy: prefer standalone ORDER/DIRECTIONS headings (short lines)
+        # Then fall back to the last formulaic trigger
+        best_match = None
+
+        # First pass: look for standalone headings
         for m in reversed(matches):
-            line_start = normalized.rfind("\n", 0, search_start + m.start()) + 1
-            line_text = normalized[line_start:search_start + m.end()].strip()
-            # Standalone heading (short line with ORDER/DIRECTIONS)
-            if len(line_text) < 40:
-                operative_start = line_start
+            abs_start = scan_start_operative + m.start()
+            line_start = normalized.rfind("\n", 0, abs_start)
+            line_end = normalized.find("\n", abs_start)
+            if line_end == -1:
+                line_end = doc_len
+            line_text = normalized[line_start + 1:line_end].strip()
+
+            # Standalone heading: short line, typically just "ORDER" or "**ORDER**"
+            if len(line_text) < 50 and re.match(r"^\**\s*(ORDER|DIRECTIONS?)\s*\**$", line_text, re.IGNORECASE):
+                best_match = max(0, line_start + 1)
                 break
-        else:
-            # Fall back to last match
-            operative_start = search_start + matches[-1].start()
 
-    # --- Build sections ---
+        # Second pass: if no standalone heading, use the last disposition sentence
+        if best_match is None:
+            for m in reversed(matches):
+                abs_start = scan_start_operative + m.start()
+                line_start = normalized.rfind("\n", 0, abs_start)
+                best_match = max(0, line_start + 1) if line_start >= 0 else abs_start
+                break
+
+        if best_match is not None:
+            operative_start = best_match
+
+    # ─── PHASE 3: Build sections WITH OVERLAP ───
+    # 10% bidirectional overlap ensures no reasoning/directives lost at boundary.
+    # Each LLM agent's prompt asks for SPECIFIC things, so it ignores irrelevant overlap.
+
     header = normalized[:header_end].strip()
-    operative_order = normalized[operative_start:].strip() if operative_start < len(normalized) else ""
 
-    # Everything between header and operative order is facts + analysis
-    middle = normalized[header_end:operative_start].strip()
+    # Core boundaries
+    body_len = operative_start - header_end
 
-    # Split middle roughly: first half = facts, second half = analysis
-    mid_point = len(middle) // 2
-    facts = middle[:mid_point].strip()
-    analysis = middle[mid_point:].strip()
+    # If no operative section found, use last 20% as fallback
+    if operative_start >= doc_len:
+        operative_start = int(doc_len * 0.80)
+        body_len = operative_start - header_end
 
-    # If no operative order found, use last 30% of text as fallback
-    if not operative_order:
-        fallback_start = int(len(normalized) * 0.7)
-        operative_order = normalized[fallback_start:].strip()
+    # Overlap size: 10% of body length, minimum 300 chars
+    overlap_chars = max(300, int(body_len * 0.10))
+
+    # Body (middle) extends 10% INTO operative zone
+    middle_end = min(doc_len, operative_start + overlap_chars)
+    middle = normalized[header_end:middle_end].strip()
+
+    # Operative extends 10% BACK into body zone
+    operative_begin = max(header_end, operative_start - overlap_chars)
+    operative_order = normalized[operative_begin:].strip()
 
     return {
         "header": header,
-        "facts": facts,
-        "analysis": analysis,
+        "middle": middle,
         "operative_order": operative_order,
         "full_text": normalized,
     }

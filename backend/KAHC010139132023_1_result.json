@@ -1,0 +1,182 @@
+{
+  "extraction": {
+    "registry": {
+      "case_number": "WA No. 305 of 2023",
+      "court_name": "High Court of Karnataka at Bengaluru",
+      "bench": "Division Bench",
+      "presiding_judges": [
+        "The Hon'ble Mr. Prasanna B. Varale, Chief Justice",
+        "The Hon'ble Mr. Justice M.G.S. Kamal"
+      ],
+      "case_type": "Writ Appeal",
+      "document_type": "Final Judgment",
+      "date_of_order": "2023-10-12",
+      "petitioner_name": "Narendra Babu G.V., Yallappa Bagali, Vani R S, Chaitra A.J., Ashwini S., Siddalingeshwara Pattanashetti, Basavaraj Halaki, Nandish S., Vaseem A, Parvatibai Sanganappa Bidari, Mallikarjun B Rakkasagi",
+      "respondent_name": "",
+      "appeal_type": "writ_appeal",
+      "is_appeal_from_lower_court": false,
+      "lower_court_name": null,
+      "lower_court_case_number": null,
+      "lower_court_decision": null
+    },
+    "compliance": {
+      "$defs": {
+        "DirectiveExtraction": {
+          "properties": {
+            "text": {
+              "description": "The VERBATIM actionable directive from the order.",
+              "title": "Text",
+              "type": "string"
+            },
+            "responsible_entity": {
+              "description": "The specific department/party who must carry out the directive.",
+              "title": "Responsible Entity",
+              "type": "string"
+            },
+            "action_required": {
+              "description": "One-line plain English summary of what must be done.",
+              "title": "Action Required",
+              "type": "string"
+            },
+            "deadline_mentioned": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "description": "Exact phrase describing deadline, e.g. 'within 8 weeks'",
+              "title": "Deadline Mentioned"
+            }
+          },
+          "required": [
+            "text",
+            "responsible_entity",
+            "action_required"
+          ],
+          "title": "DirectiveExtraction",
+          "type": "object"
+        }
+      },
+      "properties": {
+        "court_directions": [
+          {
+            "text": "The respondent-State be permitted to proceed with appointing teachers from 13352 selected candidates as per the list dated 08.03.2023 produced at Annexure-R6 to the affidavit.",
+            "responsible_entity": "Respondent-State",
+            "action_required": "Proceed with appointing teachers from 13352 selected candidates",
+            "deadline_mentioned": null
+          },
+          {
+            "text": "The appointment of the candidates who have not submitted the caste cum income certificate in the form prescribed in the notification and which is not in terms of Government Order dated 12.12.1986, and who are included in the list in view of the order passed by learned Single Judge be deferred until the outcome of the result of the challenge.",
+            "responsible_entity": "Respondent-State",
+            "action_required": "Deferred appointment of candidates without caste cum income certificate",
+            "deadline_mentioned": null
+          },
+          {
+            "text": "If in the event the eligibility of such candidates who have not furnished the caste cum income certificate in the prescribed form is held to be invalid, such posts may be filled from amongst the candidates who have been excluded on merits and the candidates who have submitted certificates in the prescribed form.",
+            "responsible_entity": "Respondent-State",
+            "action_required": "Fill posts from candidates excluded on merits or with certificates",
+            "deadline_mentioned": null
+          }
+        ],
+        "financial_implications": [],
+        "contempt_indicators": [],
+        "contempt_risk": "Low",
+        "entities": [],
+        "disposition": "Partly Allowed",
+        "winning_party_type": "Respondent-State"
+      },
+      "required": [
+        "disposition",
+        "winning_party_type",
+        "court_directions",
+        "financial_implications",
+        "contempt_indicators",
+        "contempt_risk",
+        "entities"
+      ],
+      "title": "ComplianceExtraction",
+      "type": "object"
+    },
+    "analyst": {
+      "summary_of_facts": "The Karnataka High Court heard a set of writ appeals challenging an order passed by a single judge, which quashed a provisional selection list for the recruitment of Graduate Primary School Teachers. The single judge had directed the petitioners to be treated as belonging to the category they applied for, based on their caste and income certificates. The appeals were filed by candidates who were selected in the provisional list but were not made parties to the writ petition. The court considered the maintainability of the writ petition, the jurisdiction of the Deputy Director of Public Instruction to interpret caste and income certificates, and the validity of the Government Order dated 12.12.1986, which prescribes the determination of income of married women candidates.",
+      "issues_framed": [
+        "Whether the writ petition is maintainable in view of the bar contained under Article 323A of the Constitution of India and in view of Section 15 of the Administrative Tribunals Act, 1985?",
+        "Whether a validly issued income certificate in terms of Government Order dated 12.12.1986 could have been invalidated by the learned Single Judge without there being a challenge to the said Government Order?",
+        "Whether without impleading the appellants who are the selected candidates, as party/respondents to the writ petition, the provisional list could have been set aside?"
+      ]
+    },
+    "scholar": {
+      "ratio_decidendi": "The court held that the writ petition filed by the respondent Nos. 27 to 47 seeking reliefs was not entertainable under Article 226 of the Constitution of India, as the matter pertained to the process of recruitment to civil services, which is within the exclusive jurisdiction of the Administrative Tribunal under the Administrative Tribunals Act, 1985.",
+      "area_of_law": "Service Law",
+      "primary_statute": "Administrative Tribunals Act, 1985",
+      "citations": [
+        {
+          "case_name": "L.Chandra Kumar Vs. Union of India",
+          "citation_ref": "(1997) 3 SCC 261",
+          "context": "relied_upon",
+          "principle_extracted": "The Administrative Tribunals have jurisdiction to consider all matters covered under the Act, including issues relating to constitutional validity of provisions relating to recruitment of employees and regulations governing service conditions."
+        },
+        {
+          "case_name": "T.K.Rangarajan Vs. State of Tamil Nadu",
+          "citation_ref": "(2003) 6 SCC 581",
+          "context": "distinguished",
+          "principle_extracted": "The High Court has jurisdiction to entertain a writ petition in an extraordinary situation having no parallel, but this does not apply to the present case."
+        },
+        {
+          "case_name": "Union of India Vs. Alapan Bandyopadhyay",
+          "citation_ref": "(2022) 3 SCC 133",
+          "context": "relied_upon",
+          "principle_extracted": "The Administrative Tribunals are the courts of first instance, and the High Court's role is limited to judicial review under Article 226/227 of the Constitution."
+        }
+      ],
+      "entities": [
+        "Administrative Tribunals Act, 1985",
+        "Karnataka State Civil Services Act, 1978",
+        "Karnataka Education Department Services (Public Education Department)(Recruitment)(Special) Rules, 2022",
+        "Karnataka Scheduled Castes, Scheduled Tribes and other Backward Classes (Reservation of Appointments etc.) Act, 1990"
+      ]
+    }
+  },
+  "rag_chunks_count": 10,
+  "recommendation": {
+    "recommendation_id": "69c91bef-76b4-45bb-bd44-e08105e8b49d",
+    "case_id": "WA No. 305 of 2023",
+    "status": "COMPLETED",
+    "verdict": {
+      "decision": "APPEAL",
+      "appeal_to": "Division Bench",
+      "confidence": 0.6,
+      "urgency": "HIGH",
+      "limitation_deadline": "2026-06-06",
+      "days_remaining": 30
+    },
+    "statistical_basis": {
+      "similar_cases_analyzed": 10,
+      "government_appeal_win_rate": 0,
+      "financial_exposure_if_comply": 0
+    },
+    "primary_reasoning": "Based on the analysis of the pro-appeal arguments, which highlight potential errors in the single judge's order and the Deputy Director of Public Instruction's interpretation of caste and income certificates",
+    "appeal_grounds": [
+      "Jurisdictional error",
+      "Error in interpretation of government policies and procedures"
+    ],
+    "alternative_routes": [
+      "File a review petition",
+      "Seek clarification on the Government Order dated 12.12.1986"
+    ],
+    "action_plan": {
+      "immediate_actions": [
+        "File appeal within 2 weeks",
+        "Seek stay of the single judge's order"
+      ],
+      "financial_actions": [
+        "Budget allocation for appeal costs",
+        "Assessment of potential contempt proceedings costs"
+      ]
+    }
+  }
+}
