@@ -1,13 +1,34 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { motion } from 'motion/react';
 import { CaseData } from '../api/client';
+
+const ExpandableText = ({ text, maxLines = 3 }: { text: string, maxLines?: number }) => {
+  const [expanded, setExpanded] = useState(false);
+  if (!text) return <span className="opacity-50 italic">Not extracted</span>;
+  
+  return (
+    <div className="relative">
+      <div className={`text-sm leading-relaxed ${expanded ? '' : `line-clamp-${maxLines}`}`}>
+        {text}
+      </div>
+      {text.length > 150 && (
+        <button 
+          onClick={() => setExpanded(!expanded)}
+          className="text-[10px] font-bold text-primary-blue uppercase tracking-widest hover:underline mt-2 flex items-center gap-1"
+        >
+          {expanded ? 'Show Less' : 'Show More'} <span className="material-symbols-outlined text-xs">{expanded ? 'expand_less' : 'expand_more'}</span>
+        </button>
+      )}
+    </div>
+  );
+};
 
 const DetailItem = ({ label, value }: { label: string; value: string }) => (
   <div className="flex flex-col gap-2">
     <span className="text-on-surface-variant text-[10px] font-bold uppercase tracking-[0.15em] border-b border-outline-variant/10 pb-2">
       {label}
     </span>
-    <span className="text-on-surface font-semibold text-lg tracking-tight">
+    <span className="text-on-surface font-semibold text-base tracking-tight">
       {value}
     </span>
   </div>
@@ -22,15 +43,36 @@ const getDepartmentColors = (source: string) => {
   return 'bg-surface-container-high/50 border-outline-variant/30 text-on-surface-variant';
 };
 
-export const CaseOverview = ({ caseData, verifiedActions, onGoToVerify }: { caseData?: CaseData | null, verifiedActions?: any[], onGoToVerify?: () => void }) => {
+export const CaseOverview = ({ 
+  caseData, 
+  verifiedActions, 
+  onGoToVerify,
+  recommendation,
+  isGenerating,
+  onGenerateAnalysis
+}: { 
+  caseData?: CaseData | null, 
+  verifiedActions?: any[], 
+  onGoToVerify?: () => void,
+  recommendation?: any | null,
+  isGenerating?: boolean,
+  onGenerateAnalysis?: () => void
+}) => {
   const judgment = caseData?.judgments?.[0];
   const filingDate = caseData?.created_at
     ? new Date(caseData.created_at).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
     : '—';
-  const summaryText = judgment?.summary_of_facts || judgment?.operative_order_text || 'No case brief extracted yet.';
-  const contemptRisk = judgment?.contempt_risk || 'Low';
-  const citations = judgment?.outgoing_citations ?? [];
+    
+  const summaryText = judgment?.summary_of_facts || judgment?.operative_order_text || '';
   const isVerified = verifiedActions && verifiedActions.length > 0 && verifiedActions.every(a => a.isVerified);
+  
+  // Use RAG values if available, fallback to extractor
+  const aiVerdict = recommendation?.verdict?.decision || 'PENDING';
+  const confidence = recommendation?.verdict?.confidence ? Math.round(recommendation.verdict.confidence * 100) : 0;
+  const riskSummary = recommendation?.risk_summary || judgment?.ratio_decidendi || '';
+  const contemptRisk = recommendation?.agent_outputs?.contempt_urgency || judgment?.contempt_risk || 'Low';
+  const similarCases = recommendation?.statistical_basis?.similar_cases_analyzed ? Array(recommendation.statistical_basis.similar_cases_analyzed).fill({}) : [];
+
 
   return (
     <div className="grid grid-cols-1 xl:grid-cols-12 gap-8 py-8">
@@ -47,8 +89,11 @@ export const CaseOverview = ({ caseData, verifiedActions, onGoToVerify }: { case
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-10">
             <DetailItem label="Jurisdiction" value={caseData?.court_name || '—'} />
+            <DetailItem label="Bench" value={judgment?.presiding_judges?.join(', ') || '—'} />
             <DetailItem label="Filing Date" value={filingDate} />
             <DetailItem label="Case Type" value={caseData?.case_type || '—'} />
+            <DetailItem label="Area of Law" value={caseData?.area_of_law || '—'} />
+            <DetailItem label="Primary Statute" value={caseData?.primary_statute || '—'} />
           </div>
         </div>
 
@@ -68,41 +113,115 @@ export const CaseOverview = ({ caseData, verifiedActions, onGoToVerify }: { case
             </div>
           </div>
           
-          <p className="text-on-surface/90 leading-relaxed text-base font-medium">
-            {summaryText}
-          </p>
+          <div className="space-y-6">
+            <div>
+              <h4 className="text-[10px] font-bold text-on-surface-variant uppercase tracking-widest mb-2 flex items-center gap-2">
+                <span className="material-symbols-outlined text-sm">subject</span> Summary of Facts
+              </h4>
+              <ExpandableText text={summaryText} maxLines={4} />
+            </div>
+            
+            {judgment?.issues_framed && judgment.issues_framed.length > 0 && (
+              <div>
+                <h4 className="text-[10px] font-bold text-on-surface-variant uppercase tracking-widest mb-2 flex items-center gap-2">
+                  <span className="material-symbols-outlined text-sm">rule</span> Issues Framed
+                </h4>
+                <ul className="list-disc pl-5 space-y-1 text-sm text-on-surface/90">
+                  {judgment.issues_framed.map((i: string, idx: number) => <li key={idx}>{i}</li>)}
+                </ul>
+              </div>
+            )}
+            
+            {judgment?.ratio_decidendi && (
+              <div>
+                <h4 className="text-[10px] font-bold text-on-surface-variant uppercase tracking-widest mb-2 flex items-center gap-2">
+                  <span className="material-symbols-outlined text-sm">gavel</span> Ratio Decidendi
+                </h4>
+                <ExpandableText text={judgment.ratio_decidendi} />
+              </div>
+            )}
+          </div>
         </div>
 
         {/* AI Recommendation Card */}
-        <div className="glass-card flex flex-col md:flex-row items-start md:items-center gap-8 p-8 border border-primary-blue/10">
-          <div className="w-16 h-16 rounded-full bg-primary-blue/10 border border-primary-blue/20 flex items-center justify-center flex-shrink-0">
-            <span className="material-symbols-outlined text-primary-blue text-4xl">smart_toy</span>
-          </div>
-          <div className="flex-grow">
-            <div className="flex flex-wrap items-center gap-4 mb-3">
-              <h2 className="text-on-surface text-xl font-bold tracking-tight">
-                AI Recommendation: <span className="text-primary-blue">{judgment?.disposition || 'REVIEW'}</span>
-              </h2>
+        {recommendation ? (
+          <div className="glass-card flex flex-col gap-6 p-8 border border-primary-blue/30 relative overflow-hidden">
+            <div className="absolute top-0 right-0 w-32 h-32 bg-primary-blue/10 rounded-full blur-[50px]"></div>
+            
+            <div className="flex justify-between items-start">
+              <div className="flex items-center gap-4">
+                <div className="w-14 h-14 rounded-full bg-primary-blue/20 border border-primary-blue/30 flex items-center justify-center">
+                  <span className="material-symbols-outlined text-primary-blue text-3xl">smart_toy</span>
+                </div>
+                <div>
+                  <h2 className="text-on-surface text-2xl font-bold tracking-tight mb-1 flex items-center gap-3">
+                    AI Verdict: <span className={aiVerdict === 'COMPLY' ? 'text-green-400' : 'text-amber-400'}>{aiVerdict}</span>
+                  </h2>
+                  <span className="text-[10px] font-bold uppercase tracking-widest text-primary-blue bg-primary-blue/10 px-2 py-0.5 rounded">
+                    {confidence}% Confidence
+                  </span>
+                </div>
+              </div>
               <div className={`flex items-center gap-2 px-3 py-1 rounded-full ${
-                contemptRisk === 'High' ? 'bg-error-red/10 border border-error-red/20' :
-                contemptRisk === 'Medium' ? 'bg-amber-400/10 border border-amber-400/20' :
+                contemptRisk === 'HIGH' ? 'bg-error-red/10 border border-error-red/20' :
+                contemptRisk === 'MEDIUM' ? 'bg-amber-400/10 border border-amber-400/20' :
                 'bg-green-500/10 border border-green-500/20'
               }`}>
                 <span className={`material-symbols-outlined text-sm ${
-                  contemptRisk === 'High' ? 'text-error-red' : contemptRisk === 'Medium' ? 'text-amber-400' : 'text-green-400'
+                  contemptRisk === 'HIGH' ? 'text-error-red' : contemptRisk === 'MEDIUM' ? 'text-amber-400' : 'text-green-400'
                 }`}>warning</span>
                 <span className={`text-[10px] font-bold uppercase tracking-widest ${
-                  contemptRisk === 'High' ? 'text-error-red' : contemptRisk === 'Medium' ? 'text-amber-400' : 'text-green-400'
+                  contemptRisk === 'HIGH' ? 'text-error-red' : contemptRisk === 'MEDIUM' ? 'text-amber-400' : 'text-green-400'
                 }`}>
                   Contempt Risk: {contemptRisk}
                 </span>
               </div>
             </div>
-            <p className="text-on-surface-variant text-sm leading-relaxed font-medium">
-              {judgment?.ratio_decidendi || 'Analysis pending. Complete extraction to generate AI recommendation.'}
-            </p>
+            
+            <div className="bg-surface-container/50 border border-outline-variant/10 p-5 rounded-xl">
+              <h4 className="text-[10px] font-bold text-on-surface-variant uppercase tracking-widest mb-3 flex items-center gap-2">
+                <span className="material-symbols-outlined text-sm">psychology</span> Primary Reasoning
+              </h4>
+              <p className="text-sm text-on-surface/90 leading-relaxed font-medium">
+                {recommendation.primary_reasoning}
+              </p>
+            </div>
+            
+            {recommendation.appeal_grounds && recommendation.appeal_grounds.length > 0 && (
+               <div>
+                 <h4 className="text-[10px] font-bold text-on-surface-variant uppercase tracking-widest mb-2">Appeal Grounds</h4>
+                 <ul className="list-disc pl-5 text-sm space-y-1 text-amber-400/90">
+                   {recommendation.appeal_grounds.map((g: string, i: number) => <li key={i}>{g}</li>)}
+                 </ul>
+               </div>
+            )}
           </div>
-        </div>
+        ) : (
+          <div className="glass-card flex flex-col items-center justify-center p-12 border-dashed border-2 border-outline-variant/30 text-center relative overflow-hidden">
+             {isGenerating ? (
+               <div className="flex flex-col items-center z-10">
+                 <div className="w-16 h-16 rounded-full border-4 border-primary-blue border-t-transparent animate-spin mb-6 shadow-[0_0_20px_rgba(173,198,255,0.4)]"></div>
+                 <h3 className="text-xl font-bold text-on-surface tracking-tight mb-2">Multi-Agent Legal Analysis Running...</h3>
+                 <p className="text-sm text-on-surface-variant">Retrieving 20-year case history and evaluating court directives.</p>
+               </div>
+             ) : (
+               <div className="flex flex-col items-center z-10">
+                 <div className="w-16 h-16 rounded-full bg-primary-blue/10 flex items-center justify-center mb-6">
+                   <span className="material-symbols-outlined text-primary-blue text-4xl">travel_explore</span>
+                 </div>
+                 <h3 className="text-xl font-bold text-on-surface tracking-tight mb-2">RAG Analysis Pending</h3>
+                 <p className="text-sm text-on-surface-variant max-w-md mb-8">Run the AI agent pipeline to generate compliance recommendations, analyze contempt risk, and retrieve similar case precedents.</p>
+                 <button 
+                   onClick={onGenerateAnalysis}
+                   className="px-8 py-3.5 bg-primary-blue text-on-primary-blue font-bold rounded-xl flex items-center gap-3 shadow-[0_0_20px_rgba(173,198,255,0.2)] hover:scale-105 transition-all"
+                 >
+                   <span className="material-symbols-outlined">psychology</span>
+                   Generate AI Analysis
+                 </button>
+               </div>
+             )}
+          </div>
+        )}
 
         {/* Verification Alert Card - Only show if not verified */}
         {!isVerified && (
@@ -156,10 +275,15 @@ export const CaseOverview = ({ caseData, verifiedActions, onGoToVerify }: { case
               <div className="col-span-4 text-right sm:text-left">Core Precedent</div>
             </div>
             
-            {citations.length > 0 ? citations.map((c: any, i: number) => (
-              <CaseRow key={i} id={c.citation_id_raw || c.cited_case_name_raw || '—'} similarity={85 - i * 5} outcome={c.citation_context || '—'} precedent={c.cited_case_name_raw || '—'} />
-            )) : (
-              <div className="py-8 text-center text-on-surface-variant opacity-50 text-sm">No cited cases found in extraction.</div>
+            {similarCases.length > 0 ? (
+               <div className="py-8 text-center text-primary-blue/80 font-bold text-sm">
+                 <span className="material-symbols-outlined block text-3xl mb-2">library_books</span>
+                 {similarCases.length} Precedent Cases analyzed. View Precedents tab.
+               </div>
+            ) : recommendation ? (
+              <div className="py-8 text-center text-on-surface-variant opacity-50 text-sm">No strong precedents found in the 20-year corpus.</div>
+            ) : (
+              <div className="py-8 text-center text-on-surface-variant opacity-50 text-sm">Generate AI Analysis to load relevant precedents.</div>
             )}
           </div>
         </div>
@@ -207,7 +331,9 @@ export const CaseOverview = ({ caseData, verifiedActions, onGoToVerify }: { case
                 </div>
                 <p className="text-on-surface font-bold text-2xl tracking-tighter mb-4">No verified actions yet</p>
                 <p className="text-on-surface-variant text-base font-medium max-w-[280px] leading-relaxed mx-auto">
-                  Please proceed to verification to generate the actionable compliance timeline.
+                  {recommendation 
+                    ? "Please proceed to verification to generate the actionable compliance timeline."
+                    : "Generate AI Analysis to extract compliance actions."}
                 </p>
               </div>
             )}

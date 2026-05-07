@@ -40,19 +40,41 @@ class GenerateRecommendationView(APIView):
         # If pk is provided, try to load from DB
         case_id = request.data.get("case_id", "mock-id")
         case = None
+        
+        # Additional metadata fields
+        disposition = ""
+        winning_party = ""
+        case_type = request.data.get("case_type", "")
+        bench = ""
+        petitioner = ""
+        respondent = ""
+        issues = []
+        
         if pk:
             from apps.cases.models import Case
             try:
                 case = Case.objects.get(pk=pk)
                 case_id = case.cnr_number or str(case.id)
+                case_type = case.case_type or case_type
+                petitioner = case.petitioner_name or petitioner
+                respondent = case.respondent_name or respondent
+                court = case.court_name or court
+                area_of_law = case.area_of_law or area_of_law
+                
                 if hasattr(case, 'facts') and case.facts:
                     case_text = case.facts
-                # Use judgment's summary_of_facts if facts is empty
                 elif case.judgments.exists() and case.judgments.first().summary_of_facts:
                     case_text = case.judgments.first().summary_of_facts
                     
-                court = case.court_name or court
-                area_of_law = case.area_of_law or area_of_law
+                # Extract judgment-specific fields
+                if case.judgments.exists():
+                    judgment = case.judgments.first()
+                    disposition = judgment.disposition or disposition
+                    winning_party = judgment.winning_party_type or winning_party
+                    if judgment.presiding_judges:
+                        bench = ", ".join(judgment.presiding_judges)
+                    issues = judgment.issues_framed or issues
+                    
             except Exception:
                 pass
                 
@@ -75,7 +97,14 @@ class GenerateRecommendationView(APIView):
                 case_id=case_id,
                 case_text=case_text,
                 area_of_law=area_of_law,
-                court=court
+                court=court,
+                disposition=disposition,
+                winning_party=winning_party,
+                case_type=case_type,
+                bench=bench,
+                petitioner=petitioner,
+                respondent=respondent,
+                issues=issues
             )
             
             # Cache it

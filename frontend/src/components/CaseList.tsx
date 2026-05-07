@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { fetchCases, extractCase, CaseData } from '../api/client';
-
+import { shortPartyTitle, formatCaseNumber } from '../utils/truncate';
 const PHASES = [
   { label: 'Extracting Metadata...', icon: 'progress_activity' },
   { label: 'Finding Precedents...', icon: 'progress_activity' },
@@ -102,9 +102,19 @@ const CaseRow = ({ c, onClick }: { c: CaseData; onClick: () => void }) => {
     'bg-tertiary-container';
 
   const filingDate = new Date(c.created_at).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }).toUpperCase();
-  const clientName = c.petitioner_name && c.respondent_name
-    ? `${c.petitioner_name} vs. ${c.respondent_name}`
-    : c.petitioner_name || c.respondent_name || '—';
+  const clientName = shortPartyTitle(c.petitioner_name, c.respondent_name);
+  const formattedCaseNumber = formatCaseNumber(c.case_number || '');
+  
+  // Check if RAG analysis has been run
+  const hasAnalysis = !!c.judgments?.[0]?.action_plan?.full_rag_recommendation;
+  const deadlineDays = hasAnalysis ? c.judgments?.[0]?.action_plan?.full_rag_recommendation?.verdict?.days_remaining : null;
+  const deadlineText = deadlineDays !== null && deadlineDays !== undefined ? deadlineDays : '—';
+  
+  const displayStat = hasAnalysis ? stat : (stat === 'Extracted' ? 'Pending Analysis' : stat);
+  const updatedStatusColors = 
+    displayStat === 'Pending Analysis' ? 'bg-blue-500/10 border-blue-500/30 text-blue-400' :
+    statusColors;
+  const updatedStatusDot = displayStat === 'Pending Analysis' ? 'bg-blue-400' : statusDot;
 
   return (
     <motion.tr
@@ -114,23 +124,26 @@ const CaseRow = ({ c, onClick }: { c: CaseData; onClick: () => void }) => {
       className="border-b border-outline-variant/10 hover:bg-primary-blue/[0.02] cursor-pointer transition-colors group"
     >
       <td className="py-5 px-6">
-        <div className="flex flex-col">
-          <span className="font-mono font-bold text-primary-blue text-sm">{c.case_number || '—'}</span>
+        <div className="flex flex-col max-w-[180px]">
+          <span className="font-mono font-bold text-primary-blue text-sm truncate">{formattedCaseNumber.primary}</span>
+          {formattedCaseNumber.additionalCount > 0 && (
+            <span className="text-[10px] text-primary-blue/70 font-bold uppercase tracking-widest mt-0.5">+{formattedCaseNumber.additionalCount} more</span>
+          )}
           <span className="text-[10px] text-on-surface-variant font-bold uppercase tracking-widest mt-1 opacity-50">Filing: {filingDate}</span>
         </div>
       </td>
       <td className="py-5 px-6">
-        <div className="flex flex-col">
-          <span className="text-on-surface font-bold text-base tracking-tight group-hover:text-primary-blue transition-colors">
+        <div className="flex flex-col max-w-[280px]">
+          <span className="text-on-surface font-bold text-base tracking-tight group-hover:text-primary-blue transition-colors truncate">
             {clientName}
           </span>
-          <span className="text-xs text-on-surface-variant font-medium opacity-70">{c.court_name} • {c.case_type}</span>
+          <span className="text-xs text-on-surface-variant font-medium opacity-70 truncate">{c.court_name} • {c.case_type}</span>
         </div>
       </td>
       <td className="py-5 px-6">
-        <span className={`inline-flex items-center gap-2 px-3 py-1 rounded-full border font-bold text-[10px] uppercase tracking-widest ${statusColors}`}>
-          <span className={`w-1.5 h-1.5 rounded-full ${statusDot} animate-pulse`}></span>
-          {stat}
+        <span className={`inline-flex items-center gap-2 px-3 py-1 rounded-full border font-bold text-[10px] uppercase tracking-widest ${updatedStatusColors}`}>
+          <span className={`w-1.5 h-1.5 rounded-full ${updatedStatusDot} ${displayStat === 'Pending Analysis' ? 'animate-pulse' : ''}`}></span>
+          {displayStat}
         </span>
       </td>
       <td className="py-5 px-6">
@@ -140,8 +153,8 @@ const CaseRow = ({ c, onClick }: { c: CaseData; onClick: () => void }) => {
       </td>
       <td className="py-5 px-6 text-center">
         <div className="flex flex-col items-center">
-          <span className="text-xl font-bold tracking-tighter text-on-surface-variant">—</span>
-          <span className="text-[9px] text-on-surface-variant font-black uppercase tracking-widest opacity-40">N/A</span>
+          <span className={`text-xl font-bold tracking-tighter ${deadlineDays !== null && deadlineDays < 14 ? 'text-error-red' : 'text-on-surface'}`}>{deadlineText}</span>
+          <span className="text-[9px] text-on-surface-variant font-black uppercase tracking-widest opacity-40">Days</span>
         </div>
       </td>
     </motion.tr>

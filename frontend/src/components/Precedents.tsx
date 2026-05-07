@@ -102,31 +102,16 @@ const PrecedentCard = ({
   );
 };
 
-export const Precedents = ({ caseId = "mock-id" }: { caseId?: string }) => {
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [recommendation, setRecommendation] = useState<any>(null);
-
-  useEffect(() => {
-    const fetchRecommendation = async () => {
-      setLoading(true);
-      try {
-        const data = await apiGetRecommendation({
-          case_id: caseId,
-          area_of_law: 'constitutional',
-          case_text: 'The petitioner filed a writ petition challenging the arbitrary dismissal from service without due process or a proper inquiry under Article 311 of the Constitution.'
-        });
-        setRecommendation(data);
-      } catch (err: any) {
-        console.error(err);
-        setError(err.message);
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    fetchRecommendation();
-  }, [caseId]);
+export const Precedents = ({ 
+  recommendation,
+  isGenerating,
+  onGenerateAnalysis
+}: { 
+  recommendation?: any | null,
+  isGenerating?: boolean,
+  onGenerateAnalysis?: () => void
+}) => {
+  const precedents = recommendation?.agent_outputs?.precedents || [];
 
   return (
     <div className="flex flex-col lg:flex-row gap-10 py-8">
@@ -150,76 +135,70 @@ export const Precedents = ({ caseId = "mock-id" }: { caseId?: string }) => {
           </div>
         </div>
 
-        {error && (
-          <div className="p-4 bg-error-red/10 border border-error-red/30 rounded-xl text-error-red text-sm">
-            Error loading RAG recommendations: {error}
-          </div>
-        )}
-
         <div className="space-y-6">
-          {recommendation && recommendation.verdict && (
-            <div className="p-6 mb-6 bg-primary-blue/5 border border-primary-blue/20 rounded-2xl">
-              <h3 className="text-primary-blue font-bold mb-2">Live AI Recommendation</h3>
-              <p className="text-on-surface-variant text-sm mb-4">{recommendation.primary_reasoning}</p>
-              <div className="flex gap-4">
-                <span className="px-3 py-1 bg-surface-dim rounded-lg text-xs font-bold border border-outline-variant/30 text-on-surface">
-                  Decision: <span className="text-primary-blue">{recommendation.verdict.decision}</span>
-                </span>
-                <span className="px-3 py-1 bg-surface-dim rounded-lg text-xs font-bold border border-outline-variant/30 text-on-surface">
-                  Analyzed Precedents: <span className="text-amber-400">{recommendation.statistical_basis?.similar_cases_analyzed || 0}</span>
-                </span>
-              </div>
+          {!recommendation ? (
+            <div className="flex flex-col items-center justify-center p-12 border-dashed border-2 border-outline-variant/30 rounded-2xl text-center">
+              {isGenerating ? (
+                <div className="flex flex-col items-center">
+                  <div className="w-16 h-16 rounded-full border-4 border-primary-blue border-t-transparent animate-spin mb-6"></div>
+                  <h3 className="text-xl font-bold text-on-surface tracking-tight mb-2">Analyzing 20-Year Case History...</h3>
+                  <p className="text-sm text-on-surface-variant">Retrieving similar precedents and generating legal risk evidence.</p>
+                </div>
+              ) : (
+                <div className="flex flex-col items-center">
+                  <span className="material-symbols-outlined text-5xl text-primary-blue/50 mb-4">search</span>
+                  <h3 className="text-xl font-bold text-on-surface tracking-tight mb-2">Precedent Analysis Pending</h3>
+                  <p className="text-sm text-on-surface-variant max-w-md mb-6">Generate AI Analysis to load matching precedents and similarity scores.</p>
+                  <button 
+                    onClick={onGenerateAnalysis}
+                    className="px-6 py-2.5 bg-primary-blue text-on-primary-blue font-bold rounded-lg flex items-center gap-2"
+                  >
+                    Generate AI Analysis
+                  </button>
+                </div>
+              )}
             </div>
+          ) : precedents.length === 0 ? (
+            <div className="flex flex-col items-center justify-center p-12 text-center opacity-50 border-dashed border-2 border-outline-variant/30 rounded-2xl">
+               <span className="material-symbols-outlined text-4xl mb-2">not_listed_location</span>
+               <p className="font-bold">No strong precedents found.</p>
+            </div>
+          ) : (
+            <>
+              {recommendation && recommendation.verdict && (
+                <div className="p-6 mb-6 bg-primary-blue/5 border border-primary-blue/20 rounded-2xl">
+                  <h3 className="text-primary-blue font-bold mb-2">Live AI Recommendation</h3>
+                  <p className="text-on-surface-variant text-sm mb-4">{recommendation.primary_reasoning}</p>
+                  <div className="flex gap-4">
+                    <span className="px-3 py-1 bg-surface-dim rounded-lg text-xs font-bold border border-outline-variant/30 text-on-surface">
+                      Decision: <span className="text-primary-blue">{recommendation.verdict.decision}</span>
+                    </span>
+                    <span className="px-3 py-1 bg-surface-dim rounded-lg text-xs font-bold border border-outline-variant/30 text-on-surface">
+                      Analyzed Precedents: <span className="text-amber-400">{recommendation.statistical_basis?.similar_cases_analyzed || 0}</span>
+                    </span>
+                  </div>
+                </div>
+              )}
+              {precedents.map((p: any, i: number) => {
+                const isAllowed = p.outcome.toLowerCase().includes('allow') || p.outcome.toLowerCase().includes('upheld');
+                return (
+                  <PrecedentCard 
+                    key={i}
+                    id={`PRE-${1000 + i}`}
+                    title={p.case_title || p.case}
+                    description={p.applicability}
+                    matchScore={85 - i * 5} 
+                    outcome={p.outcome}
+                    court="Supreme Court"
+                    year="2022"
+                    borderClass={isAllowed ? "border-l-primary-blue" : "border-l-amber-400"}
+                    scoreColor={isAllowed ? "text-primary-blue" : "text-amber-400"}
+                    evidencePoints={[p.applicability]}
+                  />
+                );
+              })}
+            </>
           )}
-          <PrecedentCard 
-            id="#SC-2022-81"
-            title="ABC Corp vs Union of India"
-            description="Landmark ruling establishing boundaries for algorithmic patentability under Section 3(k) of the Patents Act, setting a high bar for 'technical effect'."
-            matchScore={94}
-            outcome="Upheld"
-            court="Supreme Court"
-            year="2022"
-            borderClass="border-l-primary-blue"
-            scoreColor="text-primary-blue"
-            evidencePoints={[
-              "Strong alignment on <b class='text-on-surface'>Claim 14</b> regarding neural network weight updates.",
-              "Court specifically rejected the defense's reliance on <b class='text-on-surface'>'abstract mathematical methods'</b> (Para 42).",
-              "Cited identical precedent (State vs Turing, 2018) in final judgment."
-            ]}
-          />
-
-          <PrecedentCard 
-            id="#HC-DEL-2021-404"
-            title="Nexus Systems vs State"
-            description="Case dismissed due to insufficient detailing of the algorithmic 'technical advancement' over existing prior art in software patents."
-            matchScore={81}
-            outcome="Dismissed"
-            evidenceType="RISK FLAG"
-            court="High Court (Del)"
-            year="2021"
-            borderClass="border-l-error-red"
-            scoreColor="text-error-red"
-            evidencePoints={[
-              "The court ruled that mere implementation of known ML algorithms (CNNs) does not constitute patentable subject matter without hardware-software synergy.",
-              "<b>Critical Gap:</b> Our current filing lacks this specific synergy documentation, posing a high risk of dismissal."
-            ]}
-          />
-
-          <PrecedentCard 
-            id="#TRB-2020-112"
-            title="VisionTech IP Dispute"
-            description="Dispute regarding copyright infringement of training datasets used in early computer vision models."
-            matchScore={76}
-            outcome="Settled"
-            court="Tribunal"
-            year="2020"
-            borderClass="border-l-amber-400"
-            scoreColor="text-amber-400"
-            evidencePoints={[
-              "Case reinforces fair use doctrine specifically for datasets compiled from public-facing URLs.",
-              "Settlement included an ongoing royalty model that could be used as a bargaining benchmark."
-            ]}
-          />
         </div>
       </div>
 

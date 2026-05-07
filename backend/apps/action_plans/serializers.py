@@ -37,6 +37,7 @@ class ActionPlanSerializer(serializers.ModelSerializer):
             "appeal_viability",
             "appeal_strategy",
             "appeal_precedents",
+            "full_rag_recommendation",
             "created_at",
             "updated_at",
         ]

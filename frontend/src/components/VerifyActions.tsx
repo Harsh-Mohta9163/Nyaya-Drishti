@@ -1,5 +1,11 @@
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
+import { Document, Page, pdfjs } from 'react-pdf';
+import 'react-pdf/dist/Page/AnnotationLayer.css';
+import 'react-pdf/dist/Page/TextLayer.css';
+
+// Set up PDF worker
+pdfjs.GlobalWorkerOptions.workerSrc = `//unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.mjs`;
 
 interface ActionItemProps {
   action: {
@@ -144,7 +150,8 @@ export const VerifyActions = ({
   onEdit, 
   onVerifyAll,
   onActionClick,
-  highlightedPage
+  highlightedPage,
+  pdfUrl
 }: { 
   actions: {
     id: string;
@@ -162,10 +169,16 @@ export const VerifyActions = ({
   onVerifyAll: () => void;
   onActionClick: (page: number) => void;
   highlightedPage: number | null;
+  pdfUrl?: string | null;
 }) => {
   const [zoom, setZoom] = useState(100);
+  const [numPages, setNumPages] = useState<number | null>(null);
   const scrollRef = React.useRef<HTMLDivElement>(null);
   const pageRefs = React.useRef<(HTMLDivElement | null)[]>([]);
+
+  function onDocumentLoadSuccess({ numPages }: { numPages: number }) {
+    setNumPages(numPages);
+  }
 
   React.useEffect(() => {
     if (highlightedPage !== null && pageRefs.current[highlightedPage - 1]) {
@@ -233,67 +246,46 @@ export const VerifyActions = ({
           ref={scrollRef}
           className="flex-1 overflow-y-auto bg-surface-container-lowest/50 p-10 flex flex-col items-center gap-10 scrollbar-thin relative"
         >
-          {[1, 2, 3].map((page) => (
-            <div 
-              key={page}
-              ref={el => pageRefs.current[page-1] = el}
-              style={{ transform: `scale(${zoom/100})`, transformOrigin: 'top center' }}
-              className="w-full max-w-[580px] bg-white text-black p-12 shadow-2xl rounded-sm min-h-[820px] relative font-serif shrink-0 transition-transform duration-300"
+          {pdfUrl ? (
+            <Document
+              file={pdfUrl.startsWith('http') ? pdfUrl : pdfUrl.startsWith('/') ? pdfUrl : `/${pdfUrl}`}
+              onLoadSuccess={onDocumentLoadSuccess}
+              loading={<div className="text-on-surface-variant font-bold p-10 animate-pulse">Loading PDF...</div>}
             >
-              {/* AI Highlighting Simulation */}
-              <AnimatePresence mode="wait">
-                {highlightedPage === page && (
-                  <motion.div 
-                    initial={{ opacity: 0, scale: 1.02 }}
-                    animate={{ 
-                      opacity: [0, 1, 1, 0.8], 
-                      scale: [1.02, 1, 1, 1],
-                    }}
-                    transition={{ duration: 2, times: [0, 0.1, 0.8, 1] }}
-                    className="absolute inset-0 border-[6px] border-primary-blue/40 pointer-events-none z-10 bg-primary-blue/[0.03]"
-                  >
-                    <motion.div 
-                      initial={{ x: -20, opacity: 0 }}
-                      animate={{ x: 0, opacity: 1 }}
-                      className="absolute top-4 right-4 bg-primary-blue text-on-primary-blue text-[10px] font-black px-3 py-1.5 rounded shadow-lg uppercase tracking-wider flex items-center gap-2"
-                    >
-                      <span className="material-symbols-outlined text-sm">psychology</span>
-                      AI Reference Found
-                    </motion.div>
-                  </motion.div>
-                )}
-              </AnimatePresence>
-
-              {/* Highlights rendered for specific sections */}
-              <div className={`absolute top-[188px] left-10 right-10 h-[62px] border rounded-sm transition-all duration-700 ${highlightedPage === page ? 'bg-primary-blue/40 border-primary-blue ring-8 ring-primary-blue/20' : 'bg-primary-blue/5 border-primary-blue/20'}`}></div>
-              <div className={`absolute top-[372px] left-10 right-10 h-[44px] border rounded-sm transition-all duration-700 ${highlightedPage === page ? 'bg-primary-blue/30 border-primary-blue ring-4 ring-primary-blue/10' : 'bg-primary-blue/5 border-primary-blue/10'}`}></div>
-              
-              <div className="text-center mb-10 border-b border-gray-200 pb-6">
-                <h3 className="font-bold text-xl uppercase tracking-tight">In the Supreme Court of India</h3>
-                <p className="text-sm italic text-gray-600 mt-1 uppercase tracking-widest text-[10px]">Civil Appellate Jurisdiction</p>
-              </div>
-              
-              <div className="flex justify-between text-[11px] font-bold mb-8 border-b border-gray-100 pb-2">
-                <span className="uppercase tracking-wider">Civil Appeal No. 8942 of 2023</span>
-                <span className="uppercase tracking-widest">Page {page}</span>
-              </div>
-              
-              <div className="space-y-4 text-xs mb-8">
-                <p><span className="font-bold underline uppercase mr-2 tracking-wide">Between:</span> Union of India & Ors. ... Appellants</p>
-                <p><span className="font-bold underline uppercase mr-2 tracking-wide">And:</span> Sharma Corp Pvt. Ltd. ... Respondent</p>
-              </div>
-              
-              <div className="space-y-6 text-[13px] leading-relaxed text-justify text-gray-800">
-                <h4 className="font-black border-b-2 border-black inline-block uppercase text-sm tracking-tight mb-2">Order Summary</h4>
-                <p>1. Leave granted. This appeal arises from the judgment of the High Court dated 14.05.2023, which quashed the demand notice issued by the appellant department.</p>
-                <p className="relative">2. Having heard the learned counsel for the parties and perused the records, we find that the High Court erred in its interpretation of Section 42(1) of the Act. The respondent company is hereby directed to deposit 50% of the disputed tax amount within four weeks from today.</p>
-                <p>3. The competent authority within the Ministry of Corporate Affairs is directed to review the regulatory compliance of the respondent for the financial years 2020-2022 and submit a preliminary report within 60 days.</p>
-                <div className="h-2 w-full bg-gray-100 rounded-full my-4"></div>
-                <div className="h-2 w-5/6 bg-gray-100 rounded-full my-4"></div>
-                <div className="h-2 w-full bg-gray-100 rounded-full my-4"></div>
-              </div>
+              {Array.from(new Array(numPages || 0), (el, index) => (
+                <div 
+                  key={`page_${index + 1}`}
+                  ref={el => pageRefs.current[index] = el}
+                  className="mb-10 shadow-2xl rounded-sm relative transition-transform duration-300 bg-white"
+                  style={{ transform: `scale(${zoom/100})`, transformOrigin: 'top center' }}
+                >
+                  <Page 
+                    pageNumber={index + 1} 
+                    renderTextLayer={false}
+                    renderAnnotationLayer={false}
+                    className="max-w-[580px]"
+                    width={580}
+                  />
+                  {/* Highlight Overlay */}
+                  <AnimatePresence mode="wait">
+                    {highlightedPage === index + 1 && (
+                      <motion.div 
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: [0, 0.4, 0.4, 0.2] }}
+                        exit={{ opacity: 0 }}
+                        transition={{ duration: 2, times: [0, 0.1, 0.8, 1] }}
+                        className="absolute inset-0 bg-yellow-400 mix-blend-multiply pointer-events-none z-10"
+                      />
+                    )}
+                  </AnimatePresence>
+                </div>
+              ))}
+            </Document>
+          ) : (
+            <div className="w-full max-w-[580px] bg-white text-black p-12 shadow-2xl rounded-sm min-h-[820px] relative font-serif shrink-0 flex items-center justify-center">
+               <span className="text-gray-400 font-bold">No PDF available for this case.</span>
             </div>
-          ))}
+          )}
         </div>
       </div>
 

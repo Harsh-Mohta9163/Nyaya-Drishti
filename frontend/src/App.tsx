@@ -10,7 +10,8 @@ import { Routes, Route, Navigate, useNavigate } from 'react-router-dom';
 import { useAuth } from './context/AuthContext';
 import LoginPage from './LoginPage';
 import RegisterPage from './RegisterPage';
-import { fetchCase, CaseData } from './api/client';
+import { fetchCase, CaseData, fetchRecommendation } from './api/client';
+import { shortPartyTitle, extractCoreName } from './utils/truncate';
 
 import { Precedents } from './components/Precedents';
 
@@ -22,17 +23,53 @@ function MainApp() {
   const [showToast, setShowToast] = useState(false);
   const [highlightedPage, setHighlightedPage] = useState<number | null>(null);
   const [caseDecision, setCaseDecision] = useState<'none' | 'appeal' | 'comply'>('none');
+  const [recommendation, setRecommendation] = useState<any | null>(null);
+  const [isGeneratingAnalysis, setIsGeneratingAnalysis] = useState(false);
   
   // Fetch selected case from backend when a case is clicked
   useEffect(() => {
     if (!selectedCaseId) {
       setSelectedCase(null);
+      setRecommendation(null);
       return;
     }
     fetchCase(selectedCaseId)
-      .then(data => setSelectedCase(data))
+      .then(data => {
+        setSelectedCase(data);
+        // Check if recommendation already exists in judgment's action_plan
+        const judgment = data.judgments?.[0];
+        if (judgment?.action_plan?.full_rag_recommendation) {
+          setRecommendation(judgment.action_plan.full_rag_recommendation);
+        } else {
+          setRecommendation(null);
+        }
+      })
       .catch(err => console.error('Failed to fetch case:', err));
   }, [selectedCaseId]);
+
+  const handleGenerateAnalysis = async () => {
+    if (!selectedCaseId) return;
+    setIsGeneratingAnalysis(true);
+    try {
+      const rec = await fetchRecommendation(selectedCaseId);
+      setRecommendation(rec);
+      // Reload actions from recommendation if available
+      if (rec.action_plan?.immediate_actions) {
+         setActions(rec.action_plan.immediate_actions.map((act: string, i: number) => ({
+             id: `rec-${i}`,
+             title: act.slice(0, 50) + (act.length > 50 ? '...' : ''),
+             description: act,
+             isVerified: false,
+             source: "RAG Recommendation"
+         })));
+      }
+    } catch (error) {
+      console.error(error);
+      alert("Analysis failed to generate");
+    } finally {
+      setIsGeneratingAnalysis(false);
+    }
+  };
 
   const updateCaseStatus = (decision: 'none' | 'appeal' | 'comply') => {
     setCaseDecision(decision);
@@ -92,7 +129,7 @@ function MainApp() {
 
   // Derived display values from real data
   const caseTitle = selectedCase
-    ? `${selectedCase.petitioner_name || '—'} vs. ${selectedCase.respondent_name || '—'}`
+    ? shortPartyTitle(selectedCase.petitioner_name, selectedCase.respondent_name)
     : '';
   const caseRefId = selectedCase?.case_number || selectedCaseId || '';
 
@@ -202,11 +239,15 @@ function MainApp() {
                               caseData={selectedCase}
                               verifiedActions={actions} 
                               onGoToVerify={() => setActiveTab('verify')}
+                              recommendation={recommendation}
+                              isGenerating={isGeneratingAnalysis}
+                              onGenerateAnalysis={handleGenerateAnalysis}
                             />
                           )}
                           {activeTab === 'verify' && (
                             <VerifyActions 
                               actions={actions}
+                              pdfUrl={judgment?.pdf_file || judgment?.pdf_storage_url}
                               highlightedPage={highlightedPage}
                               onActionClick={(page) => {
                                 setHighlightedPage(null);
@@ -219,7 +260,11 @@ function MainApp() {
                             />
                           )}
                           {activeTab === 'precedents' && (
-                            <Precedents />
+                            <Precedents 
+                              recommendation={recommendation}
+                              isGenerating={isGeneratingAnalysis}
+                              onGenerateAnalysis={handleGenerateAnalysis}
+                            />
                           )}
                         </motion.div>
                       </AnimatePresence>

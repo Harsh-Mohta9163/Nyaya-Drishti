@@ -499,6 +499,7 @@ Make your final recommendation. Remember: use the CORRECT NEXT APPELLATE FORUM f
         "agent_outputs": {
             "precedent_strength": agent1_out.precedent_strength,
             "overall_trend": agent1_out.overall_trend,
+            "precedents": [p.model_dump() for p in agent1_out.precedents],
             "balance_assessment": agent2_out.balance_assessment,
             "contempt_urgency": agent3_out.contempt_urgency,
         },
