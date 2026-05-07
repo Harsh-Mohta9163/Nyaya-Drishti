@@ -1,18 +1,28 @@
 """
-Hybrid RAG Engine: BM25 + NVIDIA Dense Embeddings + NVIDIA Cross-Encoder Reranker.
-
+Hybrid RAG Engine: BM25 + Dense Embeddings (Local)
 Pipeline:
   Query → BM25 sparse (top-50) + Dense vector (top-50)
        → Reciprocal Rank Fusion
-       → NVIDIA nv-rerankqa cross-encoder (top-5)
        → Final results with scores
+
+Embedding: ChromaDB built-in all-MiniLM-L6-v2 (384-dim, runs locally, no API needed).
+Works with any LLM provider (Gemini, Llama, etc.) since embeddings are provider-agnostic.
 """
 import logging
 import os
 
 import chromadb
-import requests
+from chromadb.api.types import Documents, EmbeddingFunction, Embeddings
 from rank_bm25 import BM25Okapi
+
+from apps.rag.embedder import InLegalBERTEmbeddingFunction
+from apps.rag.parquet_store import DuckDBStore
+
+try:
+    from sentence_transformers import CrossEncoder
+    _cross_encoder = CrossEncoder('cross-encoder/ms-marco-MiniLM-L-6-v2')
+except ImportError:
+    _cross_encoder = None
 
 logger = logging.getLogger(__name__)
 
@@ -25,7 +35,9 @@ _bm25_doc_ids = []
 
 
 def _get_collection():
-    """Get or create the ChromaDB collection."""
+    """Get or create the ChromaDB collection.
+    Uses InLegalBERT embedding function (768-dim).
+    No API key needed — runs 100% locally."""
     global _chroma_client, _collection
     if _collection is None:
         db_path = os.path.join(
@@ -34,246 +46,219 @@ def _get_collection():
         )
         os.makedirs(db_path, exist_ok=True)
         _chroma_client = chromadb.PersistentClient(path=db_path)
-        _collection = _chroma_client.get_or_create_collection(
-            name="karnataka_hc_judgments",
-            metadata={"hnsw:space": "cosine"},
-        )
+        
+        # Load custom embedding function
+        ef = InLegalBERTEmbeddingFunction()
+        
+        try:
+            _collection = _chroma_client.get_or_create_collection(
+                name="karnataka_hc_judgments",
+                embedding_function=ef,
+                metadata={"hnsw:space": "cosine"},
+            )
+        except ValueError as e:
+            if "Embedding function conflict" in str(e):
+                logger.warning("Embedding function conflict detected. Recreating ChromaDB collection...")
+                _chroma_client.delete_collection("karnataka_hc_judgments")
+                _collection = _chroma_client.create_collection(
+                    name="karnataka_hc_judgments",
+                    embedding_function=ef,
+                    metadata={"hnsw:space": "cosine"},
+                )
+            else:
+                raise
     return _collection
 
 
-def _nvidia_embed(texts: list[str]) -> list[list[float]]:
-    """Get embeddings from NVIDIA NIM API."""
-    from django.conf import settings
-
-    api_key = getattr(settings, "NVIDIA_API_KEY", "") or os.getenv("NVIDIA_API_KEY", "")
-    if not api_key:
-        logger.warning("No NVIDIA API key for embeddings — using empty vectors")
-        return [[0.0] * 1024] * len(texts)
-
+def reset_collection():
+    """Delete and recreate the collection (use when embedding dimensions change)."""
+    global _chroma_client, _collection
+    db_path = os.path.join(
+        os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__)))),
+        "data", "chroma_db",
+    )
+    os.makedirs(db_path, exist_ok=True)
+    _chroma_client = chromadb.PersistentClient(path=db_path)
     try:
-        from openai import OpenAI
-
-        client = OpenAI(
-            base_url=getattr(settings, "NVIDIA_BASE_URL", "https://integrate.api.nvidia.com/v1"),
-            api_key=api_key,
-        )
-        # Process in batches of 10 to avoid token limits
-        all_embeddings = []
-        for i in range(0, len(texts), 10):
-            batch = texts[i : i + 10]
-            # Truncate each text to ~500 tokens (~2000 chars)
-            batch = [t[:2000] for t in batch]
-            resp = client.embeddings.create(
-                model="nvidia/nv-embedqa-e5-v5",
-                input=batch,
-                encoding_format="float",
-                extra_body={"input_type": "passage", "truncate": "END"},
-            )
-            all_embeddings.extend([d.embedding for d in resp.data])
-        return all_embeddings
-    except Exception as e:
-        logger.error("NVIDIA embedding failed: %s", e)
-        return [[0.0] * 1024] * len(texts)
-
-
-def _nvidia_rerank(query: str, documents: list[str], top_n: int = 5) -> list[dict]:
-    """Rerank documents using NVIDIA cross-encoder."""
-    from django.conf import settings
-
-    api_key = getattr(settings, "NVIDIA_API_KEY", "") or os.getenv("NVIDIA_API_KEY", "")
-    if not api_key or not documents:
-        return [{"index": i, "text": d, "score": 0.0} for i, d in enumerate(documents[:top_n])]
-
+        _chroma_client.delete_collection("karnataka_hc_judgments")
+        logger.info("Deleted old karnataka_hc_judgments collection")
+    except Exception:
+        pass
     try:
-        resp = requests.post(
-            "https://integrate.api.nvidia.com/v1/retrieval/nvidia/nv-rerankqa-mistral-4b-v3/reranking",
-            headers={
-                "Authorization": f"Bearer {api_key}",
-                "Content-Type": "application/json",
-            },
-            json={
-                "model": "nvidia/nv-rerankqa-mistral-4b-v3",
-                "query": {"text": query[:1000]},
-                "passages": [{"text": d[:1500]} for d in documents],
-            },
-            timeout=30,
-        )
-        resp.raise_for_status()
-        rankings = resp.json().get("rankings", [])
-        results = []
-        for r in rankings[:top_n]:
-            idx = r["index"]
-            results.append({
-                "index": idx,
-                "text": documents[idx],
-                "score": r.get("logit", 0.0),
-            })
-        return results
-    except Exception as e:
-        logger.error("NVIDIA reranking failed: %s", e)
-        return [{"index": i, "text": d, "score": 0.0} for i, d in enumerate(documents[:top_n])]
+        ef = InLegalBERTEmbeddingFunction()
+    except Exception:
+        ef = None
+        
+    _collection = _chroma_client.get_or_create_collection(
+        name="karnataka_hc_judgments",
+        embedding_function=ef,
+        metadata={"hnsw:space": "cosine"},
+    )
+    return _collection
+
+
+def _rebuild_bm25():
+    """Rebuild BM25 index from ChromaDB."""
+    global _bm25_index, _bm25_corpus, _bm25_doc_ids
+    col = _get_collection()
+    data = col.get(include=["documents"])
+
+    _bm25_doc_ids = data["ids"]
+    _bm25_corpus = []
+
+    for text in data["documents"]:
+        tokens = str(text).lower().split()
+        _bm25_corpus.append(tokens)
+
+    if _bm25_corpus:
+        _bm25_index = BM25Okapi(_bm25_corpus)
 
 
 class HybridRAGEngine:
-    """
-    Hybrid RAG with BM25 sparse + dense vector + cross-encoder reranking.
-    """
-
     def __init__(self):
-        self.documents = []  # List of {"text": ..., "metadata": ...}
-        
-        # Load existing documents from ChromaDB so the in-memory BM25 index can be rebuilt
-        collection = _get_collection()
-        if collection.count() > 0:
-            results = collection.get(include=["documents", "metadatas"])
-            if results and results["documents"]:
-                for i in range(len(results["documents"])):
-                    self.documents.append({
-                        "text": results["documents"][i],
-                        "metadata": results["metadatas"][i] if results["metadatas"] else {}
-                    })
-                
-                # Rebuild BM25 index
-                global _bm25_index, _bm25_corpus, _bm25_doc_ids
-                _bm25_corpus = [d.get("text", "") for d in self.documents]
-                _bm25_doc_ids = list(range(len(self.documents)))
-                tokenized = [text.lower().split() for text in _bm25_corpus]
-                if tokenized:
-                    from rank_bm25 import BM25Okapi
-                    _bm25_index = BM25Okapi(tokenized)
+        self.collection = _get_collection()
 
     def add_documents(self, documents: list[dict]):
         """
-        Add documents to both BM25 and vector indices.
-
-        Each document: {"text": "...", "metadata": {"case_number": "...", ...}}
+        Add documents to vector store.
+        Chroma auto-embeds using InLegalBERT.
+        `documents` format: [{"text": str, "metadata": dict}]
         """
-        global _bm25_index, _bm25_corpus, _bm25_doc_ids
-
         if not documents:
             return
 
-        collection = _get_collection()
+        texts = [d["text"] for d in documents]
+        metadatas = [d["metadata"] for d in documents]
+        
+        import uuid
+        ids = [str(d["metadata"].get("id", uuid.uuid4())) for d in documents]
 
-        # Prepare data
-        new_texts = [d.get("text", "") for d in documents]
-        new_ids = [f"doc_{collection.count() + i}" for i in range(len(documents))]
-        new_metas = [d.get("metadata", {}) for d in documents]
+        # Cleanup metadata dicts (Chroma only accepts string, int, float, bool)
+        clean_metadatas = []
+        for meta in metadatas:
+            clean = {}
+            for k, v in meta.items():
+                if v is None:
+                    continue
+                if isinstance(v, (str, int, float, bool)):
+                    clean[k] = v
+                else:
+                    clean[k] = str(v)
+            clean_metadatas.append(clean)
 
-        # 1. Add to vector store
-        try:
-            embeddings = _nvidia_embed(new_texts)
-            collection.add(
-                ids=new_ids,
-                embeddings=embeddings,
-                documents=new_texts,
-                metadatas=new_metas,
-            )
-            logger.info("Added %d documents to vector store", len(new_texts))
-        except Exception as e:
-            logger.error("Failed to add to vector store: %s", e)
+        logger.info(f"Upserting {len(texts)} documents into ChromaDB (local InLegalBERT)")
+        # Pass documents= without embeddings= → Chroma auto-generates embeddings locally
+        self.collection.upsert(
+            documents=texts,
+            metadatas=clean_metadatas,
+            ids=ids,
+        )
 
-        # 2. Rebuild BM25 index
-        self.documents.extend(documents)
-        _bm25_corpus = [d.get("text", "") for d in self.documents]
-        _bm25_doc_ids = list(range(len(self.documents)))
-        tokenized = [text.lower().split() for text in _bm25_corpus]
-        if tokenized:
-            _bm25_index = BM25Okapi(tokenized)
+        logger.info("Rebuilding BM25 index")
+        _rebuild_bm25()
 
-    def query(self, query_text: str, top_k: int = 5) -> list[dict]:
+    def retrieve(self, query: str, top_k: int = 5, filters: dict = None) -> list[dict]:
         """
-        Hybrid search: BM25 + dense vector + reranking.
-
-        Returns list of {"text": ..., "score": ..., "metadata": ...}
+        Hybrid retrieval: DuckDB Pre-filter -> BM25 + Dense -> RRF -> Cross-Encoder.
+        Excludes reversed/overruled precedents automatically.
         """
-        if not query_text or not query_text.strip():
+        if _bm25_index is None:
+            _rebuild_bm25()
+
+        if not _bm25_doc_ids:
             return []
 
-        collection = _get_collection()
-        has_vectors = collection.count() > 0
-
-        # --- Step 1: BM25 sparse search ---
-        bm25_candidates = {}
-        if _bm25_index is not None and _bm25_corpus:
-            scores = _bm25_index.get_scores(query_text.lower().split())
-            top_indices = sorted(range(len(scores)), key=lambda i: scores[i], reverse=True)[:50]
-            for rank, idx in enumerate(top_indices):
-                if scores[idx] > 0:
-                    bm25_candidates[idx] = scores[idx]
-
-        # --- Step 2: Dense vector search ---
-        dense_candidates = {}
-        if has_vectors:
+        # Default filter: valid precedents only
+        safe_filters = {}
+        # safe_filters = {"precedent_status": {"$in": ["good_law", "unknown", "modified"]}}
+        if filters:
+            safe_filters.update(filters)
+            
+        # Stage 1: DuckDB Pre-filtering (Optional)
+        # If area_of_law is provided, we can pre-filter candidates
+        candidate_ids = None
+        if filters and "area_of_law" in filters:
             try:
-                query_emb = _nvidia_embed([query_text])[0]
-                n_results = min(50, collection.count())
-                results = collection.query(
-                    query_embeddings=[query_emb],
-                    n_results=n_results,
-                    include=["documents", "metadatas", "distances"],
-                )
-                if results and results["documents"] and results["documents"][0]:
-                    for i, doc in enumerate(results["documents"][0]):
-                        # Find matching doc in our corpus
-                        for j, corpus_doc in enumerate(_bm25_corpus):
-                            if corpus_doc == doc:
-                                dense_candidates[j] = 1.0 - (results["distances"][0][i] if results["distances"] else 0)
-                                break
+                store = DuckDBStore()
+                df = store.filter_cases(area_of_law=filters["area_of_law"], limit=5000)
+                if not df.empty:
+                    candidate_cnrs = df['cnr'].dropna().astype(str).tolist()
+                    if candidate_cnrs:
+                        # Vector ids are in format "{cnr}_chunk_{i}"
+                        # We cannot easily filter by prefix in Chroma where dict, 
+                        # but we can filter by the 'case_id' metadata field
+                        safe_filters["case_id"] = {"$in": candidate_cnrs[:100]} # Limit to 100 to avoid Chroma limits
             except Exception as e:
-                logger.error("Dense search failed: %s", e)
+                logger.warning(f"DuckDB pre-filter failed, falling back to full corpus: {e}")
 
-        # --- Step 3: Reciprocal Rank Fusion ---
-        if not bm25_candidates and not dense_candidates:
-            # No index built yet — return simple keyword match
-            return self._simple_search(query_text, top_k)
+        # 1. Dense Retrieval (top 50) — Chroma auto-embeds the query locally
+        kwargs = {
+            "query_texts": [query],
+            "n_results": min(100, len(_bm25_doc_ids)),
+            "include": ["documents", "metadatas", "distances"],
+        }
+        if safe_filters:
+            kwargs["where"] = safe_filters
 
-        rrf_scores = {}
-        k = 60  # RRF constant
+        dense_res = self.collection.query(**kwargs)
+        
+        dense_scores = {}
+        if dense_res["ids"] and dense_res["ids"][0]:
+            for rank, (doc_id, dist) in enumerate(zip(dense_res["ids"][0], dense_res["distances"][0])):
+                dense_scores[doc_id] = {"rank": rank + 1, "dist": dist}
 
-        bm25_ranked = sorted(bm25_candidates.keys(), key=lambda i: bm25_candidates[i], reverse=True)
-        for rank, doc_id in enumerate(bm25_ranked):
-            rrf_scores[doc_id] = rrf_scores.get(doc_id, 0) + 1 / (k + rank + 1)
+        # 2. Sparse Retrieval (BM25)
+        query_tokens = query.lower().split()
+        bm25_scores_raw = _bm25_index.get_scores(query_tokens)
 
-        dense_ranked = sorted(dense_candidates.keys(), key=lambda i: dense_candidates[i], reverse=True)
-        for rank, doc_id in enumerate(dense_ranked):
-            rrf_scores[doc_id] = rrf_scores.get(doc_id, 0) + 1 / (k + rank + 1)
+        # 3. Reciprocal Rank Fusion (RRF)
+        k_rrf = 60
+        fused_scores = {}
 
-        merged = sorted(rrf_scores.keys(), key=lambda i: rrf_scores[i], reverse=True)[:20]
+        bm25_ranked_idx = sorted(range(len(bm25_scores_raw)), key=lambda i: bm25_scores_raw[i], reverse=True)
+        for rank, idx in enumerate(bm25_ranked_idx[:50]):
+            doc_id = _bm25_doc_ids[idx]
+            if filters and doc_id not in dense_scores:
+                continue
+            fused_scores[doc_id] = fused_scores.get(doc_id, 0.0) + (1.0 / (k_rrf + rank + 1))
 
-        if not merged:
-            return self._simple_search(query_text, top_k)
+        for doc_id, data in dense_scores.items():
+            rank = data["rank"]
+            fused_scores[doc_id] = fused_scores.get(doc_id, 0.0) + (1.0 / (k_rrf + rank))
 
-        # --- Step 4: NVIDIA Cross-Encoder Reranking ---
-        candidate_texts = [_bm25_corpus[i] for i in merged if i < len(_bm25_corpus)]
-        reranked = _nvidia_rerank(query_text, candidate_texts, top_n=top_k)
+        # 4. Final Ranking (Top 100 for reranking)
+        top_ids = sorted(fused_scores.keys(), key=lambda d: fused_scores[d], reverse=True)[:100]
 
-        results = []
-        for r in reranked:
-            idx = merged[r["index"]] if r["index"] < len(merged) else 0
-            meta = self.documents[idx].get("metadata", {}) if idx < len(self.documents) else {}
-            results.append({
-                "text": r["text"][:500],  # Truncate for response
-                "score": round(r["score"], 4),
-                "metadata": meta,
-            })
+        final_results = []
+        if top_ids:
+            fetched = self.collection.get(ids=top_ids, include=["documents", "metadatas"])
+            id_to_data = {
+                fetched["ids"][i]: {
+                    "id": fetched["ids"][i],
+                    "text": fetched["documents"][i],
+                    "metadata": fetched["metadatas"][i],
+                    "score": fused_scores[fetched["ids"][i]]
+                }
+                for i in range(len(fetched["ids"]))
+            }
+            
+            # Stage 3: Cross-Encoder Reranking
+            if _cross_encoder is not None and len(top_ids) > 0:
+                pairs = [[query, id_to_data[doc_id]["text"]] for doc_id in top_ids]
+                cross_scores = _cross_encoder.predict(pairs)
+                
+                # Combine RRF and cross-encoder scores
+                for idx, doc_id in enumerate(top_ids):
+                    id_to_data[doc_id]["score"] = float(cross_scores[idx])
+                    
+                # Re-sort by cross-encoder score
+                top_ids = sorted(top_ids, key=lambda d: id_to_data[d]["score"], reverse=True)
+                
+            # Limit to top_k
+            top_ids = top_ids[:top_k]
+            
+            for doc_id in top_ids:
+                if doc_id in id_to_data:
+                    final_results.append(id_to_data[doc_id])
 
-        return results
-
-    def _simple_search(self, query_text: str, top_k: int) -> list[dict]:
-        """Simple keyword overlap search as ultimate fallback."""
-        from collections import Counter
-
-        query_tokens = Counter(query_text.lower().split())
-        scored = []
-        for doc in self.documents:
-            text = doc.get("text", "")
-            doc_tokens = Counter(text.lower().split())
-            overlap = sum((query_tokens & doc_tokens).values())
-            scored.append({
-                "text": text[:500],
-                "score": overlap,
-                "metadata": doc.get("metadata", {}),
-            })
-        scored.sort(key=lambda x: x["score"], reverse=True)
-        return scored[:top_k]
+        return final_results
