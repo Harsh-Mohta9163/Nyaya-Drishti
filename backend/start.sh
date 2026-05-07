@@ -6,9 +6,9 @@ echo "Starting deployment script..."
 mkdir -p /app/data
 
 # 1. Unzip the Chroma DB if it's in the mounted Hugging Face dataset
-if [ -f "/hf_dataset/chroma_db.zip" ]; then
-    echo "Found chroma_db.zip! Unzipping into /app/data..."
-    unzip -o -q /hf_dataset/chroma_db.zip -d /app/data/
+if [ -f "/hf_dataset/chroma_db_export.zip" ]; then
+    echo "Found chroma_db_export.zip! Unzipping into /app/data..."
+    unzip -o -q /hf_dataset/chroma_db_export.zip -d /app/data/
     echo "Unzip complete."
 elif [ -d "/hf_dataset/chroma_db" ]; then
     echo "Found unzipped chroma_db directory! Copying to /app/data..."
