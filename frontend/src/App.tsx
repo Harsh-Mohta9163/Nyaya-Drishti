@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Sidebar } from './components/Sidebar';
 import { CaseHeader } from './components/CaseHeader';
 import { CaseOverview } from './components/CaseOverview';
@@ -10,64 +10,65 @@ import { Routes, Route, Navigate, useNavigate } from 'react-router-dom';
 import { useAuth } from './context/AuthContext';
 import LoginPage from './LoginPage';
 import RegisterPage from './RegisterPage';
+import { fetchCase, CaseData } from './api/client';
 
 import { Precedents } from './components/Precedents';
 
 function MainApp() {
   const [currentView, setCurrentView] = useState('dashboard');
   const [selectedCaseId, setSelectedCaseId] = useState<string | null>(null);
+  const [selectedCase, setSelectedCase] = useState<CaseData | null>(null);
   const [activeTab, setActiveTab] = useState('overview');
   const [showToast, setShowToast] = useState(false);
   const [highlightedPage, setHighlightedPage] = useState<number | null>(null);
   const [caseDecision, setCaseDecision] = useState<'none' | 'appeal' | 'comply'>('none');
   
-  const [cases, setCases] = useState([
-    { id: 'ND-2023-SP-882', client: 'ABC Industries vs. State of Karnataka', court: 'Supreme Court of Delhi', type: 'Writ Petition', status: 'Review Pending', risk: 'High', days: 4 },
-    { id: 'SLP/4567/2024', client: 'Ramaiah & Sons vs. Revenue Department', court: 'Karnataka High Court', type: 'SLP', status: 'Review Pending', risk: 'Medium', days: 12 },
-    { id: 'CIV-9901-2023', client: 'Global Tech vs. Registrar of Patents', court: 'Bombay High Court', type: 'Appeal', status: 'Verified', risk: 'Low', days: 28 },
-    { id: 'HC-2023-14', client: 'Sharma Corp vs. Union of India', court: 'Supreme Court of India', type: 'Civil Appeal', status: 'Review Pending', risk: 'High', days: 2 }
-  ]);
+  // Fetch selected case from backend when a case is clicked
+  useEffect(() => {
+    if (!selectedCaseId) {
+      setSelectedCase(null);
+      return;
+    }
+    fetchCase(selectedCaseId)
+      .then(data => setSelectedCase(data))
+      .catch(err => console.error('Failed to fetch case:', err));
+  }, [selectedCaseId]);
 
   const updateCaseStatus = (decision: 'none' | 'appeal' | 'comply') => {
     setCaseDecision(decision);
-    if (decision !== 'none' && selectedCaseId) {
-      setCases(prev => prev.map(c => 
-        c.id === selectedCaseId 
-          ? { ...c, status: decision === 'appeal' ? 'Appeal' : 'Comply' } 
-          : c
-      ));
-    }
   };
 
-  const [actions, setActions] = useState([
-    { 
-      id: '1',
-      title: "Deposit 50% Disputed Tax",
-      source: "Source: Page 1, Para 2",
-      description: "Ensure respondent company (Sharma Corp Pvt. Ltd.) deposits 50% of the disputed tax amount as directed by the Supreme Court.",
-      tags: ['Finance Dept'],
-      dueDate: "10 Dec 2023",
-      isVerified: true
-    },
-    { 
-      id: '2',
-      title: "Submit Regulatory Compliance Report",
-      source: "Source: Page 1, Para 3",
-      description: "Review regulatory compliance of Sharma Corp for FY 2020-2022 and prepare a preliminary report for submission.",
-      tags: ['Ministry of Corp Affairs', 'Legal Review'],
-      dueDate: "11 Jan 2024",
-      isVerified: false
-    },
-    { 
-      id: '3',
-      title: "Proceed with Asset Attachment",
-      source: "Source: Page 1, Para 4",
-      description: "Interim stay vacated. Initiate attachment of specified assets as listed in Annexure A of the original order.",
-      tags: ['Enforcement Dir.'],
-      isHighPriority: true,
-      isVerified: false
+  // Build actions from the real extracted court_directions
+  const judgment = selectedCase?.judgments?.[0];
+  const directions = judgment?.court_directions ?? [];
+  
+  const [actions, setActions] = useState<any[]>([]);
+  
+  // Rebuild actions when a new case is selected
+  useEffect(() => {
+    if (!judgment) {
+      setActions([]);
+      return;
     }
-  ]);
+    const dirs = judgment.court_directions ?? [];
+    const mapped = dirs.map((d: any, i: number) => ({
+      id: String(i + 1),
+      title: d.heading || d.text?.slice(0, 60) || `Direction ${i + 1}`,
+      source: d.source_location ? `Source: Page ${d.source_location.page}` : `Source: Direction ${i + 1}`,
+      description: d.text || d.description || '',
+      tags: d.departments || d.tags || [],
+      dueDate: d.deadline || '',
+      isVerified: false,
+    }));
+    setActions(mapped.length > 0 ? mapped : [{
+      id: '1',
+      title: 'Review Operative Order',
+      source: 'Extracted from judgment',
+      description: judgment.operative_order_text || 'No operative order extracted.',
+      tags: ['Legal Review'],
+      isVerified: false,
+    }]);
+  }, [judgment?.id]);
 
   const toggleAction = (id: string) => {
     setActions(actions.map(a => a.id === id ? { ...a, isVerified: !a.isVerified } : a));
@@ -88,6 +89,12 @@ function MainApp() {
   };
 
   const allVerified = actions.length > 0 && actions.every(a => a.isVerified);
+
+  // Derived display values from real data
+  const caseTitle = selectedCase
+    ? `${selectedCase.petitioner_name || '—'} vs. ${selectedCase.respondent_name || '—'}`
+    : '';
+  const caseRefId = selectedCase?.case_number || selectedCaseId || '';
 
   return (
     <div className="flex bg-surface-dim min-h-screen">
@@ -116,6 +123,7 @@ function MainApp() {
           if (view === 'cases') {
             setSelectedCaseId(null);
             setActiveTab('overview');
+            setCaseDecision('none');
           }
         }}
       />
@@ -148,7 +156,6 @@ function MainApp() {
             >
               <CaseList 
                 onSelectCase={(id) => setSelectedCaseId(id)}
-                cases={cases}
               />
             </motion.div>
           ) : (
@@ -160,56 +167,66 @@ function MainApp() {
               transition={{ duration: 0.3 }}
               className="flex flex-col min-h-full"
             >
-              {/* Top Header */}
-              <CaseHeader 
-                refId={selectedCaseId || "ND-2023-SP-882"} 
-                title="ABC Industries vs. State of Karnataka" 
-                activeTab={activeTab}
-                onTabChange={setActiveTab}
-                allVerified={allVerified}
-                onBack={() => setSelectedCaseId(null)}
-                decision={caseDecision}
-                onDecision={updateCaseStatus}
-              />
-
-              {/* Tab Content Area */}
-              <div className="px-10 pb-10 flex-grow">
-                <div className="mx-auto w-full max-w-[1440px]">
-                  <AnimatePresence mode="wait">
-                    <motion.div
-                      key={activeTab}
-                      initial={{ opacity: 0, y: 10 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      exit={{ opacity: 0, y: -10 }}
-                      transition={{ duration: 0.3 }}
-                    >
-                      {activeTab === 'overview' && (
-                        <CaseOverview 
-                          verifiedActions={actions} 
-                          onGoToVerify={() => setActiveTab('verify')}
-                        />
-                      )}
-                      {activeTab === 'verify' && (
-                        <VerifyActions 
-                          actions={actions}
-                          highlightedPage={highlightedPage}
-                          onActionClick={(page) => {
-                            setHighlightedPage(null); // Reset first to trigger effect if same page
-                            setTimeout(() => setHighlightedPage(page), 50);
-                          }}
-                          onToggle={toggleAction}
-                          onDelete={deleteAction}
-                          onEdit={editAction}
-                          onVerifyAll={verifyAll}
-                        />
-                      )}
-                      {activeTab === 'precedents' && (
-                        <Precedents />
-                      )}
-                    </motion.div>
-                  </AnimatePresence>
+              {/* Loading state */}
+              {!selectedCase ? (
+                <div className="flex items-center justify-center h-64">
+                  <span className="material-symbols-outlined text-4xl animate-spin text-primary-blue opacity-40">progress_activity</span>
                 </div>
-              </div>
+              ) : (
+                <>
+                  {/* Top Header — populated from DB */}
+                  <CaseHeader 
+                    refId={caseRefId}
+                    title={caseTitle}
+                    activeTab={activeTab}
+                    onTabChange={setActiveTab}
+                    allVerified={allVerified}
+                    onBack={() => setSelectedCaseId(null)}
+                    decision={caseDecision}
+                    onDecision={updateCaseStatus}
+                  />
+
+                  {/* Tab Content Area */}
+                  <div className="px-10 pb-10 flex-grow">
+                    <div className="mx-auto w-full max-w-[1440px]">
+                      <AnimatePresence mode="wait">
+                        <motion.div
+                          key={activeTab}
+                          initial={{ opacity: 0, y: 10 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          exit={{ opacity: 0, y: -10 }}
+                          transition={{ duration: 0.3 }}
+                        >
+                          {activeTab === 'overview' && (
+                            <CaseOverview 
+                              caseData={selectedCase}
+                              verifiedActions={actions} 
+                              onGoToVerify={() => setActiveTab('verify')}
+                            />
+                          )}
+                          {activeTab === 'verify' && (
+                            <VerifyActions 
+                              actions={actions}
+                              highlightedPage={highlightedPage}
+                              onActionClick={(page) => {
+                                setHighlightedPage(null);
+                                setTimeout(() => setHighlightedPage(page), 50);
+                              }}
+                              onToggle={toggleAction}
+                              onDelete={deleteAction}
+                              onEdit={editAction}
+                              onVerifyAll={verifyAll}
+                            />
+                          )}
+                          {activeTab === 'precedents' && (
+                            <Precedents />
+                          )}
+                        </motion.div>
+                      </AnimatePresence>
+                    </div>
+                  </div>
+                </>
+              )}
             </motion.div>
           )}
         </AnimatePresence>
@@ -234,4 +251,3 @@ export default function App() {
     </Routes>
   );
 }
-

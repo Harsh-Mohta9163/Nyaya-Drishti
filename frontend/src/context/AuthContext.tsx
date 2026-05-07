@@ -1,7 +1,8 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
-import { apiLogin, apiRegister, apiGetMe, clearTokens, getAccessToken } from '../api';
+import { authLogin, authLogout, LoginResponse } from '../api/client';
 
 interface User {
+  id: number;
   username: string;
   email: string;
   role: string;
@@ -21,87 +22,71 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [user, setUser] = useState<User | null>(null);
-  const [isLoading, setIsLoading] = useState(true); // Start true to check existing session
+  const [isLoading, setIsLoading] = useState(false);
 
-  // On mount, check if we have a stored token and validate it
+  // Restore user from localStorage on page load (if token exists)
   useEffect(() => {
-    const checkSession = async () => {
-      const token = getAccessToken();
-      if (!token) {
-        setIsLoading(false);
-        return;
-      }
+    const savedUser = localStorage.getItem('user_data');
+    if (savedUser) {
       try {
-        const userData = await apiGetMe();
-        setUser({
-          username: userData.first_name || userData.email?.split('@')[0] || 'User',
-          email: userData.email,
-          role: userData.role || 'reviewer',
-          department: userData.department || 'legal',
-        });
+        setUser(JSON.parse(savedUser));
       } catch {
-        // Token expired or invalid — clear it
-        clearTokens();
-      } finally {
-        setIsLoading(false);
+        localStorage.removeItem('user_data');
       }
-    };
-    checkSession();
+    }
   }, []);
 
   const login = async (email: string, password: string) => {
     setIsLoading(true);
     try {
-      const data = await apiLogin(email, password);
-      // The apiLogin function already stores tokens
-      // Now fetch the user profile
-      try {
-        const userData = await apiGetMe();
-        setUser({
-          username: userData.first_name || email.split('@')[0],
-          email: userData.email || email,
-          role: userData.role || 'reviewer',
-          department: userData.department || 'legal',
-        });
-      } catch {
-        // Fallback: use data from login response if /me/ fails
-        setUser({
-          username: data.user?.first_name || email.split('@')[0],
-          email: data.user?.email || email,
-          role: data.user?.role || 'reviewer',
-          department: data.user?.department || 'legal',
-        });
-      }
-    } catch (err: any) {
-      throw err; // Let the login page handle the error display
-    } finally {
+      const data: LoginResponse = await authLogin(email, password);
+      setUser(data.user);
+      localStorage.setItem('user_data', JSON.stringify(data.user));
+    } catch (e: any) {
       setIsLoading(false);
+      throw e; // re-throw so LoginPage can show the message
     }
+    setIsLoading(false);
   };
 
   const register = async (userData: any) => {
     setIsLoading(true);
     try {
-      await apiRegister(userData);
-      // Don't auto-login after register — user will go to login page
+      const res = await fetch('http://127.0.0.1:8000/api/auth/register/', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(userData),
+      });
+      if (!res.ok) {
+        const raw = await res.json().catch(() => ({}));
+        // DRF returns field errors as { field: ["msg"] } or { detail: "msg" }
+        const message = raw?.detail
+          || Object.entries(raw)
+               .map(([k, v]) => `${k}: ${Array.isArray(v) ? v.join(', ') : v}`)
+               .join(' | ')
+          || 'Registration failed';
+        throw new Error(message);
+      }
+      // After registration, user must log in manually
     } finally {
       setIsLoading(false);
     }
   };
 
   const logout = () => {
-    clearTokens();
+    authLogout();
+    localStorage.removeItem('user_data');
     setUser(null);
   };
 
   return (
-    <AuthContext.Provider value={{ 
-      user, 
-      isAuthenticated: !!user, 
-      isLoading, 
-      login, 
-      register, 
-      logout 
+    <AuthContext.Provider value={{
+      user,
+      isAuthenticated: !!user,
+      isLoading,
+      login,
+      register,
+      logout,
     }}>
       {children}
     </AuthContext.Provider>

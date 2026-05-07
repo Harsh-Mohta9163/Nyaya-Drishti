@@ -148,7 +148,7 @@ export default function RegisterPage() {
       });
       navigate('/login');
     } catch (err: any) {
-      setError('Registration failed.');
+      setError(err?.message || 'Registration failed. Please try again.');
     }
   };
 

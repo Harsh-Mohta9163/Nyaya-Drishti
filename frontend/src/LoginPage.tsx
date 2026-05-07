@@ -147,7 +147,7 @@ export default function LoginPage() {
       await login(userId.includes('@') ? userId : `${userId}@nyayadrishti.in`, password);
       navigate('/');
     } catch (err: any) {
-      setError('Login failed. Please check your credentials or connection.');
+      setError(err?.message || 'Login failed. Please check your credentials.');
     }
   };
 
