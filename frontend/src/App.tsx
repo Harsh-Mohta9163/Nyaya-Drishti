@@ -25,6 +25,7 @@ function MainApp() {
   const [caseDecision, setCaseDecision] = useState<'none' | 'appeal' | 'comply'>('none');
   const [recommendation, setRecommendation] = useState<any | null>(null);
   const [isGeneratingAnalysis, setIsGeneratingAnalysis] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   
   // Fetch selected case from backend when a case is clicked
   useEffect(() => {
@@ -163,10 +164,12 @@ function MainApp() {
             setCaseDecision('none');
           }
         }}
+        isCollapsed={sidebarCollapsed}
+        onToggle={() => setSidebarCollapsed(c => !c)}
       />
 
       {/* Main Content Area */}
-      <main className="flex-grow pl-[280px] h-screen overflow-y-auto">
+      <main className="flex-grow h-screen overflow-y-auto transition-[padding] duration-[250ms] ease-in-out" style={{ paddingLeft: sidebarCollapsed ? 72 : 280 }}>
         <AnimatePresence mode="wait">
           {currentView === 'dashboard' ? (
             <motion.div
