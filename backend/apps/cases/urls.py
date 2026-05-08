@@ -3,6 +3,7 @@ from django.urls import path
 from .views import (
     CaseListCreateView,
     CaseDetailView,
+    JudgmentUpdateView,
     CaseExtractView,
     CaseStatusView,
     ServePdfView,
@@ -15,6 +16,7 @@ from .views import (
 urlpatterns = [
     path("", CaseListCreateView.as_view(), name="case-list-create"),
     path("<uuid:pk>/", CaseDetailView.as_view(), name="case-detail"),
+    path("judgments/<uuid:pk>/", JudgmentUpdateView.as_view(), name="judgment-update"),
     path("<uuid:pk>/status/", CaseStatusView.as_view(), name="case-status"),
     path("extract/", CaseExtractView.as_view(), name="case-extract"),
     path("judgments/<uuid:pk>/pdf/", ServePdfView.as_view(), name="serve-pdf"),

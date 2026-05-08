@@ -216,13 +216,20 @@ class HybridRAGEngine:
             })
         
         # Cross-encoder reranking (optional, on small candidate set only)
+        # NOTE: We use the cross-encoder ONLY for reranking order, NOT for
+        # replacing the cosine similarity score. ms-marco is trained on web
+        # search and assigns negative scores to most legal text, which would
+        # cause the pipeline's score threshold to drop valid results.
         if _cross_encoder is not None and len(results) > 0:
             try:
                 pairs = [[query[:512], r["text"][:512]] for r in results]  # Truncate for speed
                 cross_scores = _cross_encoder.predict(pairs)
-                for idx, score in enumerate(cross_scores):
-                    results[idx]["score"] = float(score)
-                results.sort(key=lambda r: r["score"], reverse=True)
+                # Attach cross-encoder score for reranking, but keep cosine similarity
+                for idx, ce_score in enumerate(cross_scores):
+                    results[idx]["ce_score"] = float(ce_score)
+                # Sort by cross-encoder score (better semantic reranking)
+                results.sort(key=lambda r: r.get("ce_score", 0), reverse=True)
+                logger.info(f"Cross-encoder reranked {len(results)} results (scores kept as cosine similarity)")
             except Exception as e:
                 logger.warning(f"Cross-encoder reranking failed, using raw scores: {e}")
         

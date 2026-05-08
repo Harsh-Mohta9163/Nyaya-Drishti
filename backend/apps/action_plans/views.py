@@ -10,6 +10,62 @@ from .models import ActionPlan
 from .serializers import ActionPlanSerializer
 from .services.plan_generator import generate_or_refresh_action_plan
 from .services.recommendation_pipeline import generate_recommendation
+from .services.rag_engine import HybridRAGEngine
+
+
+def backfill_precedents(case_text: str, cached_rec: dict, action_plan=None) -> dict:
+    """Extract and backfill precedents into cached recommendation if missing."""
+    agent_outputs = cached_rec.get("agent_outputs", {})
+    precedents = agent_outputs.get("precedents", [])
+    
+    if precedents:
+        return cached_rec
+    
+    try:
+        rag = HybridRAGEngine()
+        raw_chunks = rag.retrieve(case_text[:2000], top_k=8, filters=None)
+        
+        # Deduplicate by case_id
+        seen_cases = {}
+        for c in (raw_chunks or []):
+            score = c.get('score', 0)
+            if score < 0.85:  # Cosine similarity threshold (not cross-encoder)
+                continue
+            meta = c.get('metadata', {})
+            cid = meta.get('case_id', '')
+            if cid in seen_cases:
+                continue
+            seen_cases[cid] = True
+            
+            text = c.get('text', '')
+            # Bucket relevance for frontend
+            relevance_label = "High" if score >= 0.93 else "Moderate" if score >= 0.91 else "Low"
+            
+            seen_cases[cid] = {
+                "case_id": str(cid),
+                "case_title": str(meta.get('title', 'Unknown')),
+                "relevance": relevance_label,
+                "similarity_score": round(score, 4),
+                "key_holding": text[:500] + ("..." if len(text) > 500 else ""),
+                "outcome": str(meta.get('disposal_nature', 'UNKNOWN')),
+                "applicability": f"Cosine similarity: {score:.2%} via InLegalBERT semantic search"
+            }
+        
+        extracted_precedents = [v for v in seen_cases.values() if isinstance(v, dict)]
+        
+        cached_rec["agent_outputs"] = agent_outputs
+        cached_rec["agent_outputs"]["precedents"] = extracted_precedents
+        cached_rec["agent_outputs"]["precedent_strength"] = "STRONG" if len(extracted_precedents) >= 5 else "MODERATE" if extracted_precedents else "WEAK"
+        cached_rec["agent_outputs"]["overall_trend"] = f"{len(extracted_precedents)} similar precedents found via InLegalBERT semantic search." if extracted_precedents else "No precedents found."
+        
+        if action_plan:
+            action_plan.full_rag_recommendation = cached_rec
+            action_plan.save()
+    except Exception as e:
+        import logging
+        logging.getLogger(__name__).warning(f"Precedent backfill failed: {e}")
+    
+    return cached_rec
 
 
 class ActionPlanListView(ListAPIView):
@@ -92,7 +148,8 @@ class GenerateRecommendationView(APIView):
             # If we already have the full recommendation cached, return it directly
             # Unless force_regenerate is True
             if action_plan.full_rag_recommendation and not force_regenerate:
-                return Response(action_plan.full_rag_recommendation, status=status.HTTP_200_OK)
+                cached = backfill_precedents(case_text, action_plan.full_rag_recommendation, action_plan)
+                return Response(cached, status=status.HTTP_200_OK)
                 
         try:
             recommendation = generate_recommendation(
@@ -107,7 +164,10 @@ class GenerateRecommendationView(APIView):
                 petitioner=petitioner,
                 respondent=respondent,
                 issues=issues,
-                date_of_order=judgment.date_of_order if 'judgment' in locals() and judgment else ""
+                date_of_order=judgment.date_of_order if 'judgment' in locals() and judgment else "",
+                court_directions=judgment.court_directions if 'judgment' in locals() and judgment else [],
+                operative_order_text=judgment.operative_order_text if 'judgment' in locals() and judgment else "",
+                ratio_decidendi=judgment.ratio_decidendi if 'judgment' in locals() and judgment else ""
             )
             
             # Cache it

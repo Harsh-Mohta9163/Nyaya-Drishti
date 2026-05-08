@@ -217,6 +217,161 @@ CASE SUMMARY:
 
 
 # ==============================================================================
+# The Single-Agent Deep Reasoning Pipeline
+# ==============================================================================
+
+def _run_single_agent_pipeline(
+    case_id: str, case_context: str, appeal_info: dict, date_of_order: str,
+    court_directions: list = None, operative_order_text: str = "", ratio_decidendi: str = "",
+    precedents: list = None
+) -> Dict[str, Any]:
+    logger.info("Running Single Agent Recommendation Pipeline (DeepSeek V4 Pro)...")
+    
+    agent_sys = """You are the Chief Legal Advisor to the State Government Litigation Department (NyayaDrishti CCMS). 
+You analyze court judgments where the State/Government is a party and recommend whether the State should APPEAL or COMPLY.
+
+═══ PERSPECTIVE LOCK ═══
+- You ALWAYS represent the GOVERNMENT DEPARTMENT (typically the respondent).
+- Your goal: protect the public exchequer, minimize state liability, defend government policies.
+- NEVER generate arguments that favor the private petitioner/appellant.
+- Every argument you draft must pass this test: "Would a government lawyer actually say this in court to REDUCE the State's liability?"
+
+═══ COURT HIERARCHY — READ THIS CAREFULLY ═══
+Every case involves AT LEAST two courts:
+1. THE LOWER COURT (Reference Court / Trial Court / Single Judge):
+   - This court heard the case first
+   - Its order was challenged by one of the parties
+
+2. THIS COURT (the court whose judgment you are reading):
+   - This court heard the appeal/challenge against the Lower Court
+   - THIS is the order the government must now decide to APPEAL or COMPLY with
+
+CRITICAL RULE: When you recommend APPEAL, your "appeal_grounds" must argue why THIS COURT's order was wrong. Do NOT attack the Lower Court using THIS Court's own logic — that is the PETITIONER's argument, not the government's.
+
+═══ MATHEMATICAL REASONING GUARDRAILS ═══
+When analyzing compensation/monetary cases, apply these rules EXACTLY:
+
+DEDUCTIONS (e.g., developmental charges in land acquisition):
+- A HIGHER deduction % = LOWER net payout by government = GOOD for government
+- A LOWER deduction % = HIGHER net payout by government = BAD for government
+- Therefore: The government should NEVER argue that a deduction is "excessive" or "too high"
+- Government's position: deductions should be HIGHER (e.g., "The court erred in applying only 30% deduction; 50-60% is warranted given the infrastructure costs")
+
+ENHANCEMENT OF COMPENSATION:
+- Higher market value = MORE money government pays = BAD for government
+- Lower market value = LESS money government pays = GOOD for government
+- Government's position: market value should be LOWER
+
+INTEREST RATES:
+- Higher interest rate on compensation = MORE government liability = BAD for government
+- Lower interest rate = LESS government liability = GOOD for government
+
+Before writing any argument about money, ask yourself: "Does this argument, if accepted by the court, result in the government paying MORE or LESS?" If MORE, do NOT make that argument.
+
+═══ APPEAL_GROUNDS FIELD RULES ═══
+- If your verdict is APPEAL: populate "appeal_grounds" with 2-4 specific legal grounds arguing why THIS COURT's order was wrong. Each ground must pass the government-perspective test above.
+- If your verdict is COMPLY: set "appeal_grounds" to an EMPTY LIST []. Do NOT generate appeal arguments when recommending compliance. Instead, explain your reasoning in "primary_reasoning".
+
+═══ FINANCIAL COST-OF-DELAY ANALYSIS ═══
+For ANY monetary judgment against the government:
+1. Estimate the statutory or commercial interest accumulating during a 3-5 year appeal process.
+2. Compare: the potential savings if the government wins the appeal vs. the guaranteed accumulated interest cost if it loses.
+3. If the interest cost significantly exceeds potential savings or the principal amount is small, strongly recommend COMPLY.
+
+═══ DECISION FRAMEWORK ═══
+1. If THIS Court ruled AGAINST the government (petitioner's appeal allowed):
+   → Government LOST. Weigh appeal vs compliance carefully.
+   → Consider: Are there genuine legal errors by THIS Court?
+   → Consider: Financial exposure vs cost of further litigation.
+
+2. If THIS Court ruled FOR the government (petition dismissed):
+   → Government WON. Recommend COMPLY with HIGH confidence.
+   → Set appeal_grounds to empty list [].
+
+3. APPEAL FORUM — Use the correct next court:
+   - Single Judge HC → Division Bench of same HC
+   - Division Bench HC → Supreme Court (SLP under Art. 136)
+   - Supreme Court → Review/Curative Petition"""
+
+    directions_text = json.dumps(court_directions, indent=2) if court_directions else "None specified"
+    
+    agent_prompt = f"""{case_context}
+
+=== EXTRACTED JUDGMENT DETAILS ===
+Operative Order:
+{operative_order_text or 'Not available'}
+
+Court Directions (Compliance Directives):
+{directions_text}
+
+Ratio Decidendi (Court's Reasoning):
+{ratio_decidendi or 'Not available'}
+=== END EXTRACTED DETAILS ===
+
+Make your final recommendation following the financial cost-of-delay rules and the court hierarchy disambiguation. Remember: use the CORRECT NEXT APPELLATE FORUM from the case details."""
+
+    try:
+        agent_out = _call_nvidia(agent_prompt, Agent4Output, agent_sys, model="deepseek-ai/deepseek-v4-pro")
+    except Exception as e:
+        logger.warning(f"DeepSeek failed, falling back to Llama 70B: {e}")
+        agent_out = _call_nvidia(agent_prompt, Agent4Output, agent_sys, model="meta/llama-3.3-70b-instruct")
+
+    appeal_days = 90 if "supreme" in appeal_info["next"].lower() else 30
+    
+    from datetime import date, datetime, timedelta
+    import uuid
+    
+    base_date = date.today()
+    if date_of_order:
+        if isinstance(date_of_order, (date, datetime)):
+            base_date = date_of_order.date() if isinstance(date_of_order, datetime) else date_of_order
+        else:
+            try:
+                if "T" in str(date_of_order):
+                    base_date = date.fromisoformat(str(date_of_order).split("T")[0])
+                else:
+                    base_date = date.fromisoformat(str(date_of_order))
+            except ValueError:
+                pass
+            
+    deadline_date = base_date + timedelta(days=appeal_days)
+    deadline = deadline_date.isoformat()
+    days_remaining = (deadline_date - date.today()).days
+
+    return {
+        "recommendation_id": str(uuid.uuid4()),
+        "case_id": "single-model",
+        "status": "COMPLETED",
+        "verdict": {
+            "decision": agent_out.verdict.decision,
+            "appeal_to": agent_out.verdict.appeal_to,
+            "confidence": agent_out.verdict.confidence,
+            "urgency": agent_out.verdict.urgency,
+            "limitation_deadline": deadline,
+            "days_remaining": days_remaining,
+        },
+        "statistical_basis": {
+            "similar_cases_analyzed": 0,
+            "government_appeal_win_rate": 0,
+            "dismissed_rate": 0,
+            "total_cases_in_corpus": 0,
+            "financial_exposure_if_comply": 0,
+        },
+        "primary_reasoning": agent_out.primary_reasoning,
+        "appeal_grounds": agent_out.appeal_grounds,
+        "alternative_routes": agent_out.alternative_routes,
+        "action_plan": agent_out.action_plan.model_dump(),
+        "risk_summary": agent_out.risk_summary,
+        "agent_outputs": {
+            "precedent_strength": "MODERATE" if precedents else "WEAK",
+            "overall_trend": "Precedents extracted for reference via semantic search." if precedents else "Precedent analysis currently disabled for focused reasoning.",
+            "precedents": precedents if precedents else [],
+            "balance_assessment": "BALANCED",
+            "contempt_urgency": agent_out.verdict.urgency,
+        },
+    }
+
+# ==============================================================================
 # The 4-Agent Pipeline
 # ==============================================================================
 
@@ -226,7 +381,11 @@ def generate_recommendation(
     case_type: str = "", bench: str = "",
     petitioner: str = "", respondent: str = "",
     issues: List[str] = None,
-    date_of_order: str = ""
+    date_of_order: str = "",
+    court_directions: List[dict] = None,
+    operative_order_text: str = "",
+    ratio_decidendi: str = "",
+    use_rag: bool = False
 ) -> Dict[str, Any]:
     """Main entry point for the 4-agent recommendation pipeline."""
     logger.info(f"Starting recommendation pipeline V2 for case {case_id}")
@@ -240,9 +399,22 @@ def generate_recommendation(
 
     # ---------------------------------------------------------
     # Stage 1: RAG Retrieval (with dedup + score threshold)
+    # Always run this to fetch precedents, even for single-agent pipeline
     # ---------------------------------------------------------
     rag = HybridRAGEngine()
-    raw_chunks = rag.retrieve(case_text[:2000], top_k=15, filters=None)
+    
+    # Build a targeted query from legal substance, not just the first 2000 chars
+    # Priority: ratio_decidendi > operative_order > case_text header
+    rag_query_parts = []
+    if ratio_decidendi:
+        rag_query_parts.append(ratio_decidendi[:800])
+    if operative_order_text:
+        rag_query_parts.append(operative_order_text[:800])
+    if not rag_query_parts:
+        rag_query_parts.append(case_text[:2000])
+    rag_query = " ".join(rag_query_parts)[:2500]
+    
+    raw_chunks = rag.retrieve(rag_query, top_k=15, filters=None)
 
     # Group by case_id to provide multiple chunks per case (broader context)
     grouped_cases = {}
@@ -250,11 +422,10 @@ def generate_recommendation(
         cid = c.get('metadata', {}).get('case_id', c.get('metadata', {}).get('title', ''))
         score = c.get('score', 0)
         
-        # Cross-encoder scores range from ~-10 to +10; 0+ is relevant.
-        # Only keep genuinely relevant chunks (positive score) to avoid
-        # noise diluting the synthesis agent's analysis.
-        if score < 0.0:
-            logger.info(f"Dropping weak chunk (score {score:.2f}): {cid}")
+        # Scores are now cosine similarity (0.0 to 1.0) since we fixed the
+        # cross-encoder to not overwrite them. Use a reasonable threshold.
+        if score < 0.85:
+            logger.info(f"Dropping weak chunk (cosine sim {score:.4f}): {cid}")
             continue
             
         if cid not in grouped_cases:
@@ -263,6 +434,9 @@ def generate_recommendation(
                 "score": score,
                 "texts": []
             }
+        else:
+            # Keep the highest score for this case
+            grouped_cases[cid]["score"] = max(grouped_cases[cid]["score"], score)
             
         # Keep up to 3 chunks per case
         if len(grouped_cases[cid]["texts"]) < 3:
@@ -273,6 +447,35 @@ def generate_recommendation(
     retrieved_chunks.sort(key=lambda x: x["score"], reverse=True)
     retrieved_chunks = retrieved_chunks[:8]  # Cap at 8 unique cases
     logger.info(f"RAG: {len(raw_chunks or [])} raw → {len(retrieved_chunks)} unique grouped precedents")
+
+    extracted_precedents = []
+    for c in retrieved_chunks:
+        sim_score = c.get('score', 0)
+        # Bucket relevance for frontend display
+        if sim_score >= 0.93:
+            relevance_label = "High"
+        elif sim_score >= 0.91:
+            relevance_label = "Moderate"
+        else:
+            relevance_label = "Low"
+        
+        extracted_precedents.append({
+            "case_id": str(c['metadata'].get('case_id', '')),
+            "case_title": str(c['metadata'].get('title', 'Unknown')),
+            "relevance": relevance_label,
+            "similarity_score": round(sim_score, 4),
+            "key_holding": (" ".join(c['texts']))[:500] + "...",
+            "outcome": str(c['metadata'].get('disposal_nature', 'UNKNOWN')),
+            "applicability": f"Cosine similarity: {sim_score:.2%} via InLegalBERT semantic search"
+        })
+
+    if not use_rag:
+        return _run_single_agent_pipeline(
+            case_id=case_id, case_context=case_context, appeal_info=appeal_info,
+            date_of_order=date_of_order, court_directions=court_directions,
+            operative_order_text=operative_order_text, ratio_decidendi=ratio_decidendi,
+            precedents=extracted_precedents
+        )
 
     if not retrieved_chunks:
         logger.warning("No strong precedents found.")

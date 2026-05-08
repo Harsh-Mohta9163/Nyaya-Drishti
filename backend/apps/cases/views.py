@@ -4,7 +4,7 @@ import fitz  # PyMuPDF
 from django.http import FileResponse
 from django.shortcuts import get_object_or_404
 from rest_framework import status
-from rest_framework.generics import ListCreateAPIView, RetrieveAPIView
+from rest_framework.generics import ListCreateAPIView, RetrieveAPIView, RetrieveUpdateAPIView
 from rest_framework.parsers import MultiPartParser, FormParser
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -99,6 +99,11 @@ class CaseDetailView(RetrieveAPIView):
     queryset = Case.objects.all()
     serializer_class = CaseSerializer
 
+
+class JudgmentUpdateView(RetrieveUpdateAPIView):
+    queryset = Judgment.objects.all()
+    serializer_class = JudgmentSerializer
+    http_method_names = ['get', 'patch', 'put']
 
 class CaseExtractView(APIView):
     """
