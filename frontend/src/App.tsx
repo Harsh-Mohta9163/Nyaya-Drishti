@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Sidebar } from './components/Sidebar';
 import { CaseHeader } from './components/CaseHeader';
 import { CaseOverview } from './components/CaseOverview';
-import { VerifyActions } from './components/VerifyActions';
+import { VerifyActionsSafe as VerifyActions } from './components/VerifyActions';
 import { Dashboard } from './components/Dashboard';
 import { CaseList } from './components/CaseList';
 import { motion, AnimatePresence } from 'motion/react';
@@ -54,18 +54,10 @@ function MainApp() {
     if (!selectedCaseId) return;
     setIsGeneratingAnalysis(true);
     try {
-      const rec = await fetchRecommendation(selectedCaseId);
+      const rec = await fetchRecommendation(selectedCaseId, true);
       setRecommendation(rec);
-      // Reload actions from recommendation if available
-      if (rec.action_plan?.immediate_actions) {
-         setActions(rec.action_plan.immediate_actions.map((act: string, i: number) => ({
-             id: `rec-${i}`,
-             title: act.slice(0, 50) + (act.length > 50 ? '...' : ''),
-             description: act,
-             isVerified: false,
-             source: "RAG Recommendation"
-         })));
-      }
+      // NOTE: Do NOT replace actions here. Actions are always court directions.
+      // The recommendation is displayed separately in the AI Verdict card.
     } catch (error) {
       console.error(error);
       alert("Analysis failed to generate");
@@ -100,8 +92,9 @@ function MainApp() {
       dueDate: d.deadline_mentioned || d.deadline || '',
       isVerified: false,
       isHighPriority: !!(d.deadline_mentioned || d.deadline),
-      sourceLocation: d.source_location || null,  // PyMuPDF page + bbox
-      sourceText: d.text || '',  // verbatim text for text-search fallback
+      sourceLocation: d.source_location || null,
+      sourceText: d.text || '',
+      financialDetails: d.financial_details || null,
     }));
     setActions(mapped.length > 0 ? mapped : [{
       id: '1',

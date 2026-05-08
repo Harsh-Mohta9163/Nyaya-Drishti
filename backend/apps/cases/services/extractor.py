@@ -51,18 +51,20 @@ class ScholarExtraction(BaseModel):
     citations: list[CitationExtraction] = Field(description="ALL case citations mentioned in the body with their context.")
     entities: list[str] = Field(description="All named entities: government departments, officials, Acts mentioned.")
 
-# Agent 4: Compliance Officer (8B)
+# Agent 4: Compliance Officer (70B — most critical agent)
 class DirectiveExtraction(BaseModel):
-    text: str = Field(description="The VERBATIM actionable directive from the order.")
-    responsible_entity: str = Field(description="The specific department/party who must carry out the directive.")
-    action_required: str = Field(description="One-line plain English summary of what must be done.")
+    text: str = Field(description="The COMPLETE verbatim paragraph(s) from the operative order. Include ALL details: amounts, percentages, calculations, conditions, and reasoning. Do NOT shorten or summarize.")
+    responsible_entity: str = Field(description="The specific department/party/court who must carry out this directive.")
+    action_required: str = Field(description="Clear 1-2 sentence summary of the compliance action for a government officer. Include specific amounts and deadlines.")
     deadline_mentioned: Optional[str] = Field(description="Exact phrase describing deadline, e.g. 'within 8 weeks'", default=None)
+    financial_details: Optional[str] = Field(description="Specific monetary amounts, calculations, percentages mentioned in this directive.", default=None)
 
 class ComplianceExtraction(BaseModel):
     disposition: str = Field(description="Outcome word: 'Allowed', 'Dismissed', 'Partly Allowed', 'Disposed of', 'Remanded'.")
-    winning_party_type: str = Field(description="Who won: 'Petitioner', 'Respondent', 'None'.")
-    court_directions: list[DirectiveExtraction] = Field(description="List of ACTIONABLE compliance directives.")
-    financial_implications: list[str] = Field(description="Any monetary orders: costs, fines, deposits.")
+    winning_party_type: str = Field(description="Who won: 'Petitioner/Appellant', 'Respondent', 'None'.")
+    operative_order_summary: str = Field(description="Complete summary of the operative order in 3-5 sentences, covering ALL directives, amounts, and conditions.")
+    court_directions: list[DirectiveExtraction] = Field(description="List of ACTIONABLE compliance directives with FULL paragraph context.")
+    financial_implications: list[str] = Field(description="ALL monetary orders: exact amounts, costs, interest, deposits, deductions.")
     contempt_indicators: list[str] = Field(description="Phrases suggesting contempt risk: compliance warnings, personal appearance.")
     contempt_risk: str = Field(description="'High', 'Medium', or 'Low' risk.")
     entities: list[str] = Field(description="Additional named entities in the operative order (departments, officials).")
@@ -247,16 +249,34 @@ def extract_structured_data(
         )
         extracted_data["registry"] = _call_agent_8b(header_prompt, RegistryExtraction, temperature=0.0)
 
-    # --- AGENT 4: Compliance Officer (8B) ---
+    # --- AGENT 4: Compliance Officer (70B — most critical for Theme 11) ---
     if operative_text:
-        print(f"  [Agent 4] Compliance Officer (Operative)...")
+        print(f"  [Agent 4] Compliance Officer (70B — Operative Order)...")
         operative_prompt = (
-            "Extract the final operative order/compliance tasks of an Indian judgment.\n"
-            "CRITICAL INSTRUCTION: IGNORE ANY CASE LAW OR PRECEDENTS. Extract ONLY the final compliance tasks and directives.\n"
-            "Focus on actionable directives, disposition outcome, financial orders, and contempt risk.\n"
-            f"Document:\n{operative_text}"
+            "You are a senior compliance officer for a government department. "
+            "Extract the COMPLETE operative order from this Indian court judgment.\n\n"
+            "CRITICAL INSTRUCTIONS:\n"
+            "1. IGNORE any case law citations or legal reasoning. Focus ONLY on what the department MUST DO.\n"
+            "2. For each court direction, capture the FULL PARAGRAPH — do NOT extract isolated sentences.\n"
+            "   A government officer reading your extraction must understand the COMPLETE order without referring back to the judgment.\n"
+            "3. Include ALL financial details: exact rupee amounts, percentages, base values, calculation methods, deductions.\n"
+            "4. The 'action_required' field should read like a clear compliance instruction, e.g.:\n"
+            "   BAD: 'Pay market value to appellants'\n"
+            "   GOOD: 'Pay enhanced compensation of ₹3,38,400/- per acre to appellants (base value ₹7,20,000 per acre minus 53% developmental charges under HUDCO scheme), plus statutory benefits and interest under Sections 23(1A), 23(2), and 28 of the Land Acquisition Act.'\n"
+            "5. For 'operative_order_summary': Write a complete 3-5 sentence summary that a government secretary can read to understand the entire order.\n\n"
+            "RESPONSIBLE ENTITY RULES:\n"
+            "- If the court itself must act (e.g. 'modified award shall be drawn'), responsible_entity = 'Reference Court' or the specific court/tribunal.\n"
+            "- If a government department/officer must pay or act, identify the SPECIFIC entity.\n"
+            "- Different directives may have DIFFERENT responsible entities.\n\n"
+            f"Case Type: {case.case_type or 'Unknown'}\n"
+            f"Petitioner/Appellant: {case.petitioner_name or 'Unknown'}\n"
+            f"Respondent: {case.respondent_name or 'Unknown'}\n\n"
+            f"OPERATIVE ORDER TEXT:\n{operative_text}"
         )
-        extracted_data["compliance"] = _call_agent_8b(operative_prompt, ComplianceExtraction, temperature=0.0)
+        # Use 70B for the most critical extraction — court orders must be complete and accurate
+        print(f"  [Sleep] Waiting 15s before 70B call for compliance...")
+        time.sleep(15)
+        extracted_data["compliance"] = _call_agent_70b(operative_prompt, ComplianceExtraction, temperature=0.1)
 
     # --- AGENT 2: Legal Analyst (70B) ---
     if middle_text:
@@ -292,14 +312,30 @@ def extract_structured_data(
     # Registry (Agent 1)
     if "registry" in extracted_data:
         h = extracted_data["registry"]
+        # Fix: LLM sometimes returns Pydantic schema wrapper
+        if "$defs" in h or ("properties" in h and "type" in h):
+            print("  [Extractor] Detected schema-wrapped registry response, unwrapping...")
+            h = h.get("properties", h)
         judgment.presiding_judges = h.get("presiding_judges", [])
         
-        raw_date = h.get("date_of_order", "")
+        raw_date = _safe_str(h.get("date_of_order", ""))
         if raw_date and raw_date not in ("", "YYYY-MM-DD", "Unknown"):
-            try:
-                judgment.date_of_order = raw_date
-            except Exception:
-                pass
+            from datetime import datetime as _dt
+            parsed_date = None
+            for fmt in ("%Y-%m-%d", "%d-%m-%Y", "%d/%m/%Y", "%B %d, %Y", "%d %B %Y"):
+                try:
+                    parsed_date = _dt.strptime(raw_date.strip(), fmt).date()
+                    break
+                except (ValueError, TypeError):
+                    continue
+            if parsed_date:
+                judgment.date_of_order = parsed_date
+            else:
+                # Try to extract year at least
+                import re
+                year_match = re.search(r'(19|20)\d{2}', raw_date)
+                if year_match:
+                    judgment.date_of_order = f"{year_match.group()}-01-01"
 
         doc_type = _safe_str(h.get("document_type", ""))
         if doc_type: judgment.document_type = doc_type
@@ -349,12 +385,18 @@ def extract_structured_data(
     # Compliance (Agent 4)
     if "compliance" in extracted_data:
         c = extracted_data["compliance"]
+        # Fix: LLM sometimes returns Pydantic schema wrapper instead of raw data
+        if "$defs" in c or ("properties" in c and "type" in c):
+            print("  [Extractor] Detected schema-wrapped compliance response, unwrapping from 'properties'...")
+            c = c.get("properties", c)
         judgment.court_directions = c.get("court_directions", [])
         judgment.disposition = _sanitize_disposition(c.get("disposition", ""))
         judgment.winning_party_type = _sanitize_party_type(c.get("winning_party_type", ""))
         judgment.contempt_indicators = c.get("contempt_indicators", [])
         judgment.contempt_risk = c.get("contempt_risk", "Low")
         judgment.financial_implications = c.get("financial_implications", [])
+        # Save full operative order summary
+        judgment.operative_order_text = c.get("operative_order_summary", "")
 
     # Entities Merging
     entities = set()

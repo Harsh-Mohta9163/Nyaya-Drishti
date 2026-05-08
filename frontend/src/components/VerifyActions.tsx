@@ -27,6 +27,7 @@ interface ActionData {
   dueDate?: string;
   sourceLocation?: SourceLocation | null;
   sourceText?: string;
+  financialDetails?: string | null;
 }
 
 // ─── Helpers ────────────────────────────────────────────────────────────────────
@@ -147,13 +148,18 @@ const ActionItem = ({
             </div>
           </div>
         ) : (
-          <div className="bg-surface-dim/40 rounded-lg p-4 text-[14px] text-on-surface-variant font-medium leading-relaxed border border-outline-variant/10">
-            {action.description}
+          null
+        )}
+        
+        {action.financialDetails && (
+          <div className="flex items-start gap-2 bg-amber-400/5 border border-amber-400/15 rounded-lg p-3">
+            <span className="material-symbols-outlined text-amber-400 text-sm mt-0.5">currency_rupee</span>
+            <p className="text-xs text-amber-400/90 font-medium leading-relaxed">{action.financialDetails}</p>
           </div>
         )}
         
         <div className="flex flex-wrap gap-2">
-          {action.tags.map(tag => (
+          {(action.tags || []).map(tag => (
             <span key={tag} className="inline-flex items-center px-2.5 py-1 rounded-full bg-surface-container-high/50 border border-outline-variant/30 text-on-surface-variant text-[10px] font-bold uppercase tracking-wider">
               {tag}
             </span>
@@ -192,46 +198,63 @@ const HighlightOverlay = ({
   // Guard: empty rects array
   if (!rects || rects.length === 0) return null;
 
-  // Merge rects that are vertically adjacent into a paragraph band
-  const sortedRects = [...rects].sort((a, b) => a.y0 - b.y0);
-  
-  // Compute the full paragraph bounding box
-  const minX = Math.min(...sortedRects.map(r => r.x0));
-  const maxX = Math.max(...sortedRects.map(r => r.x1));
-  const minY = sortedRects[0].y0;
-  const maxY = sortedRects[sortedRects.length - 1].y1;
+  // Normalize rects — scanned PDFs may have rotated coordinates (tall-thin instead of wide-short)
+  const normalizedRects = rects.map(r => {
+    const w = Math.abs(r.x1 - r.x0);
+    const h = Math.abs(r.y1 - r.y0);
+    // If a rect is taller than wide, it's likely from a rotated scan — swap axes
+    if (h > w * 3 && w < 50) {
+      return { x0: r.y0, y0: r.x0, x1: r.y1, y1: r.x1 };
+    }
+    return r;
+  }).filter(r => {
+    // Filter out invalid/degenerate rects
+    const w = r.x1 - r.x0;
+    const h = r.y1 - r.y0;
+    return w > 0 && h > 0 && w < pageWidth && h < 842;
+  });
+
+  if (normalizedRects.length === 0) return null;
+
+  // Compute a single paragraph bounding box from all rects
+  // This gives a clean highlight for scanned PDFs where per-word rects are fragmented
+  const minX = Math.min(...normalizedRects.map(r => r.x0));
+  const maxX = Math.max(...normalizedRects.map(r => r.x1));
+  const minY = Math.min(...normalizedRects.map(r => r.y0));
+  const maxY = Math.max(...normalizedRects.map(r => r.y1));
+
+  // Use standard text margins for the paragraph box
+  const paraLeft = Math.min(minX, 72) * scale;
+  const paraRight = Math.max(maxX, pageWidth - 50) * scale;
 
   return (
     <>
-      {/* Individual line highlights */}
-      {sortedRects.map((rect, i) => (
-        <motion.div
-          key={i}
-          initial={{ opacity: 0, scaleX: 0 }}
-          animate={{ opacity: 1, scaleX: 1 }}
-          transition={{ duration: 0.3, delay: i * 0.05 }}
-          style={{
-            position: 'absolute',
-            left: `${rect.x0 * scale}px`,
-            top: `${rect.y0 * scale}px`,
-            width: `${(rect.x1 - rect.x0) * scale}px`,
-            height: `${(rect.y1 - rect.y0) * scale}px`,
-            transformOrigin: 'left center',
-          }}
-          className="bg-yellow-400/30 border border-yellow-400/50 pointer-events-none z-10 rounded-sm"
-        />
-      ))}
-      {/* Paragraph bracket indicator (left edge) */}
+      {/* Full paragraph highlight band */}
       <motion.div
         initial={{ opacity: 0, scaleY: 0 }}
         animate={{ opacity: 1, scaleY: 1 }}
-        transition={{ duration: 0.4, delay: 0.2 }}
+        transition={{ duration: 0.4, ease: 'easeOut' }}
         style={{
           position: 'absolute',
-          left: `${Math.max(0, minX * scale - 6)}px`,
-          top: `${minY * scale - 2}px`,
+          left: `${paraLeft}px`,
+          top: `${minY * scale - 4}px`,
+          width: `${paraRight - paraLeft}px`,
+          height: `${(maxY - minY) * scale + 8}px`,
+          transformOrigin: 'top center',
+        }}
+        className="bg-yellow-400/15 border border-yellow-400/40 pointer-events-none z-10 rounded-lg"
+      />
+      {/* Side bracket indicator */}
+      <motion.div
+        initial={{ opacity: 0, scaleY: 0 }}
+        animate={{ opacity: 1, scaleY: 1 }}
+        transition={{ duration: 0.5, delay: 0.15 }}
+        style={{
+          position: 'absolute',
+          left: `${Math.max(0, paraLeft - 8)}px`,
+          top: `${minY * scale - 4}px`,
           width: '4px',
-          height: `${(maxY - minY) * scale + 4}px`,
+          height: `${(maxY - minY) * scale + 8}px`,
           transformOrigin: 'top center',
         }}
         className="bg-yellow-400 rounded-full pointer-events-none z-10 shadow-[0_0_8px_rgba(250,204,21,0.6)]"
@@ -391,7 +414,9 @@ export const VerifyActions = ({
             <Document
               file={pdfUrl.startsWith('http') ? pdfUrl : pdfUrl.startsWith('/') ? pdfUrl : `/${pdfUrl}`}
               onLoadSuccess={onDocumentLoadSuccess}
+              onLoadError={(err) => console.warn('PDF load error:', err)}
               loading={<div className="text-on-surface-variant font-bold p-10 animate-pulse">Loading PDF...</div>}
+              error={<div className="text-error-red font-bold p-10">Failed to load PDF. Try reloading the page.</div>}
             >
               {Array.from(new Array(numPages || 0), (_, index) => {
                 const pageNum = index + 1;
@@ -455,7 +480,7 @@ export const VerifyActions = ({
         {/* Header & Controls */}
         <div className="flex items-center justify-between shrink-0">
           <div className="flex items-center gap-4">
-            <h3 className="text-xl font-bold text-on-surface tracking-tight">Action Verification</h3>
+            <h3 className="text-xl font-bold text-on-surface tracking-tight">Court Directions — Verify</h3>
             <span className="px-2 py-1 bg-surface-container-high rounded text-[10px] font-bold text-on-surface-variant uppercase tracking-widest">
               {actions.filter(a => a.isVerified).length} / {actions.length} Verified
             </span>
@@ -507,3 +532,45 @@ export const VerifyActions = ({
     </div>
   );
 };
+
+// ─── Error Boundary ──────────────────────────────────────────────────────────
+class VerifyActionsErrorBoundary extends React.Component<
+  { children: React.ReactNode }, 
+  { hasError: boolean; error?: Error }
+> {
+  constructor(props: { children: React.ReactNode }) {
+    super(props);
+    this.state = { hasError: false };
+  }
+  static getDerivedStateFromError(error: Error) {
+    return { hasError: true, error };
+  }
+  componentDidCatch(error: Error, info: React.ErrorInfo) {
+    console.error('VerifyActions crashed:', error, info);
+  }
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="flex flex-col items-center justify-center h-full p-10 text-center">
+          <span className="material-symbols-outlined text-6xl text-error-red mb-4">error</span>
+          <h3 className="text-xl font-bold text-on-surface mb-2">Something went wrong</h3>
+          <p className="text-on-surface-variant mb-4 text-sm">{this.state.error?.message || 'Unknown error'}</p>
+          <button 
+            onClick={() => this.setState({ hasError: false })}
+            className="px-4 py-2 bg-primary-blue text-white rounded-lg hover:bg-primary-blue/80 transition-colors font-bold text-sm"
+          >
+            Try Again
+          </button>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
+// Wrap export with error boundary
+export const VerifyActionsSafe = (props: Parameters<typeof VerifyActions>[0]) => (
+  <VerifyActionsErrorBoundary>
+    <VerifyActions {...props} />
+  </VerifyActionsErrorBoundary>
+);

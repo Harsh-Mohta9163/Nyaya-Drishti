@@ -79,6 +79,7 @@ class GenerateRecommendationView(APIView):
                 pass
                 
         # Check cache if we have a valid case
+        force_regenerate = request.data.get("force_regenerate", False)
         action_plan = None
         if case and case.judgments.exists():
             judgment = case.judgments.first()
@@ -89,7 +90,8 @@ class GenerateRecommendationView(APIView):
             )
             
             # If we already have the full recommendation cached, return it directly
-            if action_plan.full_rag_recommendation:
+            # Unless force_regenerate is True
+            if action_plan.full_rag_recommendation and not force_regenerate:
                 return Response(action_plan.full_rag_recommendation, status=status.HTTP_200_OK)
                 
         try:
@@ -104,7 +106,8 @@ class GenerateRecommendationView(APIView):
                 bench=bench,
                 petitioner=petitioner,
                 respondent=respondent,
-                issues=issues
+                issues=issues,
+                date_of_order=judgment.date_of_order if 'judgment' in locals() and judgment else ""
             )
             
             # Cache it

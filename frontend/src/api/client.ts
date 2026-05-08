@@ -160,8 +160,8 @@ export async function fetchCase(caseId: string): Promise<CaseData> {
  * Call the RAG Recommendation Pipeline for a specific case.
  * POST /api/action-plans/{caseId}/recommend/
  */
-export async function fetchRecommendation(caseId: string): Promise<any> {
-  return apiPost<any>(`/api/action-plans/${caseId}/recommend/`, {});
+export async function fetchRecommendation(caseId: string, forceRegenerate: boolean = false): Promise<any> {
+  return apiPost<any>(`/api/action-plans/${caseId}/recommend/`, { force_regenerate: forceRegenerate });
 }
 
 /**

@@ -86,14 +86,6 @@ const PrecedentCard = ({
             )}
           </div>
 
-          <div className="flex items-center gap-4 pt-2">
-            <button className="px-4 py-2 bg-primary-blue text-on-primary-blue text-[10px] font-black uppercase tracking-widest rounded-lg shadow-lg shadow-primary-blue/20 hover:scale-105 transition-transform">
-              View Full Case
-            </button>
-            <button className="flex items-center gap-2 text-on-surface-variant hover:text-on-surface transition-colors text-[10px] font-black uppercase tracking-widest">
-              <span className="material-symbols-outlined text-lg">description</span> PDF
-            </button>
-          </div>
         </div>
       </div>
     </motion.article>
@@ -205,42 +197,6 @@ export const Precedents = ({
         </div>
       </div>
 
-      {/* Right Sidebar */}
-      <aside className="w-full lg:w-80 flex flex-col gap-8 shrink-0">
-        <div className="glass-card p-6 border-outline-variant/20">
-          <h3 className="text-[10px] font-black uppercase tracking-[0.2em] text-on-surface-variant mb-6 flex items-center gap-2">
-            <span className="material-symbols-outlined text-sm">hub</span>
-            Precedent Network
-          </h3>
-          <div className="aspect-square bg-surface-dim/80 rounded-2xl border border-outline-variant/10 relative overflow-hidden flex items-center justify-center p-4">
-            {/* Visual representation of network */}
-            <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,_var(--tw-gradient-stops))] from-primary-blue/10 via-transparent to-transparent"></div>
-            <div className="relative w-full h-full border border-dashed border-outline-variant/30 rounded-full animate-spin-slow"></div>
-            <div className="absolute w-4 h-4 rounded-full bg-primary-blue shadow-[0_0_20px_rgba(173,198,255,1)]"></div>
-            <div className="absolute top-1/4 left-1/4 w-2 h-2 rounded-full bg-amber-400 shadow-[0_0_10px_rgba(251,191,36,0.5)]"></div>
-            <div className="absolute bottom-1/4 right-1/4 w-3 h-3 rounded-full bg-green-400 shadow-[0_0_15px_rgba(74,222,128,0.5)]"></div>
-            
-            <button className="absolute bottom-4 inset-x-4 bg-surface-container-high/90 backdrop-blur-md border border-outline-variant/30 rounded-lg py-2 text-[8px] font-black uppercase tracking-widest hover:bg-primary-blue hover:text-on-primary-blue transition-all">
-              Interactive Graph <span className="material-symbols-outlined text-[10px] align-middle ml-1">open_in_full</span>
-            </button>
-          </div>
-        </div>
-
-        <div className="glass-card p-6 border-outline-variant/20">
-          <h3 className="text-[10px] font-black uppercase tracking-[0.2em] text-on-surface-variant mb-6">Active AI Filters</h3>
-          <div className="flex flex-wrap gap-2">
-            {['Service Law', 'Supreme Court'].map(filter => (
-              <span key={filter} className="pl-3 pr-2 py-1.5 rounded-lg bg-surface-container flex items-center gap-2 text-[10px] font-bold text-on-surface border border-outline-variant/30 group hover:border-primary-blue transition-colors cursor-pointer">
-                {filter}
-                <span className="material-symbols-outlined text-[12px] text-on-surface-variant group-hover:text-error-red">close</span>
-              </span>
-            ))}
-            <button className="text-[10px] font-black text-primary-blue uppercase tracking-widest hover:underline mt-2 ml-1">
-              + Add Filter
-            </button>
-          </div>
-        </div>
-      </aside>
     </div>
   );
 };

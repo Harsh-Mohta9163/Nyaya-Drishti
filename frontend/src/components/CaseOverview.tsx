@@ -71,28 +71,10 @@ export const CaseOverview = ({
   const contemptRisk = recommendation?.agent_outputs?.contempt_urgency || judgment?.contempt_risk || 'Low';
   const similarCases = recommendation?.agent_outputs?.precedents || [];
   
-  // Combine verified actions from court directives and RAG immediate actions
-  const immediateActions = recommendation?.action_plan?.immediate_actions || [];
-  const financialActions = recommendation?.action_plan?.financial_actions || [];
-  
-  const ragActions = [
-    ...immediateActions.map((a: string, i: number) => ({
-      id: `rag-imm-${i}`,
-      title: 'Immediate Action',
-      description: a,
-      source: 'AI Recommendation',
-      tags: ['Action Plan']
-    })),
-    ...financialActions.map((a: string, i: number) => ({
-      id: `rag-fin-${i}`,
-      title: 'Financial Action',
-      description: a,
-      source: 'AI Recommendation',
-      tags: ['Financial']
-    }))
-  ];
-  
-  const roadmapActions = isVerified ? verifiedActions : ragActions;
+  // Court directions for the roadmap — separate verified from unverified
+  const verifiedDirections = (verifiedActions || []).filter((a: any) => a.isVerified);
+  const unverifiedDirections = (verifiedActions || []).filter((a: any) => !a.isVerified);
+  const allDirections = verifiedActions || [];
 
 
   return (
@@ -183,33 +165,37 @@ export const CaseOverview = ({
                   </span>
                 </div>
               </div>
-              <div className={`flex items-center gap-2 px-3 py-1 rounded-full ${
-                contemptRisk === 'HIGH' ? 'bg-error-red/10 border border-error-red/20' :
-                contemptRisk === 'MEDIUM' ? 'bg-amber-400/10 border border-amber-400/20' :
-                'bg-green-500/10 border border-green-500/20'
-              }`}>
-                <span className={`material-symbols-outlined text-sm ${
-                  contemptRisk === 'HIGH' ? 'text-error-red' : contemptRisk === 'MEDIUM' ? 'text-amber-400' : 'text-green-400'
-                }`}>warning</span>
-                <span className={`text-[10px] font-bold uppercase tracking-widest ${
-                  contemptRisk === 'HIGH' ? 'text-error-red' : contemptRisk === 'MEDIUM' ? 'text-amber-400' : 'text-green-400'
+              <div className="flex flex-col items-end gap-3">
+                <div className={`flex items-center gap-2 px-3 py-1 rounded-full ${
+                  contemptRisk === 'HIGH' ? 'bg-error-red/10 border border-error-red/20' :
+                  contemptRisk === 'MEDIUM' ? 'bg-amber-400/10 border border-amber-400/20' :
+                  'bg-green-500/10 border border-green-500/20'
                 }`}>
-                  Contempt Risk: {contemptRisk}
-                </span>
+                  <span className={`material-symbols-outlined text-sm ${
+                    contemptRisk === 'HIGH' ? 'text-error-red' : contemptRisk === 'MEDIUM' ? 'text-amber-400' : 'text-green-400'
+                  }`}>warning</span>
+                  <span className={`text-[10px] font-bold uppercase tracking-widest ${
+                    contemptRisk === 'HIGH' ? 'text-error-red' : contemptRisk === 'MEDIUM' ? 'text-amber-400' : 'text-green-400'
+                  }`}>
+                    Contempt Risk: {contemptRisk}
+                  </span>
+                </div>
+                {onGenerateAnalysis && (
+                  <button 
+                    onClick={onGenerateAnalysis}
+                    disabled={isGenerating}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-primary-blue/30 text-primary-blue hover:bg-primary-blue/10 transition-colors text-xs font-bold uppercase tracking-wider disabled:opacity-50"
+                  >
+                    <span className={`material-symbols-outlined text-[16px] ${isGenerating ? 'animate-spin' : ''}`}>
+                      {isGenerating ? 'refresh' : 'sync'}
+                    </span>
+                    {isGenerating ? 'Regenerating...' : 'Regenerate Analysis'}
+                  </button>
+                )}
               </div>
             </div>
             
-            <div className="bg-surface-container/50 border border-outline-variant/10 p-5 rounded-xl">
-              <h4 className="text-[10px] font-bold text-on-surface-variant uppercase tracking-widest mb-3 flex items-center gap-2">
-                <span className="material-symbols-outlined text-sm">psychology</span> Primary Reasoning
-              </h4>
-              <p className="text-sm text-on-surface/90 leading-relaxed font-medium">
-                {Array.isArray(recommendation.primary_reasoning) 
-                  ? recommendation.primary_reasoning.join(' • ') 
-                  : recommendation.primary_reasoning}
-              </p>
-            </div>
-            
+            {/* Primary reasoning removed per user request (redundant with appeal grounds) */}
             {recommendation.appeal_grounds && recommendation.appeal_grounds.length > 0 && (
                <div>
                  <h4 className="text-[10px] font-bold text-on-surface-variant uppercase tracking-widest mb-2">Appeal Grounds</h4>
@@ -217,6 +203,73 @@ export const CaseOverview = ({
                    {recommendation.appeal_grounds.map((g: string, i: number) => <li key={i}>{g}</li>)}
                  </ul>
                </div>
+            )}
+
+            {/* CCMS Perspective Note */}
+            <div className="bg-blue-500/5 border border-blue-500/15 rounded-xl p-4 flex items-start gap-3">
+              <span className="material-symbols-outlined text-blue-400 text-sm mt-0.5">account_balance</span>
+              <div>
+                <p className="text-[10px] font-bold text-blue-400 uppercase tracking-widest mb-1">CCMS Perspective</p>
+                <p className="text-xs text-on-surface-variant leading-relaxed">
+                  {aiVerdict === 'APPEAL' 
+                    ? `This recommendation is from the government respondent's perspective. The court ruled in favor of the petitioner — the AI recommends the department consider filing an appeal within the limitation period.`
+                    : `This recommendation is from the government respondent's perspective. The AI recommends compliance with the court's order to avoid contempt proceedings.`}
+                </p>
+              </div>
+            </div>
+
+            {/* Key Deadlines Card */}
+            {recommendation.verdict && (
+              <div className="bg-surface-container/50 border border-outline-variant/10 rounded-xl p-5">
+                <h4 className="text-[10px] font-bold text-on-surface-variant uppercase tracking-widest mb-4 flex items-center gap-2">
+                  <span className="material-symbols-outlined text-sm">schedule</span> Key Deadlines & Limitation
+                </h4>
+                <div className="grid grid-cols-3 gap-4">
+                  <div className="bg-surface-container-high/40 rounded-lg p-3 text-center border border-outline-variant/15">
+                    <p className="text-[9px] font-bold text-on-surface-variant uppercase tracking-widest mb-1">Limitation Deadline</p>
+                    <p className="text-base font-bold text-on-surface">
+                      {recommendation.verdict.limitation_deadline || '—'}
+                    </p>
+                  </div>
+                  <div className="bg-surface-container-high/40 rounded-lg p-3 text-center border border-outline-variant/15">
+                    <p className="text-[9px] font-bold text-on-surface-variant uppercase tracking-widest mb-1">Days Remaining</p>
+                    <p className={`text-base font-bold ${
+                      (recommendation.verdict.days_remaining || 0) <= 7 ? 'text-error-red' :
+                      (recommendation.verdict.days_remaining || 0) <= 30 ? 'text-amber-400' : 'text-green-400'
+                    }`}>
+                      {(recommendation.verdict.days_remaining ?? 0) < 0 
+                        ? 'OVERDUE' 
+                        : `${recommendation.verdict.days_remaining ?? '—'} days`}
+                    </p>
+                  </div>
+                  <div className="bg-surface-container-high/40 rounded-lg p-3 text-center border border-outline-variant/15">
+                    <p className="text-[9px] font-bold text-on-surface-variant uppercase tracking-widest mb-1">Urgency</p>
+                    <div className={`inline-flex px-2 py-0.5 rounded-full text-xs font-bold uppercase tracking-wider ${
+                      recommendation.verdict.urgency === 'HIGH' ? 'bg-error-red/10 text-error-red border border-error-red/20' :
+                      recommendation.verdict.urgency === 'MEDIUM' ? 'bg-amber-400/10 text-amber-400 border border-amber-400/20' :
+                      'bg-green-500/10 text-green-400 border border-green-500/20'
+                    }`}>
+                      {recommendation.verdict.urgency || '—'}
+                    </div>
+                  </div>
+                </div>
+                {/* Urgency heatmap bar */}
+                <div className="mt-4">
+                  <div className="flex justify-between text-[8px] font-bold uppercase tracking-widest text-on-surface-variant mb-1">
+                    <span>Urgent</span><span>Safe</span>
+                  </div>
+                  <div className="h-2 rounded-full bg-surface-container-highest overflow-hidden">
+                    <div 
+                      className={`h-full rounded-full transition-all duration-1000 ${
+                        (recommendation.verdict.days_remaining || 0) <= 7 ? 'bg-gradient-to-r from-red-500 to-red-400' :
+                        (recommendation.verdict.days_remaining || 0) <= 30 ? 'bg-gradient-to-r from-amber-500 to-amber-400' :
+                        'bg-gradient-to-r from-green-500 to-green-400'
+                      }`}
+                      style={{ width: `${Math.max(5, Math.min(100, 100 - ((recommendation.verdict.days_remaining || 0) / 90) * 100))}%` }}
+                    />
+                  </div>
+                </div>
+              </div>
             )}
           </div>
         ) : (
@@ -243,6 +296,26 @@ export const CaseOverview = ({
                  </button>
                </div>
              )}
+          </div>
+        )}
+
+        {/* Financial Implications Card */}
+        {judgment?.financial_implications && (Array.isArray(judgment.financial_implications) ? judgment.financial_implications.length > 0 : Object.keys(judgment.financial_implications).length > 0) && (
+          <div className="glass-card p-6">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="bg-amber-400/10 p-2 rounded-lg border border-amber-400/20">
+                <span className="material-symbols-outlined text-amber-400">payments</span>
+              </div>
+              <h4 className="font-bold text-on-surface text-xl tracking-tight">Financial Implications</h4>
+            </div>
+            <div className="space-y-2">
+              {(Array.isArray(judgment.financial_implications) ? judgment.financial_implications : []).map((fi: string, i: number) => (
+                <div key={i} className="flex items-start gap-3 bg-amber-400/5 border border-amber-400/10 rounded-lg p-3">
+                  <span className="material-symbols-outlined text-amber-400 text-sm mt-0.5">currency_rupee</span>
+                  <p className="text-sm text-on-surface/90 font-medium">{fi}</p>
+                </div>
+              ))}
+            </div>
           </div>
         )}
 
@@ -275,8 +348,8 @@ export const CaseOverview = ({
               <span className="material-symbols-outlined text-green-400">task_alt</span>
             </div>
             <div>
-              <p className="text-green-400 font-bold text-lg tracking-tight">Compliance Plan Verified</p>
-              <p className="text-on-surface-variant text-sm">All extraction mandates have been reviewed and approved for execution.</p>
+              <p className="text-green-400 font-bold text-lg tracking-tight">All Court Directions Verified</p>
+              <p className="text-on-surface-variant text-sm">All extracted directives have been reviewed and approved. Verified actions are now visible in the dashboard.</p>
             </div>
           </div>
         )}
@@ -285,9 +358,6 @@ export const CaseOverview = ({
         <div className="glass-card p-8">
           <div className="flex items-center justify-between mb-8">
             <h4 className="font-bold text-on-surface text-xl tracking-tight">Similar Cases & RAG Evidence</h4>
-            <button className="text-primary-blue text-[10px] font-bold uppercase tracking-[0.2em] hover:underline flex items-center gap-2">
-              Expand Repository <span className="material-symbols-outlined text-sm">open_in_new</span>
-            </button>
           </div>
           
           <div className="space-y-1">
@@ -331,34 +401,79 @@ export const CaseOverview = ({
       {/* Right Column */}
       <div className="xl:col-span-5 h-full">
         <div className="glass-card flex flex-col h-full min-h-[600px] p-8">
-          <div className="flex items-center gap-4 mb-10">
+          <div className="flex items-center gap-4 mb-4">
             <div className="bg-secondary-container/30 p-2.5 rounded-xl border border-outline-variant/20">
-              <span className="material-symbols-outlined text-on-surface-variant">timeline</span>
+              <span className="material-symbols-outlined text-on-surface-variant">gavel</span>
             </div>
-            <h4 className="font-bold text-on-surface text-xl tracking-tight">Approved Compliance Roadmap</h4>
+            <h4 className="font-bold text-on-surface text-xl tracking-tight">Court Directions & Action Plan</h4>
+          </div>
+
+          {/* Summary badge */}
+          <div className="flex items-center gap-3 mb-6 text-xs">
+            <span className="px-2 py-0.5 rounded-full bg-green-500/10 border border-green-500/20 text-green-400 font-bold">
+              {verifiedDirections.length} Verified
+            </span>
+            <span className="px-2 py-0.5 rounded-full bg-amber-400/10 border border-amber-400/20 text-amber-400 font-bold">
+              {unverifiedDirections.length} Pending
+            </span>
+            {unverifiedDirections.length > 0 && onGoToVerify && (
+              <button onClick={onGoToVerify} className="text-primary-blue hover:underline font-bold uppercase tracking-wider text-[10px]">
+                Go Verify →
+              </button>
+            )}
           </div>
           
           <div className="flex-grow">
-            {roadmapActions && roadmapActions.length > 0 ? (
+            {allDirections.length > 0 ? (
               <div className="space-y-6">
-                {roadmapActions.map((action: any, idx: number) => (
+                {allDirections.map((action: any, idx: number) => (
                   <div key={action.id || idx} className="relative pl-8">
-                    {idx !== roadmapActions.length - 1 && (
+                    {idx !== allDirections.length - 1 && (
                       <div className="absolute left-[11px] top-8 bottom-[-24px] w-0.5 bg-outline-variant/20"></div>
                     )}
-                    <div className="absolute left-0 top-1.5 w-6 h-6 rounded-full bg-primary-blue flex items-center justify-center shadow-[0_0_10px_rgba(173,198,255,0.4)]">
-                      <span className="text-[10px] text-on-primary-blue font-black">{idx + 1}</span>
+                    <div className={`absolute left-0 top-1.5 w-6 h-6 rounded-full flex items-center justify-center shadow-[0_0_10px_rgba(173,198,255,0.4)] ${
+                      action.isVerified 
+                        ? 'bg-green-500' 
+                        : 'bg-amber-400/80'
+                    }`}>
+                      {action.isVerified 
+                        ? <span className="material-symbols-outlined text-white text-[14px]">check</span>
+                        : <span className="text-[10px] text-white font-black">{idx + 1}</span>
+                      }
                     </div>
-                    <div className="bg-surface-container-high/40 border border-outline-variant/20 rounded-xl p-4">
+                    <div className={`border rounded-xl p-4 ${
+                      action.isVerified 
+                        ? 'bg-green-500/5 border-green-500/20' 
+                        : 'bg-surface-container-high/40 border-outline-variant/20'
+                    }`}>
                       <div className="flex justify-between items-start mb-2">
                         <div className="space-y-1">
-                          <h5 className="font-bold text-on-surface text-sm uppercase tracking-wider">{action.title}</h5>
+                          <div className="flex items-center gap-2">
+                            <h5 className="font-bold text-on-surface text-sm tracking-tight">{action.title}</h5>
+                            <span className={`text-[8px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded ${
+                              action.isVerified 
+                                ? 'bg-green-500/10 text-green-400 border border-green-500/20' 
+                                : 'bg-amber-400/10 text-amber-400 border border-amber-400/20'
+                            }`}>
+                              {action.isVerified ? '✓ Verified' : 'Pending Verification'}
+                            </span>
+                          </div>
+                          {action.source && (
+                            <p className="text-[10px] text-on-surface-variant font-bold uppercase tracking-wider">
+                              Responsible: {action.source}
+                            </p>
+                          )}
                         </div>
                         {action.dueDate && (
                           <span className="text-[9px] font-bold text-error-red bg-error-red/10 px-2 py-0.5 rounded uppercase">{action.dueDate}</span>
                         )}
                       </div>
-                      <p className="text-xs text-on-surface-variant leading-relaxed">{action.description}</p>
+                      {action.financialDetails && (
+                        <div className="flex items-start gap-2 bg-amber-400/5 border border-amber-400/15 rounded-lg p-3 mt-3">
+                          <span className="material-symbols-outlined text-amber-400 text-sm mt-0.5">currency_rupee</span>
+                          <p className="text-xs text-amber-400/90 font-medium leading-relaxed">{action.financialDetails}</p>
+                        </div>
+                      )}
                     </div>
                   </div>
                 ))}
@@ -366,13 +481,11 @@ export const CaseOverview = ({
             ) : (
               <div className="flex flex-col items-center justify-center text-center p-10 bg-surface-container-highest/10 border border-outline-variant/10 rounded-2xl h-full">
                 <div className="w-20 h-20 rounded-full bg-surface-container-highest flex items-center justify-center mb-8 border border-outline-variant/20">
-                  <span className="material-symbols-outlined text-on-surface-variant text-4xl">route</span>
+                  <span className="material-symbols-outlined text-on-surface-variant text-4xl">gavel</span>
                 </div>
-                <p className="text-on-surface font-bold text-2xl tracking-tighter mb-4">No verified actions yet</p>
+                <p className="text-on-surface font-bold text-2xl tracking-tighter mb-4">No court directions extracted</p>
                 <p className="text-on-surface-variant text-base font-medium max-w-[280px] leading-relaxed mx-auto">
-                  {recommendation 
-                    ? "Please proceed to verification to generate the actionable compliance timeline."
-                    : "Generate AI Analysis to extract compliance actions."}
+                  Upload a judgment PDF and extract court orders to build the action plan.
                 </p>
               </div>
             )}
@@ -397,7 +510,6 @@ const CaseRow = ({ id, similarity, outcome, precedent }: { id: string, similarit
     </div>
     <div className="col-span-4 flex items-center justify-between gap-4">
       <span className="text-on-surface-variant text-sm font-medium italic truncate">{precedent}</span>
-      <button className="material-symbols-outlined text-on-surface-variant hover:text-primary-blue transition-colors text-2xl">article</button>
     </div>
   </div>
 );

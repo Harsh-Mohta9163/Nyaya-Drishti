@@ -12,7 +12,7 @@ import json
 import uuid
 import time
 from typing import List, Dict, Any, Optional
-from datetime import date, timedelta
+from datetime import date, timedelta, datetime
 
 from pydantic import BaseModel, Field
 from django.conf import settings
@@ -94,7 +94,19 @@ def _determine_appeal_forum(court: str, bench: str = "", case_type: str = "") ->
     if "supreme court" in court_lower:
         return COURT_HIERARCHY["supreme_court"]
     if "high court" in court_lower:
-        if "division" in bench_lower or "db" in bench_lower or "writ appeal" in case_type_lower:
+        # Division Bench indicators:
+        # 1. Explicit "division" or "DB" in bench
+        # 2. Case types that are always heard by Division Bench:
+        #    MFA = Miscellaneous First Appeal, RSA = Regular Second Appeal,
+        #    WA = Writ Appeal, ICA = Intra-Court Appeal, RFA = Regular First Appeal
+        # 3. Multiple judges (2+ comma-separated names in bench)
+        is_division_bench = (
+            "division" in bench_lower or "db" in bench_lower
+            or "writ appeal" in case_type_lower
+            or any(ct in case_type_lower for ct in ["mfa", "rfa", "rsa", "wa ", "ica", "appeal", "mfa no"])
+            or (bench and len([j for j in bench.split(",") if j.strip()]) >= 2)
+        )
+        if is_division_bench:
             return COURT_HIERARCHY["division_bench"]
         return COURT_HIERARCHY["single_judge"]
     if "tribunal" in court_lower:
@@ -213,7 +225,8 @@ def generate_recommendation(
     disposition: str = "", winning_party: str = "",
     case_type: str = "", bench: str = "",
     petitioner: str = "", respondent: str = "",
-    issues: List[str] = None
+    issues: List[str] = None,
+    date_of_order: str = ""
 ) -> Dict[str, Any]:
     """Main entry point for the 4-agent recommendation pipeline."""
     logger.info(f"Starting recommendation pipeline V2 for case {case_id}")
@@ -470,7 +483,27 @@ Make your final recommendation. Remember: use the CORRECT NEXT APPELLATE FORUM f
     # Limitation Deadline Calculation
     # ---------------------------------------------------------
     appeal_days = 90 if "supreme" in appeal_info["next"].lower() else 30
-    deadline = (date.today() + timedelta(days=appeal_days)).isoformat()
+    
+    # Base deadline off the judgment date if available
+    base_date = date.today()
+    if date_of_order:
+        if isinstance(date_of_order, (date, datetime)):
+            base_date = date_of_order.date() if isinstance(date_of_order, datetime) else date_of_order
+        else:
+            try:
+                # Try to parse ISO format first, or basic string
+                if "T" in str(date_of_order):
+                    base_date = date.fromisoformat(str(date_of_order).split("T")[0])
+                else:
+                    base_date = date.fromisoformat(str(date_of_order))
+            except ValueError:
+                pass # fallback to today if parsing fails
+            
+    deadline_date = base_date + timedelta(days=appeal_days)
+    deadline = deadline_date.isoformat()
+    
+    # Calculate days remaining relative to today
+    days_remaining = (deadline_date - date.today()).days
 
     # ---------------------------------------------------------
     # Final Assembly
@@ -485,7 +518,7 @@ Make your final recommendation. Remember: use the CORRECT NEXT APPELLATE FORUM f
             "confidence": agent4_out.verdict.confidence,
             "urgency": agent4_out.verdict.urgency,
             "limitation_deadline": deadline,
-            "days_remaining": appeal_days,
+            "days_remaining": days_remaining,
         },
         "statistical_basis": {
             "similar_cases_analyzed": len(retrieved_chunks),
