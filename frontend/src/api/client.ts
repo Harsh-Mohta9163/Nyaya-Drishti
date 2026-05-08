@@ -42,6 +42,24 @@ export async function apiPost<T>(path: string, body: unknown): Promise<T> {
   return res.json();
 }
 
+export async function apiPatch<T>(path: string, body: unknown): Promise<T> {
+  const res = await fetch(`${BASE_URL}${path}`, {
+    method: 'PATCH',
+    headers: authHeaders({ 'Content-Type': 'application/json' }),
+    body: JSON.stringify(body),
+  });
+  if (res.status === 401) {
+    authLogout();
+    window.location.href = '/login';
+    throw new Error('Session expired');
+  }
+  if (!res.ok) {
+    const err = await res.text();
+    throw new Error(`PATCH ${path} failed: ${res.status} - ${err}`);
+  }
+  return res.json();
+}
+
 export async function apiPostForm<T>(path: string, formData: FormData): Promise<T> {
   const res = await fetch(`${BASE_URL}${path}`, {
     method: 'POST',
@@ -169,6 +187,10 @@ export async function fetchRecommendation(caseId: string, forceRegenerate: boole
  * POST /api/cases/extract/ with multipart form containing pdf_file.
  * Returns the fully extracted CaseData.
  */
+export async function updateJudgment(judgmentId: string, data: Partial<JudgmentData>): Promise<JudgmentData> {
+  return apiPatch<JudgmentData>(`/api/cases/judgments/${judgmentId}/`, data);
+}
+
 export async function extractCase(pdfFile: File): Promise<CaseData> {
   const formData = new FormData();
   formData.append('pdf_file', pdfFile);

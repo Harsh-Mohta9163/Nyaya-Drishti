@@ -8,7 +8,10 @@ const ExpandableText = ({ text, maxLines = 3 }: { text: string, maxLines?: numbe
   
   return (
     <div className="relative">
-      <div className={`text-sm leading-relaxed ${expanded ? '' : `line-clamp-${maxLines}`}`}>
+      <div 
+        className="text-sm leading-relaxed"
+        style={!expanded ? { display: '-webkit-box', WebkitLineClamp: maxLines, WebkitBoxOrient: 'vertical', overflow: 'hidden' } : {}}
+      >
         {text}
       </div>
       {text.length > 150 && (
@@ -23,16 +26,19 @@ const ExpandableText = ({ text, maxLines = 3 }: { text: string, maxLines?: numbe
   );
 };
 
-const DetailItem = ({ label, value }: { label: string; value: string }) => (
+const DetailItem = ({ label, value, clamp = false }: { label: string; value: string, clamp?: boolean }) => {
+  const displayValue = clamp && value ? value.toLowerCase() : value;
+  return (
   <div className="flex flex-col gap-2">
     <span className="text-on-surface-variant text-[10px] font-bold uppercase tracking-[0.15em] border-b border-outline-variant/10 pb-2">
       {label}
     </span>
-    <span className="text-on-surface font-semibold text-base tracking-tight">
-      {value}
+    <span className={`text-on-surface font-semibold text-base tracking-tight ${clamp ? 'capitalize line-clamp-2 text-sm leading-snug' : ''}`} title={clamp ? value : undefined}>
+      {displayValue}
     </span>
   </div>
-);
+  );
+};
 
 const getDepartmentColors = (source: string) => {
   const s = source.toLowerCase();
@@ -49,19 +55,25 @@ export const CaseOverview = ({
   onGoToVerify,
   recommendation,
   isGenerating,
-  onGenerateAnalysis
+  onGenerateAnalysis,
+  decision,
+  onDecision
 }: { 
   caseData?: CaseData | null, 
   verifiedActions?: any[], 
   onGoToVerify?: () => void,
   recommendation?: any | null,
   isGenerating?: boolean,
-  onGenerateAnalysis?: () => void
+  onGenerateAnalysis?: () => void,
+  decision?: 'none' | 'appeal' | 'comply',
+  onDecision?: (decision: 'none' | 'appeal' | 'comply') => void
 }) => {
   const judgment = caseData?.judgments?.[0];
-  const filingDate = caseData?.created_at
-    ? new Date(caseData.created_at).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
-    : '—';
+  const filingDate = judgment?.date_of_order
+    ? new Date(judgment.date_of_order).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
+    : caseData?.created_at
+      ? new Date(caseData.created_at).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
+      : '—';
     
   const summaryText = judgment?.summary_of_facts || judgment?.operative_order_text || '';
   const isVerified = verifiedActions && verifiedActions.length > 0 && verifiedActions.every(a => a.isVerified);
@@ -75,7 +87,6 @@ export const CaseOverview = ({
   const verifiedDirections = (verifiedActions || []).filter((a: any) => a.isVerified);
   const unverifiedDirections = (verifiedActions || []).filter((a: any) => !a.isVerified);
   const allDirections = verifiedActions || [];
-
 
   return (
     <div className="grid grid-cols-1 xl:grid-cols-12 gap-8 py-8">
@@ -92,11 +103,11 @@ export const CaseOverview = ({
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-10">
             <DetailItem label="Jurisdiction" value={caseData?.court_name || '—'} />
-            <DetailItem label="Bench" value={judgment?.presiding_judges?.join(', ') || '—'} />
+            <DetailItem label="Bench" value={judgment?.presiding_judges?.join(', ') || '—'} clamp={true} />
             <DetailItem label="Filing Date" value={filingDate} />
             <DetailItem label="Case Type" value={caseData?.case_type || '—'} />
             <DetailItem label="Area of Law" value={caseData?.area_of_law || '—'} />
-            <DetailItem label="Primary Statute" value={caseData?.primary_statute || '—'} />
+            <DetailItem label="Primary Statute" value={caseData?.primary_statute || '—'} clamp={true} />
           </div>
         </div>
 
@@ -151,13 +162,13 @@ export const CaseOverview = ({
           <div className="glass-card flex flex-col gap-6 p-8 border border-primary-blue/30 relative overflow-hidden">
             <div className="absolute top-0 right-0 w-32 h-32 bg-primary-blue/10 rounded-full blur-[50px]"></div>
             
-            <div className="flex justify-between items-start">
-              <div className="flex items-center gap-4">
-                <div className="w-14 h-14 rounded-full bg-primary-blue/20 border border-primary-blue/30 flex items-center justify-center">
-                  <span className="material-symbols-outlined text-primary-blue text-3xl">smart_toy</span>
+            <div className="flex flex-wrap justify-between items-start gap-4">
+              <div className="flex items-center gap-4 min-w-[200px]">
+                <div className="w-12 h-12 flex-shrink-0 rounded-full bg-primary-blue/20 border border-primary-blue/30 flex items-center justify-center">
+                  <span className="material-symbols-outlined text-primary-blue text-2xl">smart_toy</span>
                 </div>
                 <div>
-                  <h2 className="text-on-surface text-2xl font-bold tracking-tight mb-1 flex items-center gap-3">
+                  <h2 className="text-on-surface text-xl sm:text-2xl font-bold tracking-tight mb-1 flex flex-wrap items-center gap-2">
                     AI Verdict: <span className={aiVerdict === 'COMPLY' ? 'text-green-400' : 'text-amber-400'}>{aiVerdict}</span>
                   </h2>
                   <span className="text-[10px] font-bold uppercase tracking-widest text-primary-blue bg-primary-blue/10 px-2 py-0.5 rounded">
@@ -165,7 +176,7 @@ export const CaseOverview = ({
                   </span>
                 </div>
               </div>
-              <div className="flex flex-col items-end gap-3">
+              <div className="flex flex-col items-start sm:items-end gap-3 w-full sm:w-auto mt-2 sm:mt-0">
                 <div className={`flex items-center gap-2 px-3 py-1 rounded-full ${
                   contemptRisk === 'HIGH' ? 'bg-error-red/10 border border-error-red/20' :
                   contemptRisk === 'MEDIUM' ? 'bg-amber-400/10 border border-amber-400/20' :
@@ -195,13 +206,25 @@ export const CaseOverview = ({
               </div>
             </div>
             
-            {/* Primary reasoning removed per user request (redundant with appeal grounds) */}
+            {/* Show appeal grounds if present */}
             {recommendation.appeal_grounds && recommendation.appeal_grounds.length > 0 && (
                <div>
-                 <h4 className="text-[10px] font-bold text-on-surface-variant uppercase tracking-widest mb-2">Appeal Grounds</h4>
-                 <ul className="list-disc pl-5 text-sm space-y-1 text-amber-400/90">
+                 <h4 className="text-[10px] font-bold text-on-surface-variant uppercase tracking-widest mb-2">
+                   {aiVerdict === 'APPEAL' ? 'Appeal Grounds' : 'Key Reasoning Points'}
+                 </h4>
+                 <ul className={`list-disc pl-5 text-sm space-y-1 ${aiVerdict === 'APPEAL' ? 'text-amber-400/90' : 'text-emerald-400/90'}`}>
                    {recommendation.appeal_grounds.map((g: string, i: number) => <li key={i}>{g}</li>)}
                  </ul>
+               </div>
+            )}
+
+            {/* Show primary reasoning if there are no appeal grounds (e.g. for COMPLY) */}
+            {(!recommendation.appeal_grounds || recommendation.appeal_grounds.length === 0) && recommendation.primary_reasoning && (
+               <div>
+                 <h4 className="text-[10px] font-bold text-on-surface-variant uppercase tracking-widest mb-2">Key Reasoning Points</h4>
+                 <p className="text-sm text-emerald-400/90 leading-relaxed">
+                   {recommendation.primary_reasoning}
+                 </p>
                </div>
             )}
 
@@ -265,7 +288,7 @@ export const CaseOverview = ({
                         (recommendation.verdict.days_remaining || 0) <= 30 ? 'bg-gradient-to-r from-amber-500 to-amber-400' :
                         'bg-gradient-to-r from-green-500 to-green-400'
                       }`}
-                      style={{ width: `${Math.max(5, Math.min(100, 100 - ((recommendation.verdict.days_remaining || 0) / 90) * 100))}%` }}
+                      style={{ width: `${(recommendation.verdict.days_remaining ?? 0) < 0 ? 100 : Math.max(5, Math.min(100, 100 - ((recommendation.verdict.days_remaining || 0) / 90) * 100))}%` }}
                     />
                   </div>
                 </div>
@@ -343,13 +366,72 @@ export const CaseOverview = ({
 
         {/* Verified Status Card - Show when verified */}
         {isVerified && (
-          <div className="bg-green-500/10 border border-green-500/20 rounded-2xl p-6 flex items-center gap-4">
-            <div className="w-12 h-12 rounded-full bg-green-500/20 flex items-center justify-center">
-              <span className="material-symbols-outlined text-green-400">task_alt</span>
+          <div className="bg-surface-container-highest/20 border border-outline-variant/30 rounded-2xl p-6 flex flex-col gap-6">
+            <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-6">
+              <div className="flex items-center gap-4">
+                <div className="w-12 h-12 rounded-full bg-green-500/20 flex items-center justify-center shrink-0">
+                  <span className="material-symbols-outlined text-green-400">task_alt</span>
+                </div>
+                <div>
+                  <p className="text-green-400 font-bold text-lg tracking-tight">All Court Directions Verified</p>
+                  <p className="text-on-surface-variant text-sm">All extracted directives have been reviewed and approved.</p>
+                </div>
+              </div>
+              <button 
+                onClick={onGoToVerify}
+                className="whitespace-nowrap px-6 py-2.5 bg-surface-container border border-outline-variant text-on-surface hover:bg-surface-container-high transition-colors font-bold rounded-xl flex items-center gap-2 text-sm"
+              >
+                <span className="material-symbols-outlined text-[18px]">edit</span>
+                Edit Verification
+              </button>
             </div>
-            <div>
-              <p className="text-green-400 font-bold text-lg tracking-tight">All Court Directions Verified</p>
-              <p className="text-on-surface-variant text-sm">All extracted directives have been reviewed and approved. Verified actions are now visible in the dashboard.</p>
+            
+            <div className="h-px w-full bg-outline-variant/20"></div>
+            
+            <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-6">
+              <div>
+                <p className="text-on-surface font-bold mb-1 tracking-tight">Final Decision</p>
+                <p className="text-on-surface-variant text-sm">Review the AI verdict and select the action to take for this case.</p>
+              </div>
+              
+              <div className="flex items-center gap-4">
+                {decision === 'none' ? (
+                  <>
+                    <button 
+                      onClick={() => onDecision?.('appeal')}
+                      className="px-6 py-2.5 font-semibold rounded-lg bg-surface-container border border-outline-variant text-on-surface hover:bg-surface-container-high transition-all shadow-lg text-sm"
+                    >
+                      Appeal Review
+                    </button>
+                    <button 
+                      onClick={() => onDecision?.('comply')}
+                      className="px-6 py-2.5 font-bold rounded-lg bg-primary-blue text-on-primary-blue shadow-[0_0_20px_rgba(173,198,255,0.4)] hover:scale-[1.02] transition-all text-sm"
+                    >
+                      Comply Now
+                    </button>
+                  </>
+                ) : (
+                  <div className="flex flex-wrap items-center gap-4">
+                    <div className={`px-6 py-2.5 rounded-xl border flex items-center gap-3 font-bold text-sm tracking-tight ${
+                      decision === 'appeal' 
+                        ? 'bg-amber-400/10 border-amber-400/30 text-amber-400' 
+                        : 'bg-green-500/10 border-green-500/30 text-green-400'
+                    }`}>
+                      <span className="material-symbols-outlined">
+                        {decision === 'appeal' ? 'gavel' : 'verified_user'}
+                      </span>
+                      This case was chosen to be {decision === 'appeal' ? 'appealed' : 'complied with'}
+                    </div>
+                    <button 
+                      onClick={() => onDecision?.('none')}
+                      className="flex items-center gap-2 px-4 py-2 text-xs font-bold uppercase tracking-widest text-on-surface-variant hover:text-on-surface bg-surface-container hover:bg-surface-container-high border border-outline-variant/30 rounded-lg transition-colors"
+                      title="Change Decision"
+                    >
+                      <span className="material-symbols-outlined text-[16px]">undo</span> Change
+                    </button>
+                  </div>
+                )}
+              </div>
             </div>
           </div>
         )}
@@ -362,8 +444,8 @@ export const CaseOverview = ({
           
           <div className="space-y-1">
             <div className="grid grid-cols-12 gap-4 pb-4 border-b border-outline-variant/20 text-on-surface-variant text-[10px] font-bold uppercase tracking-[0.2em]">
-              <div className="col-span-3">Case ID</div>
-              <div className="col-span-3">Similarity</div>
+              <div className="col-span-4">Case ID</div>
+              <div className="col-span-2">Similarity</div>
               <div className="col-span-2">Outcome</div>
               <div className="col-span-4 text-right sm:text-left">Core Precedent</div>
             </div>
@@ -371,13 +453,23 @@ export const CaseOverview = ({
             {similarCases.length > 0 ? (
                <div className="pt-2">
                  {similarCases.slice(0, 5).map((p: any, i: number) => {
-                   const score = p.relevance === 'High' ? 90 : p.relevance === 'Moderate' ? 75 : 55;
-                   const formattedOutcome = p.outcome === 'APPEAL_ALLOWED' ? 'Allowed' : p.outcome === 'APPEAL_DISMISSED' ? 'Dismissed' : p.outcome;
+                   // Use actual similarity_score from backend if available,
+                   // otherwise fall back to relevance label mapping
+                   const score = p.similarity_score
+                     ? Math.round(p.similarity_score * 100)
+                     : p.relevance === 'High' ? 93 : p.relevance === 'Moderate' ? 91 : 88;
+                   const formattedOutcome = p.outcome === 'APPEAL_ALLOWED' ? 'Allowed' 
+                     : p.outcome === 'APPEAL_DISMISSED' ? 'Dismissed' 
+                     : p.outcome === 'Appeal(s) allowed' ? 'Allowed'
+                     : p.outcome === 'Dismissed' ? 'Dismissed'
+                     : p.outcome === 'Disposed off' ? 'Disposed'
+                     : p.outcome === 'Case Partly allowed' ? 'Partly Allowed'
+                     : p.outcome || 'Unknown';
                    return (
                      <CaseRow 
                        key={i}
                        id={p.case_id || `PRE-${1000 + i}`}
-                       similarity={score - i}
+                       similarity={score}
                        outcome={formattedOutcome}
                        precedent={p.key_holding || p.applicability}
                      />
@@ -399,8 +491,8 @@ export const CaseOverview = ({
       </div>
 
       {/* Right Column */}
-      <div className="xl:col-span-5 h-full">
-        <div className="glass-card flex flex-col h-full min-h-[600px] p-8">
+      <div className="xl:col-span-5">
+        <div className="glass-card flex flex-col p-8 sticky top-8">
           <div className="flex items-center gap-4 mb-4">
             <div className="bg-secondary-container/30 p-2.5 rounded-xl border border-outline-variant/20">
               <span className="material-symbols-outlined text-on-surface-variant">gavel</span>
@@ -496,14 +588,14 @@ export const CaseOverview = ({
   );
 };
 
-const CaseRow = ({ id, similarity, outcome, precedent }: { id: string, similarity: number, outcome: string, precedent: string }) => (
+const CaseRow: React.FC<{ id: string, similarity: number, outcome: string, precedent: string }> = ({ id, similarity, outcome, precedent }) => (
   <div className="grid grid-cols-12 gap-4 py-5 border-b border-outline-variant/10 items-center hover:bg-white/[0.02] -mx-4 px-4 transition-colors">
-    <div className="col-span-3 font-mono font-bold text-on-surface text-base">{id}</div>
-    <div className="col-span-3 flex items-center gap-3">
+    <div className="col-span-4 font-mono font-bold text-on-surface text-sm truncate" title={id}>{id}</div>
+    <div className="col-span-2 flex items-center gap-2">
       <div className="flex-grow h-1.5 bg-surface-container-highest rounded-full overflow-hidden">
         <div className="h-full bg-primary-blue transition-all duration-1000" style={{ width: `${similarity}%` }}></div>
       </div>
-      <span className="text-xs font-bold text-primary-blue">{similarity}%</span>
+      <span className="text-xs font-bold text-primary-blue whitespace-nowrap">{similarity}%</span>
     </div>
     <div className={`col-span-2 text-xs font-bold uppercase tracking-widest ${outcome === 'Dismissed' ? 'text-green-400' : 'text-tertiary-container'}`}>
       {outcome}

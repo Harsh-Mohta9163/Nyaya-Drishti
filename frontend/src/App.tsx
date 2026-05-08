@@ -10,7 +10,7 @@ import { Routes, Route, Navigate, useNavigate } from 'react-router-dom';
 import { useAuth } from './context/AuthContext';
 import LoginPage from './LoginPage';
 import RegisterPage from './RegisterPage';
-import { fetchCase, CaseData, fetchRecommendation, reAnnotateSource } from './api/client';
+import { fetchCase, CaseData, fetchRecommendation, reAnnotateSource, updateJudgment } from './api/client';
 import { shortPartyTitle, extractCoreName } from './utils/truncate';
 
 import { Precedents } from './components/Precedents';
@@ -66,8 +66,15 @@ function MainApp() {
     }
   };
 
-  const updateCaseStatus = (decision: 'none' | 'appeal' | 'comply') => {
+  const updateCaseStatus = async (decision: 'none' | 'appeal' | 'comply') => {
     setCaseDecision(decision);
+    if (judgment) {
+      try {
+        await updateJudgment(judgment.id, { appeal_type: decision });
+      } catch (err) {
+        console.error("Failed to update case decision", err);
+      }
+    }
   };
 
   // Build actions from the real extracted court_directions
@@ -80,21 +87,28 @@ function MainApp() {
   useEffect(() => {
     if (!judgment) {
       setActions([]);
+      setCaseDecision('none');
       return;
     }
+    
+    // Set decision from backend
+    if (judgment.appeal_type && ['none', 'appeal', 'comply'].includes(judgment.appeal_type)) {
+      setCaseDecision(judgment.appeal_type as 'none' | 'appeal' | 'comply');
+    }
+
     const dirs = judgment.court_directions ?? [];
     const mapped = dirs.map((d: any, i: number) => ({
-      id: String(i + 1),
-      title: d.action_required || d.text?.slice(0, 60) || `Direction ${i + 1}`,
-      source: d.responsible_entity || `Direction ${i + 1}`,
-      description: d.text || d.description || '',
-      tags: [d.responsible_entity].filter(Boolean),
-      dueDate: d.deadline_mentioned || d.deadline || '',
-      isVerified: false,
-      isHighPriority: !!(d.deadline_mentioned || d.deadline),
-      sourceLocation: d.source_location || null,
-      sourceText: d.text || '',
-      financialDetails: d.financial_details || null,
+      id: d.id || String(i + 1),
+      title: d.title || d.action_required || d.text?.slice(0, 60) || `Direction ${i + 1}`,
+      source: d.source || d.responsible_entity || `Direction ${i + 1}`,
+      description: d.description || d.text || '',
+      tags: d.tags || [d.responsible_entity].filter(Boolean),
+      dueDate: d.dueDate || d.deadline_mentioned || d.deadline || '',
+      isVerified: d.isVerified || false,
+      isHighPriority: d.isHighPriority !== undefined ? d.isHighPriority : !!(d.deadline_mentioned || d.deadline),
+      sourceLocation: d.sourceLocation || d.source_location || null,
+      sourceText: d.sourceText || d.text || '',
+      financialDetails: d.financialDetails || d.financial_details || null,
     }));
     setActions(mapped.length > 0 ? mapped : [{
       id: '1',
@@ -108,20 +122,43 @@ function MainApp() {
     }]);
   }, [judgment?.id]);
 
+  const saveActionsToBackend = async (newActions: any[]) => {
+    if (!judgment) return;
+    try {
+      await updateJudgment(judgment.id, { court_directions: newActions });
+    } catch (err) {
+      console.error("Failed to save actions to backend", err);
+    }
+  };
+
   const toggleAction = (id: string) => {
-    setActions(actions.map(a => a.id === id ? { ...a, isVerified: !a.isVerified } : a));
+    const newActions = actions.map(a => a.id === id ? { ...a, isVerified: !a.isVerified } : a);
+    setActions(newActions);
+    saveActionsToBackend(newActions);
   };
 
   const deleteAction = (id: string) => {
-    setActions(actions.filter(a => a.id !== id));
+    const newActions = actions.filter(a => a.id !== id);
+    setActions(newActions);
+    saveActionsToBackend(newActions);
   };
 
   const editAction = (id: string, description: string) => {
-    setActions(actions.map(a => a.id === id ? { ...a, description } : a));
+    const newActions = actions.map(a => a.id === id ? { ...a, description } : a);
+    setActions(newActions);
+    saveActionsToBackend(newActions);
+  };
+
+  const addAction = (newAction: any) => {
+    const newActions = [{ ...newAction, id: Math.random().toString(36).substring(2, 11) }, ...actions];
+    setActions(newActions);
+    saveActionsToBackend(newActions);
   };
 
   const verifyAll = () => {
-    setActions(actions.map(a => ({ ...a, isVerified: true })));
+    const newActions = actions.map(a => ({ ...a, isVerified: true }));
+    setActions(newActions);
+    saveActionsToBackend(newActions);
     setShowToast(true);
     setTimeout(() => setShowToast(false), 3000);
   };
@@ -222,8 +259,6 @@ function MainApp() {
                     onTabChange={setActiveTab}
                     allVerified={allVerified}
                     onBack={() => setSelectedCaseId(null)}
-                    decision={caseDecision}
-                    onDecision={updateCaseStatus}
                   />
 
                   {/* Tab Content Area */}
@@ -245,10 +280,12 @@ function MainApp() {
                               recommendation={recommendation}
                               isGenerating={isGeneratingAnalysis}
                               onGenerateAnalysis={handleGenerateAnalysis}
+                              decision={caseDecision}
+                              onDecision={updateCaseStatus}
                             />
                           )}
                           {activeTab === 'verify' && (
-                            <VerifyActions 
+                              <VerifyActions 
                               actions={actions}
                               pdfUrl={
                                 judgment?.pdf_file 
@@ -268,6 +305,7 @@ function MainApp() {
                               onToggle={toggleAction}
                               onDelete={deleteAction}
                               onEdit={editAction}
+                              onAdd={addAction}
                               onVerifyAll={verifyAll}
                             />
                           )}
@@ -293,7 +331,15 @@ function MainApp() {
 }
 
 export default function App() {
-  const { isAuthenticated } = useAuth();
+  const { isAuthenticated, isInitializing } = useAuth();
+
+  if (isInitializing) {
+    return (
+      <div className="flex min-h-screen bg-surface-dim items-center justify-center">
+        <span className="material-symbols-outlined text-4xl animate-spin text-primary-blue opacity-40">progress_activity</span>
+      </div>
+    );
+  }
 
   return (
     <Routes>

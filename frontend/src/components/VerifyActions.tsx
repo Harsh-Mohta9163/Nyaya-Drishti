@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect, useCallback } from 'react';
+import React, { useState, useRef, useEffect, useCallback, Component } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Document, Page, pdfjs } from 'react-pdf';
 import 'react-pdf/dist/Page/AnnotationLayer.css';
@@ -45,20 +45,20 @@ const PDF_RENDER_WIDTH = 580;
 
 // ─── ActionItem ─────────────────────────────────────────────────────────────────
 
-const ActionItem = ({ 
-  action, 
-  isActive,
-  onToggle, 
-  onDelete, 
-  onEdit, 
-  onSelect 
-}: { 
+const ActionItem: React.FC<{ 
   action: ActionData;
   isActive: boolean;
   onToggle: (id: string) => void;
   onDelete: (id: string) => void;
   onEdit: (id: string, desc: string) => void;
   onSelect: (action: ActionData) => void;
+}> = ({ 
+  action, 
+  isActive,
+  onToggle, 
+  onDelete, 
+  onEdit, 
+  onSelect 
 }) => {
   const [isEditing, setIsEditing] = useState(false);
   const [editedDescription, setEditedDescription] = useState(action.description);
@@ -272,6 +272,7 @@ export const VerifyActions = ({
   onEdit, 
   onVerifyAll,
   onActionClick,
+  onAdd,
   highlightedPage: _highlightedPage,
   pdfUrl
 }: { 
@@ -281,6 +282,7 @@ export const VerifyActions = ({
   onEdit: (id: string, desc: string) => void;
   onVerifyAll: () => void;
   onActionClick: (page: number) => void;
+  onAdd: (action: Omit<ActionData, 'id'>) => void;
   highlightedPage: number | null;
   pdfUrl?: string | null;
 }) => {
@@ -290,6 +292,23 @@ export const VerifyActions = ({
   const [activeSource, setActiveSource] = useState<SourceLocation | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const pageRefs = useRef<(HTMLDivElement | null)[]>([]);
+  
+  const [isAdding, setIsAdding] = useState(false);
+  const [newAction, setNewAction] = useState({ title: '', source: '', description: '', isHighPriority: false });
+
+  const handleAddSubmit = () => {
+    if (!newAction.title.trim() || !newAction.description.trim()) return;
+    onAdd({
+      title: newAction.title,
+      source: newAction.source || 'Manual Entry',
+      description: newAction.description,
+      tags: [],
+      isVerified: false,
+      isHighPriority: newAction.isHighPriority,
+    });
+    setNewAction({ title: '', source: '', description: '', isHighPriority: false });
+    setIsAdding(false);
+  };
 
   function onDocumentLoadSuccess({ numPages }: { numPages: number }) {
     setNumPages(numPages);
@@ -355,9 +374,9 @@ export const VerifyActions = ({
   }, [activeActionId]);
 
   return (
-    <div className="flex flex-col lg:flex-row gap-8 py-8 h-[calc(100vh-180px)] overflow-hidden">
+    <div className="flex flex-col lg:flex-row gap-8 py-8 h-[calc(100vh-100px)] min-h-[800px] overflow-hidden">
       {/* Left: PDF Viewer */}
-      <div className="w-full lg:w-[45%] flex flex-col glass-card border-outline-variant/20 h-full relative group shrink-0 overflow-hidden">
+      <div className="w-full lg:w-1/2 flex flex-col glass-card border-outline-variant/20 h-full relative group shrink-0 overflow-hidden">
         <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-primary-blue/50 via-primary-blue/20 to-transparent"></div>
         
         {/* Toolbar */}
@@ -476,18 +495,21 @@ export const VerifyActions = ({
       </div>
 
       {/* Right Column — Action List */}
-      <div className="w-full lg:w-[55%] flex flex-col gap-6 h-full">
+      <div className="w-full lg:w-1/2 flex flex-col gap-6 h-full">
         {/* Header & Controls */}
-        <div className="flex items-center justify-between shrink-0">
-          <div className="flex items-center gap-4">
-            <h3 className="text-xl font-bold text-on-surface tracking-tight">Court Directions — Verify</h3>
-            <span className="px-2 py-1 bg-surface-container-high rounded text-[10px] font-bold text-on-surface-variant uppercase tracking-widest">
+        <div className="flex items-center justify-between flex-wrap gap-4 shrink-0">
+          <div className="flex items-center gap-4 flex-wrap">
+            <h3 className="text-xl font-bold text-on-surface tracking-tight whitespace-nowrap">Court Directions — Verify</h3>
+            <span className="px-2 py-1 bg-surface-container-high rounded text-[10px] font-bold text-on-surface-variant uppercase tracking-widest whitespace-nowrap">
               {actions.filter(a => a.isVerified).length} / {actions.length} Verified
             </span>
           </div>
-          <div className="flex gap-3">
-            <button className="flex items-center gap-2 px-4 py-2 rounded-lg border border-outline-variant/30 text-on-surface-variant hover:bg-surface-container-high transition-all font-bold text-xs uppercase tracking-widest">
-              <span className="material-symbols-outlined text-sm">add</span> Add Action
+          <div className="flex flex-wrap gap-3">
+            <button 
+              onClick={() => setIsAdding(!isAdding)}
+              className="flex items-center gap-2 px-4 py-2 rounded-lg border border-outline-variant/30 text-on-surface-variant hover:bg-surface-container-high transition-all font-bold text-xs uppercase tracking-widest"
+            >
+              <span className="material-symbols-outlined text-sm">{isAdding ? 'close' : 'add'}</span> {isAdding ? 'Cancel' : 'Add Action'}
             </button>
             <button 
               onClick={onVerifyAll}
@@ -507,9 +529,62 @@ export const VerifyActions = ({
         </div>
 
         {/* Action List Section */}
-        {actions.length > 0 ? (
-          <div className="flex-1 overflow-y-auto pr-2 space-y-4 scrollbar-thin pb-20">
-            {actions.map(action => (
+        <div className="flex-1 overflow-y-auto pr-2 space-y-4 scrollbar-thin pb-20">
+          {isAdding && (
+            <div className="glass-card p-5 border-primary-blue/30 bg-primary-blue/[0.03] space-y-4 mb-4">
+              <h4 className="font-bold text-primary-blue text-sm uppercase tracking-wider">New Action</h4>
+              <div className="space-y-3">
+                <input 
+                  type="text" 
+                  placeholder="Action Title" 
+                  className="w-full bg-surface-dim/80 border border-primary-blue/30 rounded-lg p-3 text-[14px] text-on-surface focus:outline-none focus:ring-1 focus:ring-primary-blue"
+                  value={newAction.title}
+                  onChange={(e) => setNewAction({ ...newAction, title: e.target.value })}
+                />
+                <input 
+                  type="text" 
+                  placeholder="Department / Source (Optional)" 
+                  className="w-full bg-surface-dim/80 border border-primary-blue/30 rounded-lg p-3 text-[14px] text-on-surface focus:outline-none focus:ring-1 focus:ring-primary-blue"
+                  value={newAction.source}
+                  onChange={(e) => setNewAction({ ...newAction, source: e.target.value })}
+                />
+                <textarea
+                  placeholder="Detailed Description"
+                  className="w-full bg-surface-dim/80 border border-primary-blue/30 rounded-lg p-3 text-[14px] text-on-surface focus:outline-none focus:ring-1 focus:ring-primary-blue min-h-[80px]"
+                  value={newAction.description}
+                  onChange={(e) => setNewAction({ ...newAction, description: e.target.value })}
+                />
+                <div className="flex items-center gap-2">
+                  <input 
+                    type="checkbox" 
+                    id="highPriority" 
+                    checked={newAction.isHighPriority} 
+                    onChange={(e) => setNewAction({ ...newAction, isHighPriority: e.target.checked })}
+                    className="rounded border-outline-variant/60 text-primary-blue focus:ring-primary-blue bg-transparent w-4 h-4"
+                  />
+                  <label htmlFor="highPriority" className="text-sm text-on-surface-variant font-medium">Mark as High Priority</label>
+                </div>
+                <div className="flex justify-end gap-2 pt-2">
+                  <button 
+                    onClick={() => setIsAdding(false)}
+                    className="px-4 py-2 text-on-surface-variant hover:bg-surface-container-high text-xs font-bold rounded-lg uppercase tracking-wider transition-colors"
+                  >
+                    Cancel
+                  </button>
+                  <button 
+                    onClick={handleAddSubmit}
+                    disabled={!newAction.title.trim() || !newAction.description.trim()}
+                    className="px-4 py-2 bg-primary-blue text-on-primary-blue hover:bg-primary-blue/90 disabled:opacity-50 disabled:cursor-not-allowed text-xs font-bold rounded-lg uppercase tracking-wider shadow-lg shadow-primary-blue/20 transition-all"
+                  >
+                    Save Action
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {actions.length > 0 ? (
+            actions.map(action => (
               <ActionItem 
                 key={action.id}
                 action={action}
@@ -519,27 +594,30 @@ export const VerifyActions = ({
                 onEdit={onEdit}
                 onSelect={handleActionSelect}
               />
-            ))}
-          </div>
-        ) : (
-          <div className="flex-1 flex flex-col items-center justify-center text-center p-10 opacity-50">
-            <span className="material-symbols-outlined text-6xl mb-4">playlist_add_check</span>
-            <p className="font-bold">No actions found</p>
-            <p className="text-sm">Extracted actions will appear here for verification.</p>
-          </div>
-        )}
+            ))
+          ) : (
+            !isAdding && (
+              <div className="flex-1 flex flex-col items-center justify-center text-center p-10 opacity-50 mt-10">
+                <span className="material-symbols-outlined text-6xl mb-4">playlist_add_check</span>
+                <p className="font-bold">No actions found</p>
+                <p className="text-sm">Extracted actions will appear here for verification.</p>
+              </div>
+            )
+          )}
+        </div>
       </div>
     </div>
   );
 };
 
 // ─── Error Boundary ──────────────────────────────────────────────────────────
-class VerifyActionsErrorBoundary extends React.Component<
+class VerifyActionsErrorBoundary extends Component<
   { children: React.ReactNode }, 
   { hasError: boolean; error?: Error }
 > {
   constructor(props: { children: React.ReactNode }) {
     super(props);
+    // @ts-ignore
     this.state = { hasError: false };
   }
   static getDerivedStateFromError(error: Error) {
@@ -549,13 +627,16 @@ class VerifyActionsErrorBoundary extends React.Component<
     console.error('VerifyActions crashed:', error, info);
   }
   render() {
+    // @ts-ignore
     if (this.state.hasError) {
       return (
         <div className="flex flex-col items-center justify-center h-full p-10 text-center">
           <span className="material-symbols-outlined text-6xl text-error-red mb-4">error</span>
           <h3 className="text-xl font-bold text-on-surface mb-2">Something went wrong</h3>
+          {/* @ts-ignore */}
           <p className="text-on-surface-variant mb-4 text-sm">{this.state.error?.message || 'Unknown error'}</p>
           <button 
+            // @ts-ignore
             onClick={() => this.setState({ hasError: false })}
             className="px-4 py-2 bg-primary-blue text-white rounded-lg hover:bg-primary-blue/80 transition-colors font-bold text-sm"
           >
@@ -564,6 +645,7 @@ class VerifyActionsErrorBoundary extends React.Component<
         </div>
       );
     }
+    // @ts-ignore
     return this.props.children;
   }
 }

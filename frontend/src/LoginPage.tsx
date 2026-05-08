@@ -225,9 +225,9 @@ export default function LoginPage() {
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.5, duration: 0.8 }}
-            style={{ display: 'flex', gap: '1.5rem', marginTop: '8rem' }}
+            style={{ display: 'flex', flexWrap: 'wrap', gap: '1.5rem', marginTop: '4rem' }}
           >
-            <div style={{ flex: 1, backgroundColor: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)', padding: '1.5rem', borderRadius: '16px', display: 'flex', alignItems: 'flex-start', gap: '1.25rem' }}>
+            <div style={{ flex: 1, minWidth: '200px', backgroundColor: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)', padding: '1.5rem', borderRadius: '16px', display: 'flex', alignItems: 'flex-start', gap: '1.25rem' }}>
               <div style={{ padding: '0.85rem', backgroundColor: 'rgba(59,130,246,0.1)', borderRadius: '12px', color: '#3b82f6', border: '1px solid rgba(59,130,246,0.2)' }}>
                 <ShieldCheck size={24} />
               </div>
@@ -237,7 +237,7 @@ export default function LoginPage() {
               </div>
             </div>
 
-            <div style={{ flex: 1, backgroundColor: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)', padding: '1.5rem', borderRadius: '16px', display: 'flex', alignItems: 'flex-start', gap: '1.25rem' }}>
+            <div style={{ flex: 1, minWidth: '200px', backgroundColor: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)', padding: '1.5rem', borderRadius: '16px', display: 'flex', alignItems: 'flex-start', gap: '1.25rem' }}>
               <div style={{ padding: '0.85rem', backgroundColor: 'rgba(59,130,246,0.1)', borderRadius: '12px', color: '#3b82f6', border: '1px solid rgba(59,130,246,0.2)' }}>
                 <Calendar size={24} />
               </div>
@@ -247,7 +247,7 @@ export default function LoginPage() {
               </div>
             </div>
 
-            <div style={{ flex: 1, backgroundColor: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)', padding: '1.5rem', borderRadius: '16px', display: 'flex', alignItems: 'flex-start', gap: '1.25rem' }}>
+            <div style={{ flex: 1, minWidth: '200px', backgroundColor: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)', padding: '1.5rem', borderRadius: '16px', display: 'flex', alignItems: 'flex-start', gap: '1.25rem' }}>
               <div style={{ padding: '0.85rem', backgroundColor: 'rgba(59,130,246,0.1)', borderRadius: '12px', color: '#3b82f6', border: '1px solid rgba(59,130,246,0.2)' }}>
                 <ShieldCheck size={24} />
               </div>

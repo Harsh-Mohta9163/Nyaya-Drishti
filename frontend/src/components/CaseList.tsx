@@ -82,7 +82,7 @@ const ProcessingRow = ({ fileName, phase }: { fileName: string; phase: number })
 
 // ─── Normal Case Row ─────────────────────────────────────────────────────────
 
-const CaseRow = ({ c, onClick }: { c: CaseData; onClick: () => void }) => {
+const CaseRow: React.FC<{ c: CaseData; onClick: () => void }> = ({ c, onClick }) => {
   const stat = mapStatus(c);
   const risk = riskFromCase(c);
 
@@ -108,7 +108,8 @@ const CaseRow = ({ c, onClick }: { c: CaseData; onClick: () => void }) => {
   // Check if RAG analysis has been run
   const hasAnalysis = !!c.judgments?.[0]?.action_plan?.full_rag_recommendation;
   const deadlineDays = hasAnalysis ? c.judgments?.[0]?.action_plan?.full_rag_recommendation?.verdict?.days_remaining : null;
-  const deadlineText = deadlineDays !== null && deadlineDays !== undefined ? deadlineDays : '—';
+  const isOverdue = deadlineDays !== null && deadlineDays !== undefined && deadlineDays < 0;
+  const deadlineText = isOverdue ? 'OVERDUE' : (deadlineDays !== null && deadlineDays !== undefined ? deadlineDays : '—');
   
   const displayStat = hasAnalysis ? stat : (stat === 'Extracted' ? 'Pending Analysis' : stat);
   const updatedStatusColors = 
@@ -153,8 +154,10 @@ const CaseRow = ({ c, onClick }: { c: CaseData; onClick: () => void }) => {
       </td>
       <td className="py-5 px-6 text-center">
         <div className="flex flex-col items-center">
-          <span className={`text-xl font-bold tracking-tighter ${deadlineDays !== null && deadlineDays < 14 ? 'text-error-red' : 'text-on-surface'}`}>{deadlineText}</span>
-          <span className="text-[9px] text-on-surface-variant font-black uppercase tracking-widest opacity-40">Days</span>
+          <span className={`font-bold tracking-tighter ${isOverdue ? 'text-error-red text-xs uppercase' : deadlineDays !== null && deadlineDays < 14 ? 'text-error-red text-xl' : 'text-on-surface text-xl'}`}>
+            {deadlineText}
+          </span>
+          {!isOverdue && <span className="text-[9px] text-on-surface-variant font-black uppercase tracking-widest opacity-40">Days</span>}
         </div>
       </td>
     </motion.tr>

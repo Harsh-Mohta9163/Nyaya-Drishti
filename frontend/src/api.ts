@@ -152,6 +152,15 @@ export async function apiUploadCase(pdfFile: File) {
   return res.json();
 }
 
+export async function apiUpdateJudgment(id: string, data: any) {
+  const res = await apiFetch(`/cases/judgments/${id}/`, {
+    method: 'PATCH',
+    body: JSON.stringify(data),
+  });
+  if (!res.ok) throw new Error('Failed to update judgment');
+  return res.json();
+}
+
 // ---------- Action Plan APIs ----------
 export async function apiGetActionPlans() {
   const res = await apiFetch('/action-plans/');
