@@ -29,50 +29,56 @@ The **Court Case Monitoring System (CCMS)** — integrated with the High Court's
 ## System Architecture
 
 ```
-┌─────────────────────────────────────────────────────────────────────┐
-│                        FRONTEND (React 19 + Vite)                   │
-│  Dashboard │ Case List │ Case Overview │ Verify Actions │ Precedents│
-└──────────────────────────────┬──────────────────────────────────────┘
-                               │ REST API (JWT Auth)
-┌──────────────────────────────▼──────────────────────────────────────┐
-│                     BACKEND (Django 5 + DRF)                        │
-│                                                                     │
-│  ┌─────────────┐  ┌──────────────┐  ┌───────────────────────────┐  │
-│  │ PDF Upload  │→ │  PyMuPDF4LLM │→ │  Bi-Directional Segmenter │  │
-│  │ & Storage   │  │  (Markdown)  │  │  (Header/Body/Operative)  │  │
-│  └─────────────┘  └──────────────┘  └────────────┬──────────────┘  │
-│                                                   │                 │
-│  ┌────────────────────────────────────────────────▼──────────────┐  │
-│  │           4-AGENT EXTRACTION PIPELINE                         │  │
-│  │  Agent 1: Registry Clerk → metadata, parties       │  │
-│  │  Agent 2: Legal Analyst  → facts, issues        │  │
-│  │  Agent 3: Precedent Scholar → ratio, citations  │  │
-│  │  Agent 4: Compliance Officer → directives, risk    │  │
-│  └──────────────────────────────────────────────────────────────┘  │
-│                                                                     │
-│  ┌──────────────────────────────────────────────────────────────┐  │
-│  │        4-AGENT RAG RECOMMENDATION PIPELINE V2                 │  │
-│  │  Hybrid RAG: BM25 + InLegalBERT Dense + RRF + Cross-Encoder  │  │
-│  │  DuckDB Parquet Analytics (win-rate stats from 50K+ cases)    │  │
-│  │  Agent 1: Precedent Researcher                                  │  │
-│  │  Agent 2: Devil's Advocate                                      │  │
-│  │  Agent 3: Risk Auditor                                        │  │
-│  │  Agent 4: Decision Synthesizer                                  │  │
-│  └──────────────────────────────────────────────────────────────┘  │
-│                                                                     │
-│  ┌────────────────┐  ┌──────────────────┐  ┌────────────────────┐  │
-│  │ Rules Engine   │  │ Contempt Risk    │  │ Court Hierarchy    │  │
-│  │ (Limitation    │  │ Classifier       │  │ Logic (Appeal      │  │
-│  │  Act deadlines)│  │ (InLegalBERT     │  │  Forum Detection)  │  │
-│  │                │  │  + Keywords)     │  │                    │  │
-│  └────────────────┘  └──────────────────┘  └────────────────────┘  │
-│                                                                     │
-│  ┌────────────────────────────────────────────────────────────────┐ │
-│  │  Data Layer: SQLite (Cases, Judgments, ActionPlans, Reviews)   │ │
-│  │  Vector Store: ChromaDB (InLegalBERT 768-dim embeddings)      │ │
-│  │  Analytics Store: DuckDB over Parquet (50K+ SC/HC judgments)   │ │
-│  └────────────────────────────────────────────────────────────────┘ │
-└─────────────────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────────────┐
+│                      FRONTEND (React 19 + Vite)                      │
+│  Dashboard │ Case List │ Case Overview │ Verify Actions │ Precedents  │
+└────────────────────────────────┬─────────────────────────────────────┘
+                                 │ REST API (JWT Auth)
+┌────────────────────────────────▼─────────────────────────────────────┐
+│                      BACKEND (Django 5 + DRF)                        │
+│                                                                      │
+│  ┌─────────────┐  ┌──────────────┐  ┌──────────────────────────────┐ │
+│  │ PDF Upload  │→ │  PyMuPDF4LLM │→ │  Bi-Directional Segmenter    │ │
+│  │ & Storage   │  │  (Markdown)  │  │  (Header / Body / Operative) │ │
+│  └─────────────┘  └──────────────┘  └──────────────┬───────────────┘ │
+│                                                     │                │
+│  ┌──────────────────────────────────────────────────▼─────────────┐  │
+│  │              4-AGENT EXTRACTION PIPELINE                        │  │
+│  │  Agent 1: Registry Clerk    → case metadata, parties           │  │
+│  │  Agent 2: Legal Analyst     → facts, issues framed             │  │
+│  │  Agent 3: Precedent Scholar → ratio decidendi, citations       │  │
+│  │  Agent 4: Compliance Officer→ directives, deadlines, risk      │  │
+│  └─────────────────────────────────────────────────────────────── ┘  │
+│                                                                      │
+│  ┌─────────────────────────────────────────────────────────────────┐  │
+│  │   AI RECOMMENDATION PIPELINE (Single-Agent or 4-Agent mode)     │  │
+│  │                                                                  │  │
+│  │   Hybrid RAG: InLegalBERT Dense + BM25 + RRF + Cross-Encoder   │  │
+│  │   DuckDB Parquet Analytics  (win-rate stats, 431K+ chunks)      │  │
+│  │                                                                  │  │
+│  │   [Single-Agent mode — default, runs on any hardware]           │  │
+│  │    → One reasoning pass: all context → APPEAL / COMPLY verdict  │  │
+│  │                                                                  │  │
+│  │   [4-Agent mode — available for high-compute deployments]       │  │
+│  │    Agent 1: Precedent Researcher → trend analysis               │  │
+│  │    Agent 2: Devil's Advocate     → pro/con arguments            │  │
+│  │    Agent 3: Risk Auditor         → contempt/financial risk      │  │
+│  │    Agent 4: Decision Synthesizer → final verdict                │  │
+│  └─────────────────────────────────────────────────────────────────┘  │
+│                                                                      │
+│  ┌────────────────┐  ┌──────────────────┐  ┌──────────────────────┐  │
+│  │ Rules Engine   │  │ Contempt Risk    │  │ Court Hierarchy      │  │
+│  │ (Limitation    │  │ Classifier       │  │ Logic (Appeal        │  │
+│  │  Act deadlines)│  │ (Keyword-based   │  │  Forum Detection)    │  │
+│  │                │  │  Deterministic)  │  │                      │  │
+│  └────────────────┘  └──────────────────┘  └──────────────────────┘  │
+│                                                                      │
+│  ┌──────────────────────────────────────────────────────────────────┐ │
+│  │  Data Layer : SQLite (Cases, Judgments, ActionPlans, Reviews)    │ │
+│  │  Vector Store: ChromaDB  (InLegalBERT 768-dim embeddings)        │ │
+│  │  Analytics  : DuckDB over Parquet (431K+ SC/HC judgment chunks)  │ │
+│  └──────────────────────────────────────────────────────────────────┘ │
+└──────────────────────────────────────────────────────────────────────┘
 ```
 
 ---
@@ -85,13 +91,13 @@ The **Court Case Monitoring System (CCMS)** — integrated with the High Court's
 PDF Upload → PyMuPDF4LLM (layout-aware Markdown) → Bi-Directional Regex Segmenter
                                                           │
                                           ┌───────────────┼───────────────┐
-                                       Header          Body         Operative
+                                       Header           Body          Operative
                                           │               │               │
-                                    Agent 1 (8B)    Agent 2+3 (70B)  Agent 4 (8B)
-                                    Registry Clerk  Analyst+Scholar  Compliance
+                                    Agent 1 (fast)  Agent 2+3 (deep)  Agent 4 (fast)
+                                    Registry Clerk  Analyst+Scholar    Compliance
                                           │               │               │
-                                    Case metadata    Facts, Issues,  Directives,
-                                    Parties, Date    Ratio, Citations Contempt Risk
+                                    Case metadata    Facts, Issues,   Directives,
+                                    Parties, Date    Ratio, Citations  Contempt Risk
 ```
 
 - **PDF Processor** (`pdf_processor.py`): Uses `PyMuPDF4LLM` for layout-aware text extraction to clean Markdown. Falls back to legacy `PyMuPDF` if needed.
@@ -106,6 +112,7 @@ Extracted Judgment Data
         │
         ├─→ Hybrid RAG Engine ──→ Top-K similar precedents
         │     (BM25 + InLegalBERT + RRF + Cross-Encoder Reranking)
+        │     Corpus: 431,722 chunks from 20 years of SC judgments
         │
         ├─→ DuckDB Parquet Analytics ──→ Win-rate statistics
         │     (50K+ SC + Karnataka HC Division Bench judgments)
@@ -116,15 +123,16 @@ Extracted Judgment Data
         ├─→ Court Hierarchy Logic ──→ Correct appellate forum
         │     (Single Judge → Division Bench → Supreme Court)
         │
-        └─→ 4-Agent Recommendation Pipeline V2 (Llama 3.3 70B)
-              Agent 1: Precedent Researcher → trend analysis
-              Agent 2: Devil's Advocate → pro/con arguments
-              Agent 3: Risk Auditor → contempt/financial risk
-              Agent 4: Decision Synthesizer → APPEAL or COMPLY verdict
+        └─→ Recommendation Pipeline (open-source LLM)
+              [Single-Agent] Default — lower compute, same reasoning quality
+              [4-Agent]      Optional — Precedent Researcher → Devil's Advocate
+                             → Risk Auditor → Decision Synthesizer
                     │
                     └─→ ActionPlan record saved to DB
                          (cached in full_rag_recommendation JSON field)
 ```
+
+> **Pipeline modes:** The single-agent pipeline runs well on commodity hardware or cloud free tiers. The 4-agent pipeline is available for government servers with higher compute capacity. Both produce an **APPEAL / COMPLY** verdict with full reasoning.
 
 ### Phase 3 — Verify (Human-in-the-Loop — Mandatory)
 
@@ -148,38 +156,39 @@ The **Verify Actions** tab provides:
 
 ## 🔒 Data Privacy & Government Compliance (On-Premise Deployment)
 
-A critical architectural advantage of **Nyaya-Drishti** is its adherence to strict data privacy and residency requirements for Indian digital public infrastructure.
+A critical architectural advantage of **NyayaDrishti** is its design for strict data privacy and residency requirements for Indian digital public infrastructure.
 
-While cloud-based inference APIs (like NVIDIA NIM and Groq) are supported for rapid prototyping, the system is explicitly designed around **open-weights models** (Llama 3.1 8B and Llama 3.3 70B). 
+The entire stack — Django backend, React frontend, InLegalBERT embeddings, ChromaDB vector store, and DuckDB analytics — is **fully open source**. The government can deploy NyayaDrishti entirely on their own **on-premise servers** with zero external dependencies:
 
-For production, the government can host these LLMs entirely locally on their own **on-premise, air-gapped servers** using tools like `vLLM` or `Ollama`. 
 * **100% Data Privacy**: Sensitive court documents, directives, and legal strategies never leave the government's internal network.
-* **No Third-Party Cloud Dependency**: Zero reliance on external commercial AI providers like OpenAI, Google, or Anthropic.
+* **Air-gap compatible**: All ML models (InLegalBERT, cross-encoder) run locally. The open-source LLMs can be self-hosted via `vLLM` or `Ollama`.
+* **No commercial cloud lock-in**: Zero reliance on external AI providers. Every component can be swapped for an open-source equivalent.
+
+> The 4-agent pipeline is designed for government on-premise servers with adequate GPU/CPU resources, where rate limits and compute costs are not a constraint.
 
 ---
 
 ## Tech Stack
 
 | Layer | Technology | Purpose |
-|-------|-----------|---------|
+|-------|-----------|---------| 
 | **Frontend** | React 19, TypeScript, Vite 6 | SPA with hot-reload |
 | **Styling** | TailwindCSS 4, Framer Motion | Glassmorphism design, animations |
 | **PDF Viewer** | react-pdf + pdfjs-dist | In-browser PDF rendering with source highlights |
 | **Backend** | Django 5, Django REST Framework | REST API, ORM, migrations |
 | **Auth** | SimpleJWT | Token-based authentication with role-based access |
 | **PDF Parsing** | PyMuPDF4LLM | Layout-aware PDF → Markdown conversion |
-| **LLM (Extraction)** | Groq Llama 3.1 8B + NVIDIA Llama 3.3 70B | 4-agent structured extraction pipeline |
-| **LLM (Recommendation)** | Llama 3.3 70B | 4-agent RAG recommendation pipeline |
-| **Embeddings** | InLegalBERT (law-ai/InLegalBERT) | 768-dim legal domain embeddings (runs locally) |
+| **LLM (Extraction)** | Open-source LLM (cloud API or self-hosted) | 4-agent structured extraction pipeline |
+| **LLM (Recommendation)** | Open-source LLM (cloud API or self-hosted) | Single-agent or 4-agent RAG recommendation |
+| **Embeddings** | **InLegalBERT** (`law-ai/InLegalBERT`) | 768-dim legal domain embeddings — runs fully locally |
 | **Vector Store** | ChromaDB (persistent, local) | Dense vector similarity search |
 | **Sparse Retrieval** | BM25Okapi (rank-bm25) | Keyword-based retrieval |
-| **Reranking** | ms-marco-MiniLM-L-6-v2 CrossEncoder | Final relevance reranking |
+| **Reranking** | Cross-Encoder (open-source, local) | Final relevance reranking |
 | **Fusion** | Reciprocal Rank Fusion (RRF) | Combines BM25 + dense scores |
-| **Analytics** | DuckDB over Parquet | SQL queries over 50K+ case records |
-| **Classifier** | InLegalBERT (fine-tuned) + keyword fallback | Contempt risk classification (High/Medium/Low) |
+| **Analytics** | DuckDB over Parquet | SQL queries over 431K+ case chunks |
+| **Classifier** | Deterministic keyword matching | Contempt risk classification (High/Medium/Low) |
 | **Domain Classification** | InLegalBERT zero-shot + K-Means | Legal domain classification (12 categories) |
 | **Database** | SQLite (dev) / PostgreSQL (prod) | Relational data storage |
-| **Deployment** | Render (backend) + Vite build (frontend) | Production hosting |
 
 ---
 
@@ -197,7 +206,7 @@ Nyaya-Drishti/
 │   │   │       └── extractor.py            # 4-agent LLM extraction pipeline
 │   │   ├── action_plans/      # ActionPlan, LimitationRule, CourtCalendar models
 │   │   │   └── services/
-│   │   │       ├── recommendation_pipeline.py  # 4-agent RAG recommendation (V2)
+│   │   │       ├── recommendation_pipeline.py  # Single-agent + 4-agent RAG recommendation
 │   │   │       ├── rag_engine.py               # Hybrid RAG (BM25+Dense+RRF+CrossEncoder)
 │   │   │       ├── rules_engine.py             # Limitation Act deadline computation
 │   │   │       ├── risk_classifier.py          # Contempt risk (BERT + keywords)
@@ -212,8 +221,8 @@ Nyaya-Drishti/
 │   │   └── translation/       # Multi-language support
 │   ├── config/                # Django settings, root URLs
 │   ├── data/
-│   │   ├── chroma_db/         # ChromaDB persistent vector store
-│   │   └── parquet/           # Pre-computed SC/HC judgment embeddings
+│   │   ├── chroma_db/         # ChromaDB persistent vector store  ← download required
+│   │   └── parquet/           # Pre-computed SC/HC judgment embeddings  ← download required
 │   ├── media/judgments/       # Uploaded PDF files
 │   ├── train_contempt_classifier.py       # InLegalBERT fine-tuning script
 │   ├── kaggle_embedding_pipeline.py       # GPU embedding pipeline for 50K+ cases
@@ -247,9 +256,41 @@ Nyaya-Drishti/
 
 - Python 3.12+
 - Node.js 20+
-- API keys for: **NVIDIA NIM** (Llama 70B), **Groq** (Llama 8B)
+- API keys for at least one open-source LLM provider (cloud) **or** a self-hosted LLM via `vLLM` / `Ollama`
 
-### 1. Backend Setup
+### 1. Download Required Data Files
+
+The RAG vector store and pre-computed embeddings are hosted on Hugging Face and **must be downloaded before running the backend**.
+
+**Dataset:** [Harsh2005/nyaya-drishti-data](https://huggingface.co/datasets/Harsh2005/nyaya-drishti-data/tree/main)
+
+Download the following and place them in your backend directory:
+
+```
+backend/
+├── data/
+│   ├── chroma_db/          ← Download the chroma_db folder from HuggingFace
+│   └── parquet/
+│       └── sc_embeddings.parquet   ← Download sc_embeddings.parquet from HuggingFace
+```
+
+You can download manually from the link above, or use the Hugging Face CLI:
+
+```bash
+pip install huggingface_hub
+
+# Download the parquet embeddings
+huggingface-cli download Harsh2005/nyaya-drishti-data sc_embeddings.parquet \
+  --repo-type dataset --local-dir backend/data/parquet/
+
+# Download the ChromaDB vector store
+huggingface-cli download Harsh2005/nyaya-drishti-data --repo-type dataset \
+  --local-dir backend/data/ --include "chroma_db/*"
+```
+
+> **Note:** Without these files the app will still run, but the Similar Cases (RAG precedents) section will return no results.
+
+### 2. Backend Setup
 
 ```bash
 cd backend
@@ -267,9 +308,8 @@ pip install -r requirements-ml.txt  # For InLegalBERT, torch, transformers
 cp .env.example .env
 # Edit .env and fill in:
 #   DJANGO_SECRET_KEY=<generate-a-secret>
-#   NVIDIA_API_KEY=<your-nvidia-nim-key>
-#   GROQ_API_KEY=<your-groq-key>
-#   GEMINI_API_KEY=<your-gemini-key>
+#   GROQ_API_KEY=<your-groq-key>          # or any open-source LLM API
+#   NVIDIA_API_KEY=<your-nvidia-nim-key>  # optional, for 4-agent mode
 
 # Run migrations
 python manage.py migrate
@@ -284,7 +324,7 @@ python seed_data.py
 python manage.py runserver
 ```
 
-### 2. Frontend Setup
+### 3. Frontend Setup
 
 ```bash
 cd frontend
@@ -297,28 +337,17 @@ npm run dev
 # → http://localhost:3000
 ```
 
-### 3. (Optional) Build RAG Corpus
+### 4. (Optional) Rebuild RAG Corpus from Scratch
 
-To populate the vector store with 50K+ Supreme Court and Karnataka HC judgments:
+If you want to re-generate the embeddings rather than downloading the pre-built files:
 
 ```bash
 # Run on Kaggle with GPU (T4/P100):
-# Upload kaggle_embedding_pipeline.py → generates sc_embeddings.parquet + hc_embeddings.parquet
+# Upload kaggle_embedding_pipeline.py → generates sc_embeddings.parquet
 
-# Import locally:
+# Then import locally:
 python manage.py import_kaggle_embeddings --path /path/to/downloaded/
 ```
-
-### 4. (Optional) Train Contempt Classifier
-
-```bash
-# Run on Kaggle/Colab with GPU:
-# Upload train_contempt_classifier.py
-# Download output ZIP → extract to backend/ml_models/contempt_classifier/
-# The backend auto-detects and uses the fine-tuned model
-```
-
----
 
 ## Deployed URL
 
@@ -336,22 +365,22 @@ python manage.py import_kaggle_embeddings --path /path/to/downloaded/
 | **Layout-aware PDF parsing** | `PyMuPDF4LLM` converts PDFs to clean Markdown preserving structure, tables, and formatting — far superior to raw text extraction |
 | **Bi-directional regex segmenter** | Intelligently splits judgments into Header/Body/Operative sections using 37+ legal trigger patterns specific to Indian HC judgments |
 | **4 specialized LLM agents** | Each agent receives only its relevant section with a strict Pydantic schema, reducing hallucination and improving field-level accuracy |
-| **Multi-model strategy** | Fast 8B models (Groq) for structured metadata; powerful 70B models (NVIDIA) for complex legal reasoning — optimizing cost vs. accuracy |
+| **Open-source LLM strategy** | Fast models for structured metadata extraction; larger models for complex legal reasoning — fully swappable with self-hosted alternatives |
 | **Source location annotation** | PyMuPDF spatial search maps each extracted directive back to its exact page/coordinates in the PDF for verification |
 | **Confidence scoring** | Each extraction carries an `extraction_confidence` score; the classifier reports confidence levels for risk assessment |
-| **Fallback chains** | Every LLM call has retry logic with automatic fallback (Groq 8B → NVIDIA 70B) ensuring extraction never fails silently |
+| **Fallback chains** | Every LLM call has retry logic with automatic fallback ensuring extraction never fails silently |
 
 ### 2. Quality of Action Plan Generation
 
 | Technique | How We Achieve It |
 |-----------|-------------------|
-| **Hybrid RAG retrieval** | BM25 (sparse) + InLegalBERT (dense) + Reciprocal Rank Fusion + Cross-Encoder reranking — 4-stage retrieval for maximum relevance |
-| **50K+ case corpus** | Pre-embedded Supreme Court (6 years) + Karnataka HC Division Bench (5 years) judgments provide statistical grounding |
+| **Hybrid RAG retrieval** | BM25 (sparse) + **InLegalBERT** (dense) + Reciprocal Rank Fusion + Cross-Encoder reranking — 4-stage retrieval for maximum relevance |
+| **431K+ chunk corpus** | Pre-embedded Supreme Court judgments (20 years) provide statistical grounding for precedent matching |
 | **DuckDB analytics** | Instant SQL queries over parquet files compute real win-rate statistics (allowed/dismissed/partly allowed rates) |
-| **4-agent adversarial reasoning** | Precedent Researcher → Devil's Advocate → Risk Auditor → Decision Synthesizer — ensures balanced, well-argued recommendations |
+| **Dual pipeline modes** | Single-agent (default, low compute) and 4-agent adversarial mode (for government on-premise servers) — both produce APPEAL/COMPLY with full reasoning |
 | **Deterministic rules engine** | Limitation Act §4, §12 deadline computation with court calendar holiday awareness — no LLM guesswork for legal deadlines |
 | **Court hierarchy logic** | Automatic detection of correct appellate forum (Single Judge → Division Bench → Supreme Court) based on case type and bench composition |
-| **Contempt risk classification** | Hybrid InLegalBERT (fine-tuned on 90+ curated legal patterns) + keyword fallback classifier |
+| **Contempt risk classification** | Deterministic keyword classifier — 22 High-risk phrases + 14 Medium-risk phrases matched against the operative order text |
 | **Result caching** | Full recommendation JSON cached in `full_rag_recommendation` field — no redundant LLM calls on revisit |
 
 ### 3. Effectiveness of Human Verification
@@ -392,7 +421,7 @@ python manage.py import_kaggle_embeddings --path /path/to/downloaded/
 | `GET` | `/api/cases/{uuid}/status/` | Processing status of a case |
 | `GET` | `/api/cases/{uuid}/action-plan/` | Get action plan for a case |
 | `POST` | `/api/cases/action-plans/{id}/review/` | Submit human review (approve/edit/reject) |
-| `POST` | `/api/action-plans/recommend/` | Trigger 4-agent RAG recommendation pipeline |
+| `POST` | `/api/action-plans/recommend/` | Trigger recommendation pipeline |
 | `POST` | `/api/cases/{case}/judgments/{judgment}/appeal-strategy/` | Generate appeal strategy |
 | `GET` | `/api/cases/judgments/{uuid}/pdf/` | Serve judgment PDF |
 
@@ -401,12 +430,12 @@ python manage.py import_kaggle_embeddings --path /path/to/downloaded/
 ## ML Models Used
 
 | Model | Source | Purpose | Runs On |
-|-------|--------|---------|---------|
-| **Llama 3.1 8B Instant** | Groq Cloud | Fast extraction (Agents 1 & 4) | Cloud API |
-| **Llama 3.3 70B Instruct** | NVIDIA NIM | Complex reasoning (Agents 2 & 3) | Cloud API |
-| **InLegalBERT** | `law-ai/InLegalBERT` | Legal embeddings (768-dim) | Local (CPU/GPU) |
-| **InLegalBERT (fine-tuned)** | Custom training | Contempt risk classification | Local (CPU) |
-| **ms-marco-MiniLM-L-6-v2** | `cross-encoder/` | Cross-encoder reranking | Local (CPU) |
+|-------|--------|---------|---------| 
+| **Open-source LLM (fast)** | Cloud API or self-hosted | Structured extraction (Agents 1 & 4) | Cloud API / Local |
+| **Open-source LLM (large)** | Cloud API or self-hosted | Complex legal reasoning (Agents 2 & 3) | Cloud API / Local |
+| **InLegalBERT** | `law-ai/InLegalBERT` (HuggingFace) | Legal embeddings (768-dim), trained on 5.4M Indian legal docs | Local (CPU/GPU) |
+| **Keyword Classifier** | Custom rule-based | Contempt risk classification (22 high-risk + 14 medium-risk legal phrases) | Local (no GPU needed) |
+| **Cross-Encoder (open-source)** | HuggingFace | Cross-encoder reranking for RAG | Local (CPU) |
 | **BM25Okapi** | `rank-bm25` | Sparse keyword retrieval | Local (CPU) |
 
 ---
