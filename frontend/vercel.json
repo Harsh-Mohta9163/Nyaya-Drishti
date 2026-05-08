@@ -1,0 +1,16 @@
+{
+  "rewrites": [
+    {
+      "source": "/api/:path*",
+      "destination": "https://YOUR_HUGGINGFACE_SPACE_URL/api/:path*"
+    },
+    {
+      "source": "/media/:path*",
+      "destination": "https://YOUR_HUGGINGFACE_SPACE_URL/media/:path*"
+    },
+    {
+      "source": "/(.*)",
+      "destination": "/index.html"
+    }
+  ]
+}
