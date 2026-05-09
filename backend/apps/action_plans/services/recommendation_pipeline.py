@@ -427,7 +427,6 @@ def generate_recommendation(
         if score < 0.85:
             logger.info(f"Dropping weak chunk (cosine sim {score:.4f}): {cid}")
             continue
-            
         if cid not in grouped_cases:
             grouped_cases[cid] = {
                 "metadata": c.get('metadata', {}),

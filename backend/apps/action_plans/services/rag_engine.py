@@ -51,10 +51,18 @@ def _get_collection():
     No API key needed — runs 100% locally."""
     global _chroma_client, _collection
     if _collection is None:
-        db_path = os.path.join(
+        base_data_path = os.path.join(
             os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__)))),
-            "data", "chroma_db",
+            "data"
         )
+        db_path = os.path.join(base_data_path, "chroma_db_export")
+        
+        # Check if the zip extracted directly into data/ instead of data/chroma_db_export/
+        if not os.path.exists(os.path.join(db_path, "chroma.sqlite3")):
+            if os.path.exists(os.path.join(base_data_path, "chroma.sqlite3")):
+                db_path = base_data_path
+                logger.info("Found chroma.sqlite3 in data/, using base_data_path")
+                
         os.makedirs(db_path, exist_ok=True)
         _chroma_client = chromadb.PersistentClient(path=db_path)
         
@@ -73,7 +81,7 @@ def reset_collection():
     global _chroma_client, _collection
     db_path = os.path.join(
         os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__)))),
-        "data", "chroma_db",
+        "data", "chroma_db_export",
     )
     os.makedirs(db_path, exist_ok=True)
     _chroma_client = chromadb.PersistentClient(path=db_path)
