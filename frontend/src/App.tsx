@@ -288,11 +288,9 @@ function MainApp() {
                               <VerifyActions 
                               actions={actions}
                               pdfUrl={
-                                judgment?.pdf_file 
-                                  ? (judgment.pdf_file.startsWith('http') 
-                                      ? judgment.pdf_file 
-                                      : `${import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:8000'}${judgment.pdf_file.startsWith('/') ? '' : '/media/'}${judgment.pdf_file}`)
-                                  : (judgment?.pdf_storage_url || null)
+                                judgment?.id 
+                                  ? `${import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:8000'}/api/cases/judgments/${judgment.id}/pdf/`
+                                  : null
                               }
                               highlightedPage={highlightedPage}
                               onActionClick={(pageNum) => {
