@@ -140,18 +140,27 @@ class CaseExtractView(APIView):
             pdf_path = judgment.pdf_file.path
             markdown_text = extract_text_from_pdf(pdf_path)
 
+            # Count pages once — used to route large PDFs through OpenRouter
+            # (Groq 8B 413s and NVIDIA NIM read-times-out on long inputs).
+            try:
+                with fitz.open(pdf_path) as _doc:
+                    page_count = _doc.page_count
+            except Exception:
+                page_count = 0
+
             # 3. Regex Segmenter
             segments = segment_judgment(markdown_text)
 
-            # 4. Gemini Extraction (3 calls)
+            # 4. LLM Extraction (4 agents)
             judgment.processing_status = "extracting"
             judgment.save()
-            
+
             extracted_data = extract_structured_data(
                 judgment_id=str(judgment.id),
                 header_text=segments.get("header", ""),
                 middle_text=segments.get("middle", ""),
-                operative_text=segments.get("operative_order", "")
+                operative_text=segments.get("operative_order", ""),
+                page_count=page_count,
             )
 
             # Refresh from DB — extract_structured_data saves internally
@@ -174,9 +183,22 @@ class CaseExtractView(APIView):
             return Response(CaseSerializer(case).data, status=status.HTTP_201_CREATED)
 
         except Exception as e:
+            import traceback, logging
+            tb = traceback.format_exc()
+            logging.getLogger(__name__).error(f"Extraction failed for judgment {judgment.id}:\n{tb}")
             judgment.processing_status = "failed"
             judgment.save()
-            return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            # Include the exception class + traceback summary so the frontend
+            # surfaces something actionable instead of a generic 500.
+            return Response(
+                {
+                    "error": f"{type(e).__name__}: {e}",
+                    "judgment_id": str(judgment.id),
+                    "case_id": str(judgment.case_id),
+                    "stage": judgment.processing_status,
+                },
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
 
 
 class CaseStatusView(APIView):

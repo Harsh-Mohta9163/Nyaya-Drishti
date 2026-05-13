@@ -1,7 +1,11 @@
 {
   "permissions": {
     "allow": [
-      "Bash(dir /s /b \"c:\\\\Users\\\\HARSH MOHTA\\\\OneDrive - iiit-b\\\\Desktop\\\\Nyaya-Drishti\\\\backend\")"
+      "Bash(dir /s /b \"c:\\\\Users\\\\HARSH MOHTA\\\\OneDrive - iiit-b\\\\Desktop\\\\Nyaya-Drishti\\\\backend\")",
+      "Bash(python *)",
+      "Bash('C:\\\\Users\\\\HARSH MOHTA\\\\OneDrive - iiit-b\\\\Desktop\\\\Nyaya-Drishti\\\\backend\\\\.venv\\\\Scripts\\\\python.exe' -c ' *)",
+      "Bash('C:\\\\Users\\\\HARSH MOHTA\\\\OneDrive - iiit-b\\\\Desktop\\\\Nyaya-Drishti\\\\backend\\\\.venv\\\\Scripts\\\\python.exe' -X utf8 -c ' *)",
+      "Bash(\".venv\\\\Scripts\\\\python.exe\" -X utf8 _test_salvage.py)"
     ]
   }
 }

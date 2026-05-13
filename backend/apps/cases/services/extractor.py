@@ -73,6 +73,47 @@ class ComplianceExtraction(BaseModel):
 # LLM Provider Abstraction
 # ==============================================================================
 
+def _salvage_json(content: str) -> dict:
+    """Try hard to recover a JSON object from a noisy model response.
+
+    Llama 70B occasionally wraps the JSON in markdown fences, adds an
+    explanation paragraph before/after, or truncates mid-key on long inputs.
+    We pull the first balanced { ... } substring and try to parse it.
+    """
+    if not content:
+        return {}
+    s = content.strip()
+    if s.startswith("```"):
+        s = s.strip("`")
+        if s.startswith("json"):
+            s = s[4:].strip()
+    # Find first balanced brace
+    start = s.find("{")
+    if start == -1:
+        return {}
+    depth = 0
+    end = -1
+    for i, ch in enumerate(s[start:], start=start):
+        if ch == "{":
+            depth += 1
+        elif ch == "}":
+            depth -= 1
+            if depth == 0:
+                end = i + 1
+                break
+    if end == -1:
+        # Truncated — try appending closing braces to balance
+        candidate = s[start:] + ("}" * abs(depth) if depth > 0 else "")
+        try:
+            return json.loads(candidate)
+        except json.JSONDecodeError:
+            return {}
+    try:
+        return json.loads(s[start:end])
+    except json.JSONDecodeError:
+        return {}
+
+
 def _call_agent_70b(prompt: str, schema: type[BaseModel], temperature: float) -> dict:
     """Agent 2 & 3: Calls NVIDIA 70B for heavy reasoning."""
     api_key = settings.NVIDIA_API_KEY
@@ -94,6 +135,7 @@ def _call_agent_70b(prompt: str, schema: type[BaseModel], temperature: float) ->
         "response_format": {"type": "json_object"},
     }
 
+    last_error = None
     for attempt in range(5):
         try:
             print(f"  [NVIDIA 70B] Calling {model} (attempt {attempt+1}/5)...")
@@ -101,24 +143,54 @@ def _call_agent_70b(prompt: str, schema: type[BaseModel], temperature: float) ->
                 f"{base_url}/chat/completions",
                 headers=headers,
                 json=payload,
-                timeout=120,
+                timeout=180,
             )
             if resp.status_code in (429, 503):
                 wait = 30 * (attempt + 1)
                 print(f"  [NVIDIA 70B] Rate limited, waiting {wait}s...")
                 time.sleep(wait)
                 continue
+            if resp.status_code == 413 or resp.status_code == 400:
+                # Payload too large or bad request — likely context overflow.
+                # Truncate the prompt aggressively and retry once.
+                if attempt == 0 and len(full_prompt) > 30000:
+                    truncated = full_prompt[:30000] + "\n\n[...truncated due to context limit...]\n\nRespond ONLY with valid JSON matching the schema above."
+                    payload["messages"][0]["content"] = truncated
+                    print(f"  [NVIDIA 70B] {resp.status_code} on {len(full_prompt)}-char prompt; retrying with 30k-char truncation")
+                    continue
+                # Give up gracefully — return empty dict so caller can use defaults
+                print(f"  [NVIDIA 70B] {resp.status_code} on retry; returning empty extraction (downstream fields will use defaults)")
+                return {}
             resp.raise_for_status()
             content = resp.json()["choices"][0]["message"]["content"]
-            return json.loads(content)
+            try:
+                return json.loads(content)
+            except json.JSONDecodeError:
+                # Salvage the JSON if the model added preamble or truncated mid-stream.
+                recovered = _salvage_json(content)
+                if recovered:
+                    print(f"  [NVIDIA 70B] Salvaged JSON from noisy response ({len(content)} chars)")
+                    return recovered
+                print(f"  [NVIDIA 70B] Could not parse JSON; first 200 chars: {content[:200]!r}")
+                last_error = ValueError("Malformed JSON from 70B")
+                time.sleep(10)
+                continue
         except requests.exceptions.HTTPError as e:
             status = e.response.status_code if e.response else 0
+            last_error = e
             if status in (429, 503):
                 wait = 30 * (attempt + 1)
                 time.sleep(wait)
             else:
                 raise
-    raise RuntimeError("NVIDIA Llama 70B failed after 5 retries")
+        except Exception as e:
+            last_error = e
+            print(f"  [NVIDIA 70B] Unexpected error: {e}")
+            time.sleep(10)
+    # All retries exhausted — don't blow up the whole pipeline.
+    # Returning {} lets downstream fill with defaults so the user still gets a Case.
+    print(f"  [NVIDIA 70B] All 5 attempts failed (last: {last_error}); returning empty extraction")
+    return {}
 
 
 def _call_agent_8b(prompt: str, schema: type[BaseModel], temperature: float) -> dict:
@@ -190,19 +262,45 @@ def _call_agent_8b(prompt: str, schema: type[BaseModel], temperature: float) -> 
         "Authorization": f"Bearer {nvidia_key}",
         "Content-Type": "application/json",
     }
-    try:
-        print(f"  [NVIDIA 70B Fallback] Calling meta/llama-3.3-70b-instruct...")
-        resp = requests.post(
-            f"{nvidia_url}/chat/completions",
-            headers=nvidia_headers,
-            json=nvidia_payload,
-            timeout=120,
-        )
-        resp.raise_for_status()
-        content = resp.json()["choices"][0]["message"]["content"]
-        return json.loads(content)
-    except Exception as e:
-        raise RuntimeError(f"Both Groq 8B and NVIDIA 70B failed. Last error: {e}")
+    # Big PDFs blow past 8B context — retry the NVIDIA fallback with a truncated prompt
+    # if the original was too large.
+    for attempt in range(2):
+        try:
+            if attempt == 1 and len(full_prompt) > 30000:
+                truncated = full_prompt[:30000] + "\n\n[...truncated...]\n\nRespond ONLY with valid JSON matching the schema."
+                nvidia_payload["messages"][0]["content"] = truncated
+                print(f"  [NVIDIA 70B Fallback] Retry with 30k-char truncation")
+            print(f"  [NVIDIA 70B Fallback] Calling meta/llama-3.3-70b-instruct (attempt {attempt+1}/2)...")
+            resp = requests.post(
+                f"{nvidia_url}/chat/completions",
+                headers=nvidia_headers,
+                json=nvidia_payload,
+                timeout=180,
+            )
+            if resp.status_code in (400, 413):
+                # context overflow — fall through to truncation retry
+                if attempt == 0:
+                    continue
+                print(f"  [NVIDIA 70B Fallback] {resp.status_code} on retry; returning empty extraction")
+                return {}
+            resp.raise_for_status()
+            content = resp.json()["choices"][0]["message"]["content"]
+            try:
+                return json.loads(content)
+            except json.JSONDecodeError:
+                recovered = _salvage_json(content)
+                if recovered:
+                    return recovered
+                print(f"  [NVIDIA 70B Fallback] Could not parse JSON; returning empty")
+                return {}
+        except Exception as e:
+            last_error = e
+            if attempt == 1:
+                # Final attempt — return empty rather than crashing the whole pipeline.
+                print(f"  [NVIDIA 70B Fallback] Both Groq and NVIDIA failed: {e}; returning empty extraction")
+                return {}
+            time.sleep(5)
+    return {}
 
 
 def _sanitize_disposition(val: str) -> str:
@@ -229,17 +327,100 @@ def _safe_str(val) -> str:
 # Extraction Service (4 Agents)
 # ==============================================================================
 
+def _call_openrouter_llama(prompt: str, schema: type[BaseModel], temperature: float) -> dict:
+    """Route large-PDF agent calls to OpenRouter's Llama 3.3 70B Instruct.
+
+    Groq 8B 413s on long inputs and NVIDIA NIM read-times-out at 180s on the
+    same prompts. OpenRouter serves the same `meta-llama/llama-3.3-70b-instruct`
+    model on a more reliable infrastructure and accepts much larger payloads.
+    """
+    api_key = getattr(settings, "OPENROUTER_API_KEY", "") or os.environ.get("OPENROUTER_API_KEY", "")
+    base_url = getattr(settings, "OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1")
+    if not api_key:
+        print(f"  [OpenRouter] OPENROUTER_API_KEY not set — cannot route large PDF; falling back to NVIDIA 70B")
+        return _call_agent_70b(prompt, schema, temperature)
+
+    model = "meta-llama/llama-3.3-70b-instruct"
+    schema_json = json.dumps(schema.model_json_schema(), indent=2)
+    full_prompt = f"{prompt}\n\nRespond ONLY with valid JSON matching this schema:\n{schema_json}"
+
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json",
+        # OpenRouter recommends these for ranking / quota attribution.
+        "HTTP-Referer": "https://nyaya-drishti.onrender.com/",
+        "X-Title": "NyayaDrishti CCMS",
+    }
+    payload = {
+        "model": model,
+        "messages": [{"role": "user", "content": full_prompt}],
+        "temperature": temperature,
+        "max_tokens": 4096,
+        "response_format": {"type": "json_object"},
+    }
+
+    last_error = None
+    for attempt in range(3):
+        try:
+            print(f"  [OpenRouter Llama-70B] Calling {model} (attempt {attempt+1}/3, prompt {len(full_prompt)} chars)...")
+            resp = requests.post(
+                f"{base_url.rstrip('/')}/chat/completions",
+                headers=headers,
+                json=payload,
+                timeout=300,
+            )
+            if resp.status_code in (429, 503):
+                wait = 20 * (attempt + 1)
+                print(f"  [OpenRouter] Rate limited ({resp.status_code}); waiting {wait}s...")
+                time.sleep(wait)
+                continue
+            resp.raise_for_status()
+            content = resp.json()["choices"][0]["message"]["content"]
+            try:
+                return json.loads(content)
+            except json.JSONDecodeError:
+                recovered = _salvage_json(content)
+                if recovered:
+                    print(f"  [OpenRouter] Salvaged JSON from noisy response")
+                    return recovered
+                last_error = ValueError(f"Malformed JSON; first 200 chars: {content[:200]!r}")
+                continue
+        except Exception as e:
+            last_error = e
+            print(f"  [OpenRouter] Attempt {attempt+1} failed: {e}")
+            time.sleep(10)
+
+    print(f"  [OpenRouter] All retries failed ({last_error}); falling back to NVIDIA 70B")
+    return _call_agent_70b(prompt, schema, temperature)
+
+
 def extract_structured_data(
     judgment_id: str,
     header_text: str,
     middle_text: str,
-    operative_text: str
+    operative_text: str,
+    page_count: int = 0,
 ) -> dict:
     judgment = Judgment.objects.get(id=judgment_id)
     case = judgment.case
     extracted_data = {}
 
-    # --- AGENT 1: Registry Clerk (8B) ---
+    # Large-PDF routing: anything >= OPENROUTER_LARGE_PDF_THRESHOLD pages
+    # (default 25) goes through OpenRouter for ALL 4 agents. Small PDFs keep
+    # the Groq 8B + NVIDIA 70B path which is cheaper.
+    large_threshold = getattr(settings, "OPENROUTER_LARGE_PDF_THRESHOLD", 25)
+    use_openrouter = page_count >= large_threshold
+    if use_openrouter:
+        print(f"  [Extractor] PDF has {page_count} pages (>= {large_threshold}); routing all agents via OpenRouter Llama 3.3 70B")
+        agent_8b_call = _call_openrouter_llama
+        agent_70b_call = _call_openrouter_llama
+    else:
+        if page_count:
+            print(f"  [Extractor] PDF has {page_count} pages (< {large_threshold}); using Groq 8B + NVIDIA 70B path")
+        agent_8b_call = _call_agent_8b
+        agent_70b_call = _call_agent_70b
+
+    # --- AGENT 1: Registry Clerk ---
     if header_text:
         print(f"  [Agent 1] Registry Clerk (Header)...")
         header_prompt = (
@@ -247,7 +428,7 @@ def extract_structured_data(
             "Extract every field exactly as it appears. Pay attention to case number, date, judges, and parties.\n"
             f"Document:\n{header_text}"
         )
-        extracted_data["registry"] = _call_agent_8b(header_prompt, RegistryExtraction, temperature=0.0)
+        extracted_data["registry"] = agent_8b_call(header_prompt, RegistryExtraction, temperature=0.0)
 
     # --- AGENT 4: Compliance Officer (70B — most critical for Theme 11) ---
     if operative_text:
@@ -273,12 +454,13 @@ def extract_structured_data(
             f"Respondent: {case.respondent_name or 'Unknown'}\n\n"
             f"OPERATIVE ORDER TEXT:\n{operative_text}"
         )
-        # Use 70B for the most critical extraction — court orders must be complete and accurate
-        print(f"  [Sleep] Waiting 15s before 70B call for compliance...")
-        time.sleep(15)
-        extracted_data["compliance"] = _call_agent_70b(operative_prompt, ComplianceExtraction, temperature=0.1)
+        # OpenRouter has no NIM rate-limit issues — skip the 15s sleep for the large-PDF path.
+        if not use_openrouter:
+            print(f"  [Sleep] Waiting 15s before 70B call for compliance...")
+            time.sleep(15)
+        extracted_data["compliance"] = agent_70b_call(operative_prompt, ComplianceExtraction, temperature=0.1)
 
-    # --- AGENT 2: Legal Analyst (70B) ---
+    # --- AGENT 2: Legal Analyst ---
     if middle_text:
         print(f"  [Agent 2] Legal Analyst (Facts/Issues)...")
         analyst_prompt = (
@@ -286,11 +468,12 @@ def extract_structured_data(
             "Write in clear, professional prose.\n"
             f"Document:\n{middle_text}"
         )
-        extracted_data["analyst"] = _call_agent_70b(analyst_prompt, AnalystExtraction, temperature=0.2)
-        
-        # Prevent 429 rate limits on NVIDIA's free tier for the second 70B call
-        print(f"  [Sleep] Waiting 15s before next 70B call...")
-        time.sleep(15)
+        extracted_data["analyst"] = agent_70b_call(analyst_prompt, AnalystExtraction, temperature=0.2)
+
+        if not use_openrouter:
+            # NVIDIA's free tier rate-limits; OpenRouter doesn't.
+            print(f"  [Sleep] Waiting 15s before next 70B call...")
+            time.sleep(15)
 
     # --- AGENT 3: Precedent Scholar (70B) ---
     if middle_text:
@@ -300,7 +483,7 @@ def extract_structured_data(
             "For citations, identify how the court used them (relied_upon, distinguished, overruled, referred).\n"
             f"Document:\n{middle_text}"
         )
-        extracted_data["scholar"] = _call_agent_70b(scholar_prompt, ScholarExtraction, temperature=0.1)
+        extracted_data["scholar"] = agent_70b_call(scholar_prompt, ScholarExtraction, temperature=0.1)
 
     # Save raw JSON backup
     judgment.raw_extracted_json = extracted_data
@@ -344,11 +527,17 @@ def extract_structured_data(
         if appeal_type: judgment.appeal_type = appeal_type
 
         extracted_case_number = _safe_str(h.get("case_number", ""))
-        if extracted_case_number:
+        # Dedup: only if case_number is non-trivial (>5 chars, not "Pending" placeholder).
+        # We skip dedup entirely if the number is too short or matches the temp pattern,
+        # to prevent unrelated PDFs from being merged into the same Case row.
+        is_dedup_safe = (
+            len(extracted_case_number) > 5
+            and not extracted_case_number.lower().startswith("pending")
+        )
+        if is_dedup_safe:
             existing = Case.objects.filter(
                 court_name=_safe_str(h.get("court_name", case.court_name)),
                 case_number=extracted_case_number,
-                case_year=case.case_year,
             ).exclude(id=case.id).first()
 
             if existing:
@@ -358,6 +547,7 @@ def extract_structured_data(
                 case = existing
                 old_case.delete()
 
+        if extracted_case_number:
             case.case_number = extracted_case_number
 
         case.court_name = _safe_str(h.get("court_name", case.court_name))

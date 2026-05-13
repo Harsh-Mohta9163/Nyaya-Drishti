@@ -168,6 +168,7 @@ class GenerateRecommendationView(APIView):
                 court_directions=judgment.court_directions if 'judgment' in locals() and judgment else [],
                 operative_order_text=judgment.operative_order_text if 'judgment' in locals() and judgment else "",
                 ratio_decidendi=judgment.ratio_decidendi if 'judgment' in locals() and judgment else "",
+                financial_implications=judgment.financial_implications if 'judgment' in locals() and judgment else None,
                 use_rag=True
             )
             

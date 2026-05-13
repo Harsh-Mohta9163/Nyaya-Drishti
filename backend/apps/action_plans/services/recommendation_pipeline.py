@@ -132,6 +132,110 @@ COURT_HIERARCHY = {
     "supreme_court": {"next": "Supreme Court (Review/Curative)", "appeal_type": "Review Petition under Art. 137"},
 }
 
+# Keywords used to detect whether a party in petitioner_name / respondent_name is the State.
+# Match aggressively — government parties are referenced under many names in Indian judgments.
+_GOVT_PARTY_TOKENS = [
+    "state of", "state government", "government of", "union of india", "uoi",
+    "republic of india", "uoi & ors", "secretary", "commissioner",
+    "collector", "deputy commissioner", "asst commissioner", "assistant commissioner",
+    "tahsildar", "tehsildar", "lokayukta", "central bureau", "cbi",
+    "directorate", "department of", "department,", "municipal corporation",
+    "panchayat", "municipality", "ministry of", "the state", "karnataka state",
+    "bbmp", "bda", "kiadb", "kptcl", "kseb", "kpcl", "bescom",
+    "principal secretary", "additional chief secretary", "chief secretary",
+    "income tax officer", "ito ", "assessing officer", "ao ",
+    "labour enforcement officer", "labour commissioner", "factories inspector",
+    "public works", "pwd", "national highway", "nhai",
+    "election commission", "ec ", "kerc",
+    "registrar of", "sub-registrar", "land acquisition officer", "lao ",
+    "deputy director", "joint director", "additional director",
+    "commercial tax", "central excise", "central tax", "gst commissioner",
+    "the commissioner", "the deputy commissioner", "the director",
+    "the principal commissioner", "principal commissioner",
+    "respondent state", "appellant state", "petitioner state",
+]
+
+
+def _party_is_government(name: str) -> bool:
+    if not name:
+        return False
+    n = name.lower()
+    return any(tok in n for tok in _GOVT_PARTY_TOKENS)
+
+
+def _determine_government_role(petitioner: str, respondent: str,
+                                winning_party: str, disposition: str,
+                                case_type: str = "") -> dict:
+    """Detect whether the government won or lost, regardless of disposition wording.
+
+    The CCMS pipeline serves the government. When the government is the APPELLANT
+    (criminal appeals, revenue appeals, writ appeals filed by the State),
+    a "Dismissed" disposition means the government LOST — the opposite of the
+    intuition for original writ petitions where dismissed=government won.
+
+    Returns a dict with:
+      side: "PETITIONER" | "RESPONDENT" | "BOTH" | "UNCLEAR"
+      outcome: "GOVT_WON" | "GOVT_LOST" | "UNCLEAR"
+      explanation: human-readable one-line summary
+    """
+    pet_is_govt = _party_is_government(petitioner)
+    resp_is_govt = _party_is_government(respondent)
+
+    if pet_is_govt and resp_is_govt:
+        side = "BOTH"
+    elif pet_is_govt:
+        side = "PETITIONER"
+    elif resp_is_govt:
+        side = "RESPONDENT"
+    else:
+        side = "UNCLEAR"
+
+    disp = (disposition or "").lower()
+    win = (winning_party or "").lower()
+
+    # Map disposition + side -> outcome
+    # "Allowed" / "Partly Allowed" means the petitioner/appellant's prayer succeeded.
+    # "Dismissed" / "Rejected" means the petitioner/appellant failed.
+    pet_won = (
+        "allowed" in disp or "granted" in disp
+        or "petitioner" in win or "appellant" in win
+    )
+    resp_won = (
+        "dismissed" in disp or "rejected" in disp or "quashed" not in disp and "respondent" in win
+    )
+
+    if side == "PETITIONER":
+        outcome = "GOVT_WON" if pet_won else ("GOVT_LOST" if "dismissed" in disp or "rejected" in disp else "UNCLEAR")
+    elif side == "RESPONDENT":
+        outcome = "GOVT_WON" if ("dismissed" in disp or "rejected" in disp) else ("GOVT_LOST" if pet_won else "UNCLEAR")
+    elif side == "BOTH":
+        outcome = "UNCLEAR"
+    else:
+        # Fall back to winning_party_type only
+        if "respondent" in win:
+            outcome = "GOVT_WON_LIKELY"  # most cases have govt as respondent
+        elif "petitioner" in win or "appellant" in win:
+            outcome = "GOVT_LOST_LIKELY"
+        else:
+            outcome = "UNCLEAR"
+
+    explanations = {
+        ("PETITIONER", "GOVT_WON"): "Government was the petitioner/appellant and its prayer was granted.",
+        ("PETITIONER", "GOVT_LOST"): "Government was the petitioner/appellant and its prayer was dismissed — the State LOST this case.",
+        ("RESPONDENT", "GOVT_WON"): "Government was the respondent and the petition was dismissed — the State WON.",
+        ("RESPONDENT", "GOVT_LOST"): "Government was the respondent and the petition was allowed — the State LOST.",
+        ("BOTH", "UNCLEAR"): "Both sides include government entities (inter-departmental dispute).",
+        ("UNCLEAR", "GOVT_WON_LIKELY"): "Could not identify government party from names; based on winning_party=Respondent the State likely won.",
+        ("UNCLEAR", "GOVT_LOST_LIKELY"): "Could not identify government party from names; based on winning_party=Petitioner/Appellant the State likely lost.",
+    }
+    explanation = explanations.get(
+        (side, outcome),
+        f"Insufficient signal (side={side}, disposition={disposition!r}, winning_party={winning_party!r})."
+    )
+
+    return {"side": side, "outcome": outcome, "explanation": explanation}
+
+
 def _determine_appeal_forum(court: str, bench: str = "", case_type: str = "") -> dict:
     """Determine the correct next appellate forum based on Indian court hierarchy."""
     court_lower = court.lower()
@@ -198,7 +302,9 @@ def _call_llm_provider(prompt: str, response_model, system_prompt: str, is_agent
     if use_openrouter:
         base_url = "https://openrouter.ai/api/v1"
         api_key = os.environ.get("OPENROUTER_API_KEY", "")
-        model = "deepseek/deepseek-r1" if is_agent4 else "deepseek/deepseek-chat"
+        # Use the explicit V3 snapshot — the generic "deepseek-chat" slug points
+        # to an older model that produces noticeably thinner reasoning.
+        model = "deepseek/deepseek-r1" if is_agent4 else "deepseek/deepseek-chat-v3-0324"
         provider_name = "OpenRouter"
     else:
         base_url = getattr(settings, "NVIDIA_BASE_URL", "https://integrate.api.nvidia.com/v1")
@@ -266,10 +372,35 @@ def _build_case_context(case_text: str, area_of_law: str, court: str,
                         disposition: str = "", winning_party: str = "",
                         case_type: str = "", bench: str = "",
                         petitioner: str = "", respondent: str = "",
-                        issues: List[str] = None) -> str:
+                        issues: List[str] = None,
+                        financial_implications: list = None,
+                        operative_order_text: str = "") -> str:
     """Build a structured case summary that all agents receive."""
     appeal_info = _determine_appeal_forum(court, bench, case_type)
+    govt_role = _determine_government_role(petitioner, respondent, winning_party, disposition, case_type)
     issues_text = "\n".join(f"  {i+1}. {iss}" for i, iss in enumerate(issues or []))
+
+    # Surface explicit rupee/percentage figures as their own block so the agents
+    # cannot claim "no financial exposure" when the operative order has numbers.
+    fin_block = ""
+    if financial_implications:
+        if isinstance(financial_implications, dict):
+            fin_lines = [f"  - {k}: {v}" for k, v in financial_implications.items() if v]
+        else:
+            fin_lines = [f"  - {str(f)}" for f in financial_implications if f]
+        if fin_lines:
+            fin_block = "\n=== EXTRACTED FINANCIAL FIGURES (verbatim from operative order) ===\n" + "\n".join(fin_lines) + "\n=== END FINANCIAL FIGURES ==="
+
+    # Pull rupee amounts and percentages out of the operative order even if the
+    # structured field is empty. Defends against the Math Trap.
+    operative_numbers = []
+    if operative_order_text:
+        operative_numbers += re.findall(r'(?:₹|Rs\.?|INR)\s*[\d,]+(?:\.\d+)?(?:\s*(?:lakh|crore|lakhs|crores))?', operative_order_text)
+        operative_numbers += re.findall(r'\d+(?:\.\d+)?\s*%\s*(?:deduction|developmental|interest|p\.?a\.?|per annum)?', operative_order_text)
+    if operative_numbers:
+        fin_block += "\n=== NUMBERS DETECTED IN OPERATIVE ORDER (do NOT claim 'no financial data') ===\n"
+        fin_block += "\n".join(f"  - {n}" for n in operative_numbers[:30])
+        fin_block += "\n=== END NUMBERS ==="
 
     return f"""=== CURRENT CASE DETAILS ===
 Court: {court}
@@ -282,12 +413,26 @@ Respondent: {respondent or 'Not specified'}
 CURRENT DISPOSITION: {disposition or 'Unknown'}
 WINNING PARTY: {winning_party or 'Unknown'}
 
+═══ GOVERNMENT ROLE (AUTHORITATIVE — do NOT contradict) ═══
+Government Side: {govt_role['side']}  (PETITIONER means State was the appellant/petitioner; RESPONDENT means State was the respondent)
+Outcome for Government: {govt_role['outcome']}
+Interpretation: {govt_role['explanation']}
+
+CRITICAL: When Outcome = GOVT_LOST or GOVT_LOST_LIKELY:
+  • The State LOST this case. Do NOT say "the government prevailed".
+  • Apply COST-OF-FURTHER-LITIGATION calculus before recommending APPEAL.
+When Outcome = GOVT_WON or GOVT_WON_LIKELY:
+  • The State WON. Recommend COMPLY with high confidence. appeal_grounds MUST be [].
+  • If the petition was simply dismissed, primary_reasoning should note that no
+    affirmative directions exist against the State — there is nothing to "comply" with;
+    the file may simply be closed.
+
 CORRECT NEXT APPELLATE FORUM: {appeal_info['next']}
 APPEAL TYPE: {appeal_info['appeal_type']}
 
 LEGAL ISSUES:
 {issues_text or '  Not specified'}
-
+{fin_block}
 CASE SUMMARY:
 {case_text[:3000]}
 === END CASE DETAILS ==="""
@@ -345,15 +490,36 @@ INTEREST RATES:
 
 Before writing any argument about money, ask yourself: "Does this argument, if accepted by the court, result in the government paying MORE or LESS?" If MORE, do NOT make that argument.
 
+═══ ANTI-PARROT RULE (CRITICAL — most common failure mode) ═══
+When the government LOST, the court's "Ratio Decidendi" contains the legal reasoning the court ACCEPTED FROM THE WINNING PRIVATE PARTY. These are exactly the arguments the government must DISPROVE — not repeat.
+
+Before adding any appeal_ground, run this check:
+  "Did THIS court rely on this reasoning to rule against the government?"
+  - If YES → this argument helped the OTHER side win. FLIP it. Your ground must explain why this reasoning is wrong, why the court should not have accepted it.
+  - If NO → it may be a fresh ground.
+
+Concrete examples of PARROTING (DO NOT do this):
+  ❌ "The court erred in relying on consent award without consent" — this is what the WINNING party argued; the court ACCEPTED it. The government's ground would be the OPPOSITE: "The consent award was valid comparable evidence and the HC wrongly disregarded it."
+  ❌ "Failure to consider appellants' evidence" — this is the winners' argument; flip to: "HC over-weighted a single exemplar sale deed when consent-award and LAO valuation provided more reliable contemporaneous benchmarks."
+
+Format for a proper government appeal ground:
+  "The court erred in [accepting argument X / applying principle Y / ignoring fact Z] because [counter-reason grounded in statute or prior SC ruling]."
+
+═══ HALLUCINATION GUARDRAILS ═══
+- Do NOT cite any constitutional article (Article 14, 19, 21, 25, 26, 300A, etc.) UNLESS the verbatim judgment text in front of you cites that article. If unsure, leave it out.
+- Do NOT cite case names or citations not present in the extracted ratio decidendi.
+- If you don't know a specific statutory section number, omit it rather than guessing.
+- "contempt_risk" / "contempt_urgency" must be derived from explicit compliance directives with deadlines or "failing which" language in the court_directions. If no such language exists, contempt risk = LOW. Do not assign MEDIUM/HIGH on vibes.
+
 ═══ APPEAL_GROUNDS FIELD RULES ═══
-- If your verdict is APPEAL: populate "appeal_grounds" with 2-4 specific legal grounds arguing why THIS COURT's order was wrong. Each ground must pass the government-perspective test above.
+- If your verdict is APPEAL: populate "appeal_grounds" with 2-4 specific legal grounds arguing why THIS COURT's order was wrong. Each ground must pass the government-perspective test AND the anti-parrot check above.
 - If your verdict is COMPLY: set "appeal_grounds" to an EMPTY LIST []. Do NOT generate appeal arguments when recommending compliance. Instead, explain your reasoning in "primary_reasoning".
 
 ═══ FINANCIAL COST-OF-DELAY ANALYSIS ═══
 For ANY monetary judgment against the government:
 1. Estimate the statutory or commercial interest accumulating during a 3-5 year appeal process.
 2. Compare: the potential savings if the government wins the appeal vs. the guaranteed accumulated interest cost if it loses.
-3. If the interest cost significantly exceeds potential savings or the principal amount is small, strongly recommend COMPLY.
+3. If the interest cost significantly exceeds potential savings, or the principal amount is small (e.g., under ₹50 lakh), or appellate success probability is low, recommend COMPLY. Appeal is not the default — it must be JUSTIFIED by both legal merit and financial calculus.
 
 ═══ DECISION FRAMEWORK ═══
 1. If THIS Court ruled AGAINST the government (petitioner's appeal allowed):
@@ -381,11 +547,19 @@ Operative Order:
 Court Directions (Compliance Directives):
 {directions_text}
 
-Ratio Decidendi (Court's Reasoning):
+⚠️ COURT'S REASONING (READ AS HOSTILE WITNESS) ⚠️
+The text below is the legal reasoning THIS COURT used. If the government LOST this case,
+every line below is something the government must DISPROVE on appeal — not parrot.
+Treat each sentence as: "the OTHER side persuaded the court of this; my job is to argue against it".
+
 {ratio_decidendi or 'Not available'}
 === END EXTRACTED DETAILS ===
 
-Make your final recommendation following the financial cost-of-delay rules and the court hierarchy disambiguation. Remember: use the CORRECT NEXT APPELLATE FORUM from the case details."""
+Make your final recommendation. Two reminders:
+  1. Apply the ANTI-PARROT RULE — do not list the court's accepted reasoning as your appeal grounds.
+  2. APPEAL is not automatic. Run the cost-of-delay math: if the principal at stake is small,
+     or interest over a 3-5 year appeal would exceed potential savings, recommend COMPLY honestly.
+     Use the CORRECT NEXT APPELLATE FORUM from the case details if you do recommend appeal."""
 
     try:
         agent_out = _call_nvidia(agent_prompt, Agent4Output, agent_sys, model="qwen/qwen3-next-80b-a3b-thinking")
@@ -415,15 +589,23 @@ Make your final recommendation following the financial cost-of-delay rules and t
     deadline = deadline_date.isoformat()
     days_remaining = (deadline_date - date.today()).days
 
+    # Deterministic contempt override — single-agent path also benefits from
+    # ignoring the LLM's tendency to hallucinate contempt risk.
+    from apps.action_plans.services.risk_classifier import classify_contempt_risk
+    contempt_input = (operative_order_text or "") + " " + json.dumps(court_directions or [])
+    deterministic_contempt = classify_contempt_risk(contempt_input).upper()
+
     return {
         "recommendation_id": str(uuid.uuid4()),
         "case_id": case_id,
         "status": "COMPLETED",
         "verdict": {
             "decision": agent_out.verdict.decision,
-            "appeal_to": agent_out.verdict.appeal_to,
+            # Override LLM's appeal_to with deterministic court-hierarchy result.
+            "appeal_to": appeal_info["next"],
+            "appeal_type": appeal_info["appeal_type"],
             "confidence": agent_out.verdict.confidence,
-            "urgency": agent_out.verdict.urgency,
+            "urgency": "HIGH" if deterministic_contempt == "HIGH" else agent_out.verdict.urgency,
             "limitation_deadline": deadline,
             "days_remaining": days_remaining,
         },
@@ -449,8 +631,9 @@ Make your final recommendation following the financial cost-of-delay rules and t
             "strongest_compliance_reason": "",
             "pro_appeal_count": 0,
             "pro_compliance_count": 0,
-            "contempt_urgency": agent_out.verdict.urgency,
-            "contempt_risk_assessment": "",
+            # Deterministic contempt — overrides any LLM hallucination
+            "contempt_urgency": deterministic_contempt,
+            "contempt_risk_assessment": f"Deterministic classifier output: {deterministic_contempt}",
             "limitation_analysis": "",
             "financial_risk": "",
             "procedural_loopholes": [],
@@ -471,6 +654,7 @@ def generate_recommendation(
     court_directions: List[dict] = None,
     operative_order_text: str = "",
     ratio_decidendi: str = "",
+    financial_implications=None,
     use_rag: bool = True
 ) -> Dict[str, Any]:
     """Main entry point for the 4-agent recommendation pipeline."""
@@ -479,9 +663,12 @@ def generate_recommendation(
     # Build shared case context
     case_context = _build_case_context(
         case_text, area_of_law, court, disposition, winning_party,
-        case_type, bench, petitioner, respondent, issues
+        case_type, bench, petitioner, respondent, issues,
+        financial_implications=financial_implications,
+        operative_order_text=operative_order_text,
     )
     appeal_info = _determine_appeal_forum(court, bench, case_type)
+    govt_role = _determine_government_role(petitioner, respondent, winning_party, disposition, case_type)
 
     # ---------------------------------------------------------
     # Stage 1: RAG Retrieval (with dedup + score threshold)
@@ -501,31 +688,37 @@ def generate_recommendation(
     }
     raw_chunks = rag.retrieve_for_case(case_context_dict, domain_key=domain_key, top_k=10, filters=None)
 
-    # Group by case_id to provide multiple chunks per case (broader context)
+    # Group by case_id. We rely entirely on cosine ranking + top-K cap.
+    # InLegalBERT cross-court cosine scores are tight (typically 0.55-0.75),
+    # so any absolute or relative floor risks dropping everything. The trade-off:
+    # for cases with no good matches in the SC corpus we show mediocre matches
+    # rather than nothing, but the user can see scores and judge for themselves.
     grouped_cases = {}
-    from apps.action_plans.services.domain_prompts import RAG_THRESHOLDS
-    rag_threshold = RAG_THRESHOLDS.get(domain_key, 0.75)
-    
+    score_sample = [round(c.get('score', 0), 3) for c in (raw_chunks or [])[:10]]
+    logger.warning(f"RAG raw_chunks: {len(raw_chunks or [])} | top-10 scores: {score_sample} | domain: {domain_key}")
+
     for c in (raw_chunks or []):
-        cid = c.get('metadata', {}).get('case_id', c.get('metadata', {}).get('title', ''))
+        meta = c.get('metadata', {}) or {}
+        cid = meta.get('case_id') or meta.get('title') or ''
         score = c.get('score', 0)
-        
-        # Scores are now cosine similarity (0.0 to 1.0) since we fixed the
-        # cross-encoder to not overwrite them. Use a reasonable threshold.
-        if score < rag_threshold:
-            logger.info(f"Dropping weak chunk (cosine sim {score:.4f} < {rag_threshold}): {cid}")
-            continue
+        try:
+            chunk_idx = int(meta.get('chunk_index', 0))
+        except (TypeError, ValueError):
+            chunk_idx = 0
+
         if cid not in grouped_cases:
             grouped_cases[cid] = {
-                "metadata": c.get('metadata', {}),
+                "metadata": meta,
                 "score": score,
-                "texts": []
+                "texts": [],
+                "best_chunk_index": chunk_idx,
             }
         else:
-            # Keep the highest score for this case
-            grouped_cases[cid]["score"] = max(grouped_cases[cid]["score"], score)
-            
-        # Keep up to 3 chunks per case
+            # If we found a better-scoring chunk for this case, anchor on that index
+            if score > grouped_cases[cid]["score"]:
+                grouped_cases[cid]["score"] = score
+                grouped_cases[cid]["best_chunk_index"] = chunk_idx
+
         if len(grouped_cases[cid]["texts"]) < 3:
             grouped_cases[cid]["texts"].append(c.get('text', ''))
 
@@ -534,6 +727,14 @@ def generate_recommendation(
     retrieved_chunks.sort(key=lambda x: x["score"], reverse=True)
     retrieved_chunks = retrieved_chunks[:8]  # Cap at 8 unique cases
     logger.info(f"RAG: {len(raw_chunks or [])} raw → {len(retrieved_chunks)} unique grouped precedents")
+
+    # Stitch neighbor chunks around the best-scoring chunk for each case so the
+    # LLM and the frontend see a paragraph-level view, not a half-cut sentence.
+    for entry in retrieved_chunks:
+        cid = entry["metadata"].get("case_id")
+        idx = entry.get("best_chunk_index", 0)
+        stitched = rag.stitch_precedent_text(cid, idx, max_chars=1800) if cid else ""
+        entry["stitched_text"] = stitched or " ".join(entry["texts"])[:1800]
 
     extracted_precedents = []
     for c in retrieved_chunks:
@@ -549,14 +750,20 @@ def generate_recommendation(
         decision_date = str(c['metadata'].get('decision_date', ''))
         raw_year = decision_date[:4] if decision_date else ''
         valid_year = raw_year if (raw_year.isdigit() and 1900 <= int(raw_year) <= 2100) else ''
+        stitched = c.get("stitched_text") or " ".join(c.get("texts", []))
         extracted_precedents.append({
             "case_id": str(c['metadata'].get('case_id', '')),
             "case_title": str(c['metadata'].get('title', 'Unknown')),
             "relevance": relevance_label,
             "similarity_score": round(sim_score, 4),
-            "key_holding": (" ".join(c['texts']))[:500] + "...",
+            # Longer paragraph window from neighbor chunks rather than 500-char half-cut.
+            "key_holding": stitched[:1500] + ("..." if len(stitched) > 1500 else ""),
             "outcome": str(c['metadata'].get('disposal_nature', 'UNKNOWN')),
-            "applicability": ""
+            "applicability": f"Cosine similarity: {sim_score:.2%} via InLegalBERT semantic search",
+            "court": str(c['metadata'].get('court', 'Unknown')),
+            "year": valid_year,
+            "petitioner": str(c['metadata'].get('petitioner', '')),
+            "respondent": str(c['metadata'].get('respondent', '')),
         })
 
     if not use_rag:
@@ -576,7 +783,8 @@ def generate_recommendation(
             f"Outcome: {c['metadata'].get('disposal_nature', 'Unknown')} | "
             f"Court: {c['metadata'].get('court', 'Unknown')} | "
             f"Domain: {c['metadata'].get('area_of_law', 'Unknown')}\n"
-            f"Key Text: " + ("\n[...] ".join(c['texts']))[:500]
+            # Paragraph-level window from neighbor chunks.
+            f"Key Text: {(c.get('stitched_text') or ' '.join(c.get('texts', [])))[:1800]}"
             for i, c in enumerate(retrieved_chunks)
         ])
 
@@ -636,23 +844,31 @@ Analyze each precedent's relevance and provide your overall assessment."""
     # AGENT 2: Argument Mapper
     # ---------------------------------------------------------
     logger.info("Running Agent 2 (Argument Mapper)...")
-    agent2_sys_base = """You are a Senior Appellate Advocate practicing before the Supreme Court of India with expertise in Indian constitutional and statutory law.
+    agent2_sys_base = """You are a Senior Government Advocate advising the Karnataka State Government on whether to appeal or comply with a court order.
 
-YOUR TASK: Generate balanced pro-appeal and pro-compliance arguments for the current case.
+YOUR TASK: Generate balanced pro-appeal and pro-compliance arguments — ALWAYS from the GOVERNMENT'S perspective.
 
 INSTRUCTIONS:
-1. Generate 3-5 SPECIFIC pro-appeal arguments citing actual legal principles, sections, or precedents.
+1. Generate 3-5 SPECIFIC pro-appeal arguments (only those a government lawyer would make to REDUCE state liability or DEFEND state policy).
 2. Generate 3-5 SPECIFIC pro-compliance arguments.
 3. Arguments must be GROUNDED in the case facts — no generic statements.
-4. Consider the DISPOSITION — if the case was DISMISSED, compliance arguments are naturally stronger.
-5. Consider the PRECEDENT ANALYSIS from Agent 1 — use the precedent trends to strengthen arguments.
+4. Consider the DISPOSITION — if the case was DISMISSED (government won), compliance is the answer; appeal grounds should be empty or minimal.
+5. Consider the PRECEDENT ANALYSIS from Agent 1.
 6. Identify the SINGLE STRONGEST ground for each side.
 7. Give a BALANCE ASSESSMENT: APPEAL_FAVORED, COMPLIANCE_FAVORED, or BALANCED.
 
-CRITICAL RULES:
-- If the petition was DISMISSED with costs, compliance is strongly favored.
-- If there are constitutional violations (Art 14, 19, 21), appeal arguments gain weight.
-- If precedents overwhelmingly favor one side, reflect that in your balance assessment."""
+ANTI-PARROT RULE (most common failure):
+- When the government LOST, the court's ratio_decidendi IS the winning party's argument. NEVER echo it as a pro-appeal ground.
+- Bad pro-appeal: "court erred in applying the consent award without consent" (this is the WINNER's argument)
+- Good pro-appeal: "the consent award was reliable comparable evidence and the HC wrongly disregarded it in favor of a single small-plot exemplar"
+
+HALLUCINATION RULE:
+- Do NOT cite constitutional articles (14, 19, 21, 25, 26, 300A) unless the verbatim judgment text cites them.
+- Do NOT invent case citations.
+
+BALANCE RULE:
+- Appeal is NOT the default. If the financial exposure is modest (under ₹50 lakh principal) or the legal error is debatable, COMPLIANCE_FAVORED is the honest call.
+- Don't add weight to appeal just because constitutional words appear — only weight constitutional grounds the JUDGMENT itself raises."""
 
     agent2_sys = build_agent_prompt(2, domain_key, agent2_sys_base)
     
@@ -684,17 +900,18 @@ YOUR TASK: Identify procedural risks, contempt exposure, and limitation issues.
 
 INSTRUCTIONS:
 1. PROCEDURAL LOOPHOLES: Identify any procedural defects that could affect the case (limitation, jurisdiction, locus standi, maintainability, non-joinder).
-2. CONTEMPT RISK: If the government/party does NOT comply with the court order, what is the contempt risk? Consider:
-   - Whether the order contains specific compliance directives with deadlines
-   - Whether non-compliance could trigger contempt of court proceedings
-   - Historical contempt actions in similar cases
-3. LIMITATION ANALYSIS: Calculate the appeal limitation period based on Indian law:
+2. CONTEMPT RISK — HARD RULES (do not hallucinate):
+   - HIGH only if the order has an explicit deadline AND "failing which" / "coercive steps" / "personal appearance" / "punishable as contempt" language.
+   - MEDIUM only if there is an explicit deadline for a compliance action but no warning language.
+   - LOW in ALL other cases — including pure compensation/declaratory judgments where no act-by-X-date is ordered.
+   - If court_directions is empty or contains only administrative phrases like "modified award shall be drawn", contempt_urgency = LOW.
+3. LIMITATION ANALYSIS: Compute appeal limitation per Indian law:
    - High Court to Supreme Court (SLP): 90 days from the date of the order
    - Single Judge to Division Bench: 30 days
    - District Court to High Court: 90 days
-4. FINANCIAL RISK: Assess costs, penalties, and financial exposure.
+4. FINANCIAL RISK: Assess costs, penalties, and financial exposure based on the actual figures in court_directions / operative_order. Do not invent numbers.
 
-CRITICAL: Base your contempt urgency on the ACTUAL directives in the case, not hypotheticals."""
+CRITICAL: Base contempt_urgency strictly on the keywords above. Do NOT assign MEDIUM/HIGH on intuition — only when the specified language is present in the directives."""
 
     agent3_sys = build_agent_prompt(3, domain_key, agent3_sys_base)
 
@@ -714,44 +931,79 @@ Assess all risks and limitations."""
     # AGENT 4: Chief Legal Advisor (NVIDIA Llama 3.3 70B)
     # ---------------------------------------------------------
     logger.info("Running Agent 4 (Chief Legal Advisor — NVIDIA Llama 3.3 70B)...")
-    agent4_sys_base = """You are the Chief Legal Advisor to the Government of India, responsible for making the final decision on whether to APPEAL or COMPLY with a court order.
+    agent4_sys_base = """You are the Chief Legal Advisor to the Karnataka State Government, responsible for the FINAL decision on whether to APPEAL or COMPLY with a court order. You represent ONLY the government's interest.
 
 YOUR TASK: Synthesize ALL inputs from the previous 3 agents and make a definitive recommendation.
 
-DECISION FRAMEWORK — You MUST follow this logic:
+ANTI-PARROT RULE (CRITICAL):
+- The "Ratio Decidendi" in the case details is the court's reasoning. When the government LOST, that reasoning IS the WINNING private party's argument that the court accepted.
+- Your appeal_grounds MUST argue AGAINST that reasoning, never repeat it.
+- Before writing each ground, ask: "Did the court ACCEPT this argument to rule against the government?" If yes, FLIP it.
 
-1. IF the case was DISMISSED AND precedents are WEAK AND balance favors COMPLIANCE:
-   → Recommend COMPLY with HIGH confidence
-   → Only recommend APPEAL if there is a clear constitutional violation or jurisdictional error
+HALLUCINATION GUARDRAILS:
+- Do NOT cite any constitutional article (Article 14, 19, 21, 25, 26, 300A) unless the judgment text in front of you cites that article.
+- Do NOT invent case names, citation numbers, or statutory section numbers.
+- If a piece of information is not in the inputs, omit it rather than guess.
 
-2. IF the case was ALLOWED (petitioner won) AND there are strong compliance directives:
-   → Carefully weigh appeal vs compliance
-   → Consider contempt risk and financial exposure
-   → If win rate in similar cases is >50%, lean toward APPEAL
+DECISION FRAMEWORK:
 
-3. IF precedents are STRONG in favor of appeal AND there are clear legal errors:
-   → Recommend APPEAL with MODERATE-HIGH confidence
+1. IF disposition is DISMISSED / petition rejected (government WON):
+   → Recommend COMPLY with confidence 0.85+
+   → appeal_grounds = [] (empty list)
+   → primary_reasoning explains why no further action is needed
 
-4. APPEAL FORUM — You MUST use the CORRECT NEXT APPELLATE FORUM provided in the case details:
-   - Single Judge HC order → Division Bench of same HC
-   - Division Bench HC order → Supreme Court (SLP under Art. 136)
-   - Supreme Court order → Review Petition / Curative Petition
-   NEVER recommend appealing a Division Bench order to "High Court"
+2. IF disposition is ALLOWED / petitioner won (government LOST):
+   → Run the FINANCIAL CALCULUS first:
+     • Estimate principal exposure from the operative order
+     • Estimate interest accumulation over a 3-5 year appeal (typically 6-9% p.a.)
+     • Compare to: (potential savings × win probability)
+   → APPEAL only if BOTH conditions hold:
+     a) A specific identifiable LEGAL ERROR exists (not just disagreement with the outcome)
+     b) Financial calculus shows appeal-savings > interest-cost+litigation-cost
+   → Otherwise COMPLY honestly. Appeal is NOT a default.
 
-5. CONFIDENCE SCORING:
-   - 0.8-1.0: Overwhelming evidence supports the recommendation
-   - 0.6-0.8: Strong evidence, some uncertainty
-   - 0.4-0.6: Balanced case, could go either way
-   - 0.2-0.4: Weak evidence, recommendation is precautionary
+3. APPEAL is JUSTIFIED:
+   → Confidence: 0.75-0.90 if precedents support, math is clear, and a real error exists
+   → 0.55-0.75 if the legal ground is real but uncertain
+   → Never claim >0.90 unless the error is undeniable and SC precedent is directly on point
 
-6. PRIMARY REASONING must be 3-5 sentences explaining the logic chain that led to your decision.
+4. COMPLY is JUSTIFIED:
+   → Confidence: 0.80-0.95 if government won, OR financial exposure is small (under ₹50 lakh principal)
+   → 0.60-0.80 if mixed signals
+   → Higher confidence is APPROPRIATE for clear-cut compliance cases; do not hedge artificially.
 
-7. ACTION PLAN must include SPECIFIC deadlines and steps."""
+5. APPEAL FORUM — use the CORRECT NEXT APPELLATE FORUM from case details:
+   - Single Judge HC → Division Bench of same HC
+   - Division Bench HC → Supreme Court (SLP under Art. 136)
+   - Supreme Court → Review / Curative Petition
+   NEVER recommend appealing a Division Bench order back to "High Court".
+
+6. CONTEMPT URGENCY (use Agent 3's deterministic assessment — do not override):
+   - LOW unless directive has explicit deadline + "failing which" / "coercive steps" / "punishable as contempt" language.
+
+7. PRIMARY REASONING: 3-5 sentences. Reference the financial calculus and the specific legal error (or absence thereof). State explicitly whether the government won or lost.
+
+8. ACTION PLAN: specific, dated steps for the nodal officer. No generic advice."""
 
     agent4_sys = build_agent_prompt(4, domain_key, agent4_sys_base)
 
+    # Deterministic contempt assessment from the actual order text — used to override
+    # the LLM's tendency to hallucinate MEDIUM/HIGH on cases with no contempt language.
+    from apps.action_plans.services.risk_classifier import classify_contempt_risk
+    contempt_input = (operative_order_text or "") + " " + json.dumps(court_directions or [])
+    deterministic_contempt = classify_contempt_risk(contempt_input).upper()
+    logger.info(f"Deterministic contempt classifier: {deterministic_contempt} (overrides LLM)")
+
     agent4_prompt = f"""{case_context}
 {math_validation_text}
+
+⚠️ COURT'S RATIO DECIDENDI — TREAT AS HOSTILE WITNESS ⚠️
+The text below is what THIS court reasoned. If the government LOST, every line is what the
+OTHER side persuaded the court of. Your job is to DISPROVE this reasoning, not echo it.
+
+{ratio_decidendi or 'Not available'}
+=== END RATIO ===
+
 === AGENT 1: PRECEDENT RESEARCH ===
 Overall Trend: {agent1_out.overall_trend}
 Precedent Strength: {agent1_out.precedent_strength}
@@ -767,8 +1019,8 @@ Pro-Compliance Arguments: {json.dumps(agent2_out.pro_compliance_arguments, inden
 === END AGENT 2 ===
 
 === AGENT 3: RISK ASSESSMENT ===
-Contempt Risk: {agent3_out.contempt_urgency}
-Contempt Assessment: {agent3_out.contempt_risk_assessment}
+Contempt Risk (LLM): {agent3_out.contempt_urgency}
+Contempt Risk (Deterministic from text — authoritative): {deterministic_contempt}
 Limitation Analysis: {agent3_out.limitation_analysis}
 Financial Risk: {agent3_out.financial_risk}
 Procedural Issues: {json.dumps(agent3_out.procedural_loopholes, indent=2)}
@@ -778,7 +1030,11 @@ Procedural Issues: {json.dumps(agent3_out.procedural_loopholes, indent=2)}
 {stats_text}
 === END STATISTICS ===
 
-Make your final recommendation. Remember: use the CORRECT NEXT APPELLATE FORUM from the case details."""
+Make your final recommendation following the DECISION FRAMEWORK and ANTI-PARROT rule.
+Reminders:
+  • Use the CORRECT NEXT APPELLATE FORUM from case details (never appeal a DB order back to HC).
+  • Appeal is NOT the default — run the financial calculus honestly. Small exposure → COMPLY.
+  • Appeal grounds must DISPROVE the court's ratio, not repeat it."""
 
     agent4_out = _call_synthesis(agent4_prompt, Agent4Output, agent4_sys)
 
@@ -811,17 +1067,28 @@ Make your final recommendation. Remember: use the CORRECT NEXT APPELLATE FORUM f
     # ---------------------------------------------------------
     # Final Assembly
     # ---------------------------------------------------------
+    # ALWAYS use the deterministic forum from court hierarchy — the LLM
+    # routinely writes "High Court" when the answer is "Division Bench of the
+    # same High Court" or "Supreme Court of India". Override LLM here.
+    forced_appeal_to = appeal_info["next"]
+    if agent4_out.verdict.decision == "COMPLY":
+        # When complying, "appeal_to" is informational only — still surface the
+        # forum the State would use if it later changes course.
+        pass
+
     final_json = {
         "recommendation_id": str(uuid.uuid4()),
         "case_id": case_id,
         "status": "COMPLETED",
         "verdict": {
             "decision": agent4_out.verdict.decision,
-            "appeal_to": agent4_out.verdict.appeal_to,
+            "appeal_to": forced_appeal_to,
+            "appeal_type": appeal_info["appeal_type"],
             "confidence": agent4_out.verdict.confidence,
             "urgency": agent4_out.verdict.urgency,
             "limitation_deadline": deadline,
             "days_remaining": days_remaining,
+            "government_role": govt_role,
         },
         "statistical_basis": {
             "similar_cases_analyzed": len(retrieved_chunks),
@@ -838,12 +1105,27 @@ Make your final recommendation. Remember: use the CORRECT NEXT APPELLATE FORUM f
         "agent_outputs": {
             "precedent_strength": agent1_out.precedent_strength,
             "overall_trend": agent1_out.overall_trend,
-            "rag_precedents": extracted_precedents,
             "precedents": [p.model_dump() for p in agent1_out.precedents],
+            "rag_precedents": extracted_precedents,
             "balance_assessment": agent2_out.balance_assessment,
-            "contempt_urgency": agent3_out.contempt_urgency,
+            "strongest_appeal_ground": agent2_out.strongest_appeal_ground,
+            "strongest_compliance_reason": agent2_out.strongest_compliance_reason,
+            "pro_appeal_count": len(agent2_out.pro_appeal_arguments),
+            "pro_compliance_count": len(agent2_out.pro_compliance_arguments),
+            # contempt_urgency: trust the deterministic classifier over the LLM
+            "contempt_urgency": deterministic_contempt,
+            "contempt_urgency_llm": agent3_out.contempt_urgency,
+            "contempt_risk_assessment": agent3_out.contempt_risk_assessment,
+            "limitation_analysis": agent3_out.limitation_analysis,
+            "financial_risk": agent3_out.financial_risk,
+            "procedural_loopholes": agent3_out.procedural_loopholes,
         },
     }
+
+    # Override the verdict's urgency with deterministic contempt if higher
+    # (Agent 4's urgency reflects limitation, but contempt should escalate it)
+    if deterministic_contempt == "HIGH" and final_json["verdict"]["urgency"] != "HIGH":
+        final_json["verdict"]["urgency"] = "HIGH"
 
     logger.info("Recommendation pipeline V2 complete.")
     return final_json

@@ -143,3 +143,10 @@ LLM_PROVIDER = os.getenv("LLM_PROVIDER", "nvidia")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
 GEMINI_FLASH_MODEL = "gemini-2.5-flash"
 GEMINI_PRO_MODEL = "gemini-2.5-pro"
+
+# OpenRouter — used as a fallback for large PDFs (25+ pages) where Groq returns
+# 413 Payload Too Large and NVIDIA NIM times out. Routes the SAME Llama 3.3 70B
+# Instruct model but with a larger, more reliable serving infrastructure.
+OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY", "")
+OPENROUTER_BASE_URL = os.getenv("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1")
+OPENROUTER_LARGE_PDF_THRESHOLD = int(os.getenv("OPENROUTER_LARGE_PDF_THRESHOLD", "25"))

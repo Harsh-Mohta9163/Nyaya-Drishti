@@ -12,17 +12,10 @@ import logging
 import os
 
 import chromadb
-from chromadb.api.types import Documents, EmbeddingFunction, Embeddings
 from rank_bm25 import BM25Okapi
 
 from apps.rag.embedder import InLegalBERTEmbeddingFunction
 from apps.rag.parquet_store import DuckDBStore
-
-try:
-    from sentence_transformers import CrossEncoder
-    _cross_encoder = CrossEncoder('cross-encoder/ms-marco-MiniLM-L-6-v2')
-except ImportError:
-    _cross_encoder = None
 
 logger = logging.getLogger(__name__)
 
@@ -55,14 +48,27 @@ def _get_collection():
             os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__)))),
             "data"
         )
-        db_path = os.path.join(base_data_path, "chroma_db_export")
-        
-        # Check if the zip extracted directly into data/ instead of data/chroma_db_export/
-        if not os.path.exists(os.path.join(db_path, "chroma.sqlite3")):
-            if os.path.exists(os.path.join(base_data_path, "chroma.sqlite3")):
-                db_path = base_data_path
-                logger.info("Found chroma.sqlite3 in data/, using base_data_path")
-                
+
+        # Prefer the canonical store at data/chroma_db/ (per README + HF dataset layout),
+        # then fall back to data/chroma_db_export/ (start.sh unzip target), then to data/
+        # itself (zip extracted at the root). Pick the first candidate whose sqlite file
+        # is non-empty, so a stray empty chroma.sqlite3 can't shadow the real store.
+        candidates = [
+            os.path.join(base_data_path, "chroma_db"),
+            os.path.join(base_data_path, "chroma_db_export"),
+            base_data_path,
+        ]
+        db_path = None
+        for c in candidates:
+            sqlite_path = os.path.join(c, "chroma.sqlite3")
+            if os.path.exists(sqlite_path) and os.path.getsize(sqlite_path) > 1024 * 100:
+                db_path = c
+                logger.info(f"ChromaDB store selected: {db_path}")
+                break
+        if db_path is None:
+            db_path = candidates[0]
+            logger.warning(f"No populated ChromaDB store found; creating empty store at {db_path}")
+
         os.makedirs(db_path, exist_ok=True)
         _chroma_client = chromadb.PersistentClient(path=db_path)
         
@@ -79,9 +85,21 @@ def _get_collection():
 def reset_collection():
     """Delete and recreate the collection (use when embedding dimensions change)."""
     global _chroma_client, _collection
-    db_path = os.path.join(
+    base_data_path = os.path.join(
         os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__)))),
-        "data", "chroma_db_export",
+        "data",
+    )
+    # Match _get_collection() — prefer chroma_db/, then chroma_db_export/, then data/.
+    db_path = next(
+        (
+            c for c in (
+                os.path.join(base_data_path, "chroma_db"),
+                os.path.join(base_data_path, "chroma_db_export"),
+                base_data_path,
+            )
+            if os.path.exists(os.path.join(c, "chroma.sqlite3"))
+        ),
+        os.path.join(base_data_path, "chroma_db"),
     )
     os.makedirs(db_path, exist_ok=True)
     _chroma_client = chromadb.PersistentClient(path=db_path)
@@ -204,9 +222,11 @@ class HybridRAGEngine:
         except Exception as e:
             logger.error(f"ChromaDB query failed: {e}")
             return []
-        
+
         if not dense_res["ids"] or not dense_res["ids"][0]:
+            logger.warning(f"ChromaDB returned 0 chunks for query (first 60 chars): {query[:60]!r}")
             return []
+        logger.warning(f"ChromaDB returned {len(dense_res['ids'][0])} chunks for query (first 60 chars): {query[:60]!r}")
         
         # Build result list from dense retrieval
         results = []
@@ -223,25 +243,60 @@ class HybridRAGEngine:
                 "score": 1.0 - dist,  # Convert cosine distance to similarity
             })
         
-        # Cross-encoder reranking (optional, on small candidate set only)
-        # NOTE: We use the cross-encoder ONLY for reranking order, NOT for
-        # replacing the cosine similarity score. ms-marco is trained on web
-        # search and assigns negative scores to most legal text, which would
-        # cause the pipeline's score threshold to drop valid results.
-        if _cross_encoder is not None and len(results) > 0:
-            try:
-                pairs = [[query[:512], r["text"][:512]] for r in results]  # Truncate for speed
-                cross_scores = _cross_encoder.predict(pairs)
-                # Attach cross-encoder score for reranking, but keep cosine similarity
-                for idx, ce_score in enumerate(cross_scores):
-                    results[idx]["ce_score"] = float(ce_score)
-                # Sort by cross-encoder score (better semantic reranking)
-                results.sort(key=lambda r: r.get("ce_score", 0), reverse=True)
-                logger.info(f"Cross-encoder reranked {len(results)} results (scores kept as cosine similarity)")
-            except Exception as e:
-                logger.warning(f"Cross-encoder reranking failed, using raw scores: {e}")
-        
+        # NOTE: Cross-encoder reranking was disabled because it fought the
+        # cosine similarity threshold in recommendation_pipeline.py — CE would
+        # promote chunks with low cosine sim to the top, and those chunks then
+        # got dropped by the cosine filter, leaving zero precedents.
+        # Results are returned in raw cosine similarity order (ChromaDB default).
         return results[:top_k]
+
+    def fetch_neighbor_chunks(self, case_id: str, center_index: int, window: int = 2) -> list[dict]:
+        """Fetch chunks for a case in a window around center_index.
+
+        Returns chunks ordered by chunk_index. Used to stitch together a
+        contiguous paragraph rather than relying on a single 500-char chunk
+        which is usually cut mid-sentence.
+        """
+        if not case_id:
+            return []
+        try:
+            res = self.collection.get(
+                where={"case_id": case_id},
+                include=["documents", "metadatas"],
+                limit=50,
+            )
+        except Exception as e:
+            logger.warning(f"fetch_neighbor_chunks failed for {case_id}: {e}")
+            return []
+
+        items = []
+        for cid, doc, meta in zip(res.get("ids", []), res.get("documents", []), res.get("metadatas", [])):
+            try:
+                idx = int(meta.get("chunk_index", -1))
+            except (TypeError, ValueError):
+                idx = -1
+            if idx < 0:
+                continue
+            if abs(idx - center_index) <= window:
+                items.append({"id": cid, "chunk_index": idx, "text": doc, "metadata": meta})
+
+        items.sort(key=lambda x: x["chunk_index"])
+        return items
+
+    def stitch_precedent_text(self, case_id: str, center_index: int, max_chars: int = 1800) -> str:
+        """Return a contiguous text window around `center_index` for `case_id`.
+
+        Joins neighbor chunks with separators so the LLM sees a paragraph-level
+        view of the cited precedent instead of a half-cut sentence.
+        """
+        neighbors = self.fetch_neighbor_chunks(case_id, center_index, window=2)
+        if not neighbors:
+            return ""
+        joined = " ".join(n["text"] for n in neighbors)
+        # Trim from both ends to clean partial-sentence artefacts.
+        if len(joined) > max_chars:
+            joined = joined[:max_chars] + "..."
+        return joined
 
     def retrieve_for_case(self, case_context: dict, domain_key: str, top_k: int = 15, filters: dict = None) -> list[dict]:
         from apps.action_plans.services.domain_prompts import DOMAIN_RAG_KEYWORDS

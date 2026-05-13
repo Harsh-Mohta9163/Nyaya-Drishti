@@ -69,6 +69,10 @@ HIGH_RISK_PHRASES = [
     "personally liable",
     "personally ensure",
     "constrained to initiate",
+    "punishable as contempt",
+    "coercive steps",
+    "bailable warrant",
+    "non-bailable warrant",
 ]
 
 MEDIUM_RISK_PHRASES = [
@@ -80,9 +84,6 @@ MEDIUM_RISK_PHRASES = [
     "shall deposit",
     "shall complete",
     "shall ensure",
-    "within 30 days",
-    "within 60 days",
-    "within 4 weeks",
     "with interest",
     "reinstate the petitioner",
     "restore the",
@@ -93,22 +94,58 @@ MEDIUM_RISK_PHRASES = [
     "submit compliance",
 ]
 
+# Time-bound deadline phrases. By themselves these are MEDIUM, but combined
+# with a compliance verb (TIME_BOUND_COMPLIANCE_VERBS below) they escalate to HIGH
+# because non-compliance after a fixed date directly exposes officers to contempt.
+TIME_BOUND_DEADLINES = [
+    # Days
+    "within 7 days", "within 10 days", "within 14 days", "within 15 days",
+    "within 21 days", "within 30 days", "within 45 days", "within 60 days",
+    "within 90 days", "within 120 days",
+    # Weeks (numerals + words — judgments mix both styles)
+    "within 2 weeks", "within 3 weeks", "within 4 weeks", "within 6 weeks",
+    "within 8 weeks", "within 10 weeks", "within 12 weeks", "within 16 weeks",
+    "within two weeks", "within three weeks", "within four weeks",
+    "within six weeks", "within eight weeks", "within ten weeks",
+    "within twelve weeks", "within sixteen weeks",
+    # Months
+    "within one month", "within 1 month", "within two months", "within 2 months",
+    "within three months", "within 3 months", "within four months", "within 4 months",
+    "within six months", "within 6 months",
+    # Specific phrasing
+    "from the date of receipt", "from the date of this order",
+    "from the date of certified copy", "from receipt of certified copy",
+]
+
+TIME_BOUND_COMPLIANCE_VERBS = [
+    "shall comply", "shall be complied", "compliance",
+    "shall pay", "shall deposit", "shall release", "shall restore",
+    "shall reinstate", "shall regularise", "shall regularize",
+    "shall consider", "shall grant", "shall process",
+    "shall issue", "shall implement",
+    "process the", "release the", "regularise the", "regularize the",
+    "reinstate the", "grant the",
+]
+
 
 def _keyword_classify(text: str) -> str:
     """Deterministic keyword-based classification (fallback)."""
     lowered = (text or "").lower()
 
-    # Count matches for scoring
     high_matches = sum(1 for phrase in HIGH_RISK_PHRASES if phrase in lowered)
     medium_matches = sum(1 for phrase in MEDIUM_RISK_PHRASES if phrase in lowered)
 
-    if high_matches >= 2:
+    has_deadline = any(d in lowered for d in TIME_BOUND_DEADLINES)
+    has_compliance_verb = any(v in lowered for v in TIME_BOUND_COMPLIANCE_VERBS)
+
+    # Time-bound compliance order against the State is HIGH risk:
+    # any missed deadline directly exposes officers to contempt proceedings.
+    if has_deadline and has_compliance_verb:
         return "High"
-    if high_matches == 1:
+
+    if high_matches >= 1:
         return "High"
-    if medium_matches >= 2:
-        return "Medium"
-    if medium_matches == 1:
+    if medium_matches >= 1 or has_deadline:
         return "Medium"
     return "Low"
 

@@ -221,14 +221,46 @@ COMPLIANCE TRIGGERS:
 - Discrimination is admitted with no rational basis → Comply
 - Political controversy of appeal exceeds legal benefit → Comply (but note appeal option)""",
     "TAXATION": """
+═══ MACRO-REVENUE / CASCADING-PRECEDENT RULE (overrides cost-benefit) ═══
+A tax judgment is NEVER about just the petitioner before the court. The HC's
+interpretation of any tax statute, GST notification, or exemption clause becomes
+BINDING PRECEDENT across the entire state. Before applying the small-principal
+→ COMPLY rule, check:
+
+  Did the court INTERPRET a tax provision (statute / notification / circular)?
+    → YES: APPEAL is MANDATORY, regardless of the individual petitioner's
+            liability. Even ₹0 in this case = crores in state-wide revenue leakage.
+            Do NOT write "minimal financial exposure", "isolated property",
+            "small revenue impact". The exposure is the WHOLE TAX BASE.
+    → NO (court only granted fact-specific waiver, sympathy relief, or set aside
+       penalty without altering rule interpretation): The cost-benefit rule applies.
+
+Concrete examples of MANDATORY-APPEAL statutory interpretation:
+  • HC reads "residential dwelling" exemption to include commercial hostels
+    (revenue leakage = every hostel operator in Karnataka)
+  • HC interprets Rule 86A CGST as requiring pre-decisional hearing
+    (revenue leakage = every credit-block dispute statewide)
+  • HC holds a transaction is not "supply" under §7 CGST
+    (revenue leakage = every similar transaction)
+  • HC expands input tax credit eligibility beyond §16/17 limits
+  • HC reads down a customs/excise notification's scope
+  • HC quashes an assessment circular as ultra vires
+
+Examples of FACTUAL-RELIEF (cost-benefit applies → COMPLY allowed):
+  • HC waives penalty on natural justice grounds for ONE assessee
+  • HC condones delay in filing return for ONE specific case
+  • HC quashes a single assessment order for procedural defect
+    (without re-interpreting the underlying provision)
+
 APPEAL TRIGGERS:
+- ANY judgment interpreting a tax provision against the State → APPEAL (see rule above)
 - HC quashed on procedural grounds only; revenue demand is factually valid → Appeal
 - HC allowed deduction not permitted by the specific section → Appeal
-- Revenue loss > ₹10 lakh and legal error is identifiable → Appeal (departmental policy mandates it)
+- Revenue loss > ₹10 lakh and legal error is identifiable → Appeal
 COMPLIANCE TRIGGERS:
 - Assessment was time-barred under the specific Finance Act provision → Comply
 - CBDT/department's own circular contradicts the demand → Comply
-- Natural justice clearly violated (no opportunity to respond) → Comply""",
+- Natural justice clearly violated for ONE assessee, no statutory interpretation issue → Comply""",
     "MOTOR_VEHICLES": """
 APPEAL TRIGGERS:
 - Multiplier used is outside Sarla Verma/Pranay Sethi age table → Appeal on specific ground
@@ -323,29 +355,98 @@ ADDITIONAL RISKS:
 AGENT4_DOMAINS = {
     "SERVICE_LAW": """
 SERVICE LAW OVERLAY:
+
+═══ CASCADING-EFFECT GUARDRAIL ═══
+Service Law judgments rarely affect only the petitioners in court — they typically extend to the
+entire cadre/sub-cadre. Before deciding APPEAL vs COMPLY:
+  1. Ask: "Does this ratio bind the State for ALL similarly-placed employees?"
+  2. If yes, the real financial liability is the cadre-wide cost, not just the petitioners.
+  3. Despite the cascading cost, DO NOT recommend APPEAL when the ratio is already settled by
+     the Supreme Court (e.g., KPTCL v. C.P. Mundinamani for terminal increments). An SLP against
+     settled SC law will be DISMISSED IN LIMINE and waste public funds.
+  4. Frame primary_reasoning as: "Although cascading liability is significant, the SC has settled
+     this question — appeal is futile. COMPLY."
+
+═══ DOMAIN RULES ═══
 - Appeal against reinstatement orders where no inquiry was conducted → NOT recommended (virtually never succeeds at SC)
-- Appeal against retrospective promotion orders → STRONGLY recommended (creates cadre-wide financial precedent)
+- Appeal against retrospective promotion orders → STRONGLY recommended UNLESS settled by SC against the State
 - For transfer/posting orders → COMPLY almost always (transfer is government's right; appeal rarely succeeds)
 - For orders directing DPC within specific weeks → File a representation; appeal only if operationally impossible
-- Government win rate in service law HC writ appeals: ~38%""",
+- Government win rate in service law HC writ appeals: ~38%
+
+═══ CONTEMPT URGENCY ═══
+Service Law orders almost always carry a deadline (e.g., "Compliance within eight weeks").
+ANY service-law order with a deadline + compliance verb is CONTEMPT RISK = HIGH. Named officers
+(Secretary, Commissioner, Director) are personally exposed if the deadline slips.""",
     "LAND_ACQUISITION": """
 LAND ACQUISITION OVERLAY:
+
+═══ MATH TRAP GUARDRAIL (mandatory) ═══
+If the EXTRACTED FINANCIAL FIGURES block or the NUMBERS DETECTED IN OPERATIVE ORDER block
+contains ANY rupee amounts or percentages, you MUST:
+  1. Cite the specific number(s) in primary_reasoning.
+  2. NEVER write "no financial exposure", "no financial data is provided",
+     or "no specific amounts" — the numbers are right there. Read them.
+  3. Compute or estimate principal exposure from those numbers.
+  4. Compare against interest accrual at 9% p.a. (Section 28/34 LAA) over 3-5 years.
+
+═══ DIRECTIONAL MATH (don't argue against the State's interest) ═══
+- Deduction % HIGHER = LESS payout = GOOD for State. Never argue a deduction is "too high".
+- Government's appeal grounds on deduction should always argue deduction should be HIGHER, not lower.
+- A 53% deduction is the SC-approved ceiling (Lal Chand v. Union). If HC applied 53%, the State
+  has LOCKED IN the maximum legal deduction — APPEALING risks the SC reducing it. COMPLY.
+- A 30-35% deduction is on the low end — the State has appeal merit to push it higher.
+
 Mathematical benchmarks:
 - If enhanced compensation <= 20% above Reference Court award: COMPLY (interest will exceed saving)
 - If enhanced compensation >= 50% above Reference Court award: APPEAL (significant exposure)
-- If deduction > 53%: the HC has exceeded SC ceiling — this is a strong appeal ground
+- If deduction is AT or NEAR the 53% SC ceiling: COMPLY — appeal could only worsen the State's position
 - Always: Government can deposit Reference Court award and give court security for the balance,
   allowing appeal without contempt risk. Recommend this route.
-- Government win rate in land acquisition compensation appeals: ~45% (moderate — financial math is decisive)""",
+- Government win rate in land acquisition compensation appeals: ~45%""",
     "CRIMINAL": """
 CRIMINAL LAW OVERLAY:
-- State appeal against acquittal: Recommend COMPLY unless HC finding is demonstrably perverse
+
+═══ STATE-AS-APPELLANT INVERSION TRAP ═══
+In criminal appeals the State is FREQUENTLY the APPELLANT (e.g., appeal against acquittal,
+appeal against quashing of FIR under §482 CrPC, prosecution challenges).
+  • Use the GOVERNMENT ROLE block in case details — NOT just the disposition word.
+  • If GOVERNMENT ROLE = GOVT_LOST, the State LOST, even if disposition is "Dismissed".
+  • Never write "the State prevailed" when GOVT_LOST is set.
+
+═══ FUTILITY-OF-APPEAL CHECK ═══
+Before recommending APPEAL in a criminal matter, verify:
+  • Is the HC order based on SETTLED Supreme Court precedent (e.g., Aneeta Hada, B. Jayaraj,
+    Sharad Birdhichand Sarda)? If yes → COMPLY. SLPs against settled SC law are dismissed in limine.
+  • Did the State fail on a PROCEDURAL defect (e.g., failure to arraign the company under
+    vicarious liability, hostile star witness, no independent corroboration)? If yes → COMPLY.
+    Re-filing a properly-drafted complaint (within limitation) is a better remedy than SLP.
+
+═══ DOMAIN RULES ═══
+- State appeal against acquittal: COMPLY unless HC finding is demonstrably perverse
   (SC success rate for state in acquittal reversal: <20%)
 - State opposing bail: If accused is a serious/repeat offender → APPEAL. Otherwise → COMPLY.
 - For sentence reduction orders: Appeal only if sentence is shockingly lenient for the offence
-- Government win rate in criminal appeals: ~22% (generally low — courts protect personal liberty)""",
+- Government win rate in criminal appeals: ~22% (low — courts protect personal liberty)
+
+═══ CONTEMPT URGENCY ═══
+HC orders dismissing State appeals or quashing FIRs almost never contain
+affirmative directives against the State. Contempt Risk = LOW unless the order
+explicitly directs the State to do something with a deadline.""",
     "CONSTITUTIONAL": """
 CONSTITUTIONAL LAW OVERLAY:
+
+═══ DISMISSED ≠ COMPLY (UI nuance) ═══
+When a constitutional writ petition is DISMISSED, the State has WON. There are no directions to
+"comply with" — there is nothing for the department to do. In this case:
+  • verdict.decision = COMPLY  (the closest enum value)
+  • primary_reasoning MUST explicitly state: "The petition was dismissed; no directions issued
+    against the State. No compliance action is required — the file may be CLOSED."
+  • appeal_grounds = [] (do NOT invent grounds)
+  • Contempt Risk = LOW (no directives exist)
+  • Confidence: 0.90+
+
+═══ DOMAIN RULES ═══
 - HC order directing policy within a time frame → APPEAL (preserves executive space; near-certain success at DB)
 - HC striking down state law → APPEAL IMMEDIATELY (constitutional validity requires DB hearing)
 - Art. 25/26 religious freedom cases: Government must show the event is state-sponsored and secular in character
@@ -353,12 +454,31 @@ CONSTITUTIONAL LAW OVERLAY:
 - Government win rate in constitutional writ appeals: ~52% (above average, courts respect executive policy)""",
     "TAXATION": """
 TAXATION OVERLAY:
-- ALWAYS file a protective appeal if revenue loss > ₹10 lakh, even on borderline cases
-  (Revenue cannot condone delay — one missed deadline = permanent loss)
-- If HC quashed assessment on procedural ground only: APPEAL has high success probability (~65%)
-- If HC reversed ITAT finding of undisclosed income: APPEAL (factual findings of ITAT should not be re-examined)
-- If HC found assessment time-barred: Carefully verify limitation. If correct → COMPLY (cannot win on this)
-- Government (revenue) win rate in IT appeals: ~48%""",
+
+═══ MACRO-REVENUE RULE (HARD OVERRIDE — applies before cost-benefit) ═══
+If THIS COURT'S judgment INTERPRETS any tax provision (statute, notification, circular, rule)
+against the State, you MUST recommend APPEAL — even when the individual petitioner's
+financial liability is small or zero. Reasoning template:
+
+  "Although the petitioner's individual liability is only ₹X, the court's interpretation
+   of [provision] becomes binding precedent for all similarly-situated taxpayers in
+   Karnataka, creating massive statewide revenue leakage. The cost-of-delay calculus
+   that applies to ordinary monetary judgments does NOT apply here — protecting the
+   state's tax base requires immediate appeal regardless of the principal in this case."
+
+Do NOT write "minimal exposure", "small revenue impact", "isolated property",
+"single taxpayer" when the court has interpreted a tax provision. Those phrases are
+the diagnostic signature of the Macro-Revenue Trap and a 70B-quality recommendation
+will never use them in a statutory-interpretation case.
+
+═══ DOMAIN RULES ═══
+- ANY statutory-interpretation case against the State → APPEAL is mandatory
+- ALWAYS file a protective appeal if revenue loss > ₹10 lakh (revenue cannot condone delay)
+- HC quashed assessment on procedural ground only: APPEAL (~65% success)
+- HC reversed ITAT finding of undisclosed income: APPEAL (factual findings should not be re-examined)
+- HC found assessment time-barred (correctly): COMPLY (cannot win on this)
+- HC waives penalty for ONE assessee on natural-justice grounds, no precedent on interpretation: COMPLY
+- Government (revenue) win rate in IT/GST appeals: ~48%""",
     "MOTOR_VEHICLES": """
 MOTOR VEHICLES OVERLAY:
 - MACT quantum appeals by government/insurer have very low success rate (~15-20%)
