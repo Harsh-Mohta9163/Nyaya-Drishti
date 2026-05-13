@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Sidebar } from './components/Sidebar';
 import { CaseHeader } from './components/CaseHeader';
 import { CaseOverview } from './components/CaseOverview';
@@ -10,7 +10,7 @@ import { Routes, Route, Navigate, useNavigate } from 'react-router-dom';
 import { useAuth } from './context/AuthContext';
 import LoginPage from './LoginPage';
 import RegisterPage from './RegisterPage';
-import { fetchCase, CaseData, fetchRecommendation, reAnnotateSource, updateJudgment } from './api/client';
+import { fetchCase, CaseData, fetchRecommendation, reAnnotateSource, updateJudgment, extractCase } from './api/client';
 import { shortPartyTitle, extractCoreName } from './utils/truncate';
 
 import { Precedents } from './components/Precedents';
@@ -26,6 +26,29 @@ function MainApp() {
   const [recommendation, setRecommendation] = useState<any | null>(null);
   const [isGeneratingAnalysis, setIsGeneratingAnalysis] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
+  const sidebarFileInputRef = useRef<HTMLInputElement>(null);
+
+  // Handler for "New Case Analysis" — opens file picker, uploads, navigates to case
+  const handleNewCaseUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (sidebarFileInputRef.current) sidebarFileInputRef.current.value = '';
+
+    // Show a loading state by navigating to cases view
+    setCurrentView('cases');
+    setSelectedCaseId(null);
+
+    try {
+      const newCase = await extractCase(file);
+      // Auto-navigate to the newly created case
+      setSelectedCaseId(newCase.id);
+      setActiveTab('overview');
+    } catch (err: any) {
+      console.error('Upload failed:', err);
+      alert('Failed to extract case: ' + (err.message || 'Unknown error'));
+    }
+  };
   
   // Fetch selected case from backend when a case is clicked
   useEffect(() => {
@@ -190,6 +213,27 @@ function MainApp() {
         )}
       </AnimatePresence>
 
+      {/* Hidden file input for "New Case Analysis" button */}
+      <input
+        ref={sidebarFileInputRef}
+        type="file"
+        accept=".pdf"
+        onChange={handleNewCaseUpload}
+        className="hidden"
+      />
+
+      {/* Mobile Top Bar — only visible on small screens */}
+      <div className="fixed top-0 left-0 right-0 h-14 bg-surface-container/80 backdrop-blur-xl border-b border-outline-variant/20 flex items-center justify-between px-4 z-20 lg:hidden">
+        <button
+          onClick={() => setMobileSidebarOpen(true)}
+          className="p-2 rounded-lg text-on-surface-variant hover:text-on-surface hover:bg-surface-container-highest/50 transition-all"
+        >
+          <span className="material-symbols-outlined text-xl">menu</span>
+        </button>
+        <span className="text-lg font-bold text-primary-blue tracking-tight">NyayaDrishti</span>
+        <div className="w-10" /> {/* Spacer for centering */}
+      </div>
+
       {/* Sidebar Navigation */}
       <Sidebar 
         currentView={currentView}
@@ -203,10 +247,19 @@ function MainApp() {
         }}
         isCollapsed={sidebarCollapsed}
         onToggle={() => setSidebarCollapsed(c => !c)}
+        isMobileOpen={mobileSidebarOpen}
+        onMobileClose={() => setMobileSidebarOpen(false)}
+        onNewCase={() => sidebarFileInputRef.current?.click()}
       />
 
       {/* Main Content Area */}
-      <main className="flex-grow h-screen overflow-y-auto transition-[padding] duration-[250ms] ease-in-out" style={{ paddingLeft: sidebarCollapsed ? 72 : 280 }}>
+      <main 
+        className="flex-grow h-screen overflow-y-auto transition-[padding] duration-[250ms] ease-in-out pt-14 lg:pt-0" 
+        style={{ paddingLeft: sidebarCollapsed ? 72 : 280 }}
+      >
+        {/* Override paddingLeft to 0 on mobile via a style tag */}
+        <style>{`@media (max-width: 1023px) { main { padding-left: 0 !important; } }`}</style>
+        
         <AnimatePresence mode="wait">
           {currentView === 'dashboard' ? (
             <motion.div
@@ -215,7 +268,7 @@ function MainApp() {
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 1.02 }}
               transition={{ duration: 0.3 }}
-              className="px-10"
+              className="px-4 sm:px-6 lg:px-10"
             >
               <Dashboard onSelectCase={(id) => {
               setSelectedCaseId(id);
@@ -229,7 +282,7 @@ function MainApp() {
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -10 }}
               transition={{ duration: 0.3 }}
-              className="px-10"
+              className="px-4 sm:px-6 lg:px-10"
             >
               <CaseList 
                 onSelectCase={(id) => setSelectedCaseId(id)}
@@ -262,7 +315,7 @@ function MainApp() {
                   />
 
                   {/* Tab Content Area */}
-                  <div className="px-10 pb-10 flex-grow">
+                  <div className="px-4 sm:px-6 lg:px-10 pb-10 flex-grow">
                     <div className="mx-auto w-full max-w-[1440px]">
                       <AnimatePresence mode="wait">
                         <motion.div
