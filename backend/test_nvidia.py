@@ -1,10 +1,11 @@
 import requests
 import json
+import os
 
 resp = requests.post(
     "https://integrate.api.nvidia.com/v1/chat/completions",
     headers={
-        "Authorization": "Bearer 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",
+        "Authorization": f"Bearer {os.environ.get('NVIDIA_API_KEY', 'YOUR_API_KEY')}",
         "Content-Type": "application/json",
     },
     json={

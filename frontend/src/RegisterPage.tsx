@@ -47,7 +47,7 @@ const S = {
     display: 'flex' as const,
     alignItems: 'center' as const,
     justifyContent: 'center' as const,
-    padding: '2rem',
+    padding: '1rem',
     position: 'relative' as const,
     zIndex: 1,
     overflowY: 'auto' as const,

@@ -155,43 +155,155 @@ export const Precedents = ({
             </div>
           ) : (
             <>
-              {recommendation && recommendation.verdict && (
-                <div className="p-6 mb-6 bg-primary-blue/5 border border-primary-blue/20 rounded-2xl">
-                  <h3 className="text-primary-blue font-bold mb-2">Live AI Recommendation</h3>
-                  <p className="text-on-surface-variant text-sm mb-4">{recommendation.primary_reasoning}</p>
-                  <div className="flex gap-4">
-                    <span className="px-3 py-1 bg-surface-dim rounded-lg text-xs font-bold border border-outline-variant/30 text-on-surface">
-                      Decision: <span className="text-primary-blue">{recommendation.verdict.decision}</span>
-                    </span>
-                    <span className="px-3 py-1 bg-surface-dim rounded-lg text-xs font-bold border border-outline-variant/30 text-on-surface">
-                      Analyzed Precedents: <span className="text-amber-400">{recommendation.statistical_basis?.similar_cases_analyzed || 0}</span>
-                    </span>
-                  </div>
-                </div>
-              )}
-              {precedents.map((p: any, i: number) => {
-                const isAllowed = p.outcome?.toLowerCase().includes('allow') || p.outcome?.toLowerCase().includes('upheld');
-                const score = p.relevance === 'High' ? 90 : p.relevance === 'Moderate' ? 75 : 55;
-                const yearMatch = p.case_id?.match(/\d{4}$/);
-                const year = yearMatch ? yearMatch[0] : '2023';
-                const formattedOutcome = p.outcome === 'APPEAL_ALLOWED' ? 'Allowed' : p.outcome === 'APPEAL_DISMISSED' ? 'Dismissed' : p.outcome;
-                
+              {recommendation && recommendation.verdict && (() => {
+                const ao = recommendation.agent_outputs || {};
+                const precedentStrength = ao.precedent_strength || 'WEAK';
+                const balanceAssessment = ao.balance_assessment || 'BALANCED';
+                const contemptUrgency = ao.contempt_urgency || 'LOW';
                 return (
-                  <PrecedentCard 
-                    key={i}
-                    id={p.case_id || `PRE-${1000 + i}`}
-                    title={p.case_title || p.case}
-                    description={p.key_holding || p.applicability}
-                    matchScore={score - i} 
-                    outcome={formattedOutcome}
-                    court="Supreme Court"
-                    year={year}
-                    borderClass={isAllowed ? "border-l-primary-blue" : "border-l-amber-400"}
-                    scoreColor={isAllowed ? "text-primary-blue" : "text-amber-400"}
-                    evidencePoints={[p.key_holding, p.applicability === 'SUPPORTS' ? 'Supports your case' : 'Undermines your case'].filter(Boolean)}
-                  />
+                  <div className="space-y-4 mb-6">
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                      {/* Agent 1: Precedent Research */}
+                      <div className="p-4 bg-surface-container/60 border border-outline-variant/20 rounded-xl flex flex-col gap-2">
+                        <p className="text-[9px] font-black uppercase tracking-widest text-on-surface-variant flex items-center gap-1">
+                          <span className="material-symbols-outlined text-sm">psychology</span> Agent 1 · Precedent Research
+                        </p>
+                        <span className={`self-start px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider border ${
+                          precedentStrength === 'STRONG' ? 'bg-green-500/10 text-green-400 border-green-500/20' :
+                          precedentStrength === 'MODERATE' ? 'bg-amber-400/10 text-amber-400 border-amber-400/20' :
+                          'bg-error-red/10 text-error-red border-error-red/20'
+                        }`}>{precedentStrength}</span>
+                        <p className="text-xs text-on-surface-variant leading-relaxed line-clamp-3">
+                          {ao.overall_trend || 'No trend data available.'}
+                        </p>
+                      </div>
+                      {/* Agent 2: Argument Balance */}
+                      <div className="p-4 bg-surface-container/60 border border-outline-variant/20 rounded-xl flex flex-col gap-2">
+                        <p className="text-[9px] font-black uppercase tracking-widest text-on-surface-variant flex items-center gap-1">
+                          <span className="material-symbols-outlined text-sm">balance</span> Agent 2 · Argument Balance
+                        </p>
+                        <span className={`self-start px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider border ${
+                          balanceAssessment === 'APPEAL_FAVORED' ? 'bg-amber-400/10 text-amber-400 border-amber-400/20' :
+                          balanceAssessment === 'COMPLIANCE_FAVORED' ? 'bg-green-500/10 text-green-400 border-green-500/20' :
+                          'bg-primary-blue/10 text-primary-blue border-primary-blue/20'
+                        }`}>{balanceAssessment.replace(/_/g, ' ')}</span>
+                        {ao.strongest_appeal_ground && (
+                          <p className="text-xs text-on-surface-variant line-clamp-2 leading-relaxed">
+                            <span className="text-amber-400 font-bold">Appeal: </span>{ao.strongest_appeal_ground}
+                          </p>
+                        )}
+                        {ao.strongest_compliance_reason && (
+                          <p className="text-xs text-on-surface-variant line-clamp-2 leading-relaxed">
+                            <span className="text-green-400 font-bold">Comply: </span>{ao.strongest_compliance_reason}
+                          </p>
+                        )}
+                      </div>
+                      {/* Agent 3: Risk Audit */}
+                      <div className="p-4 bg-surface-container/60 border border-outline-variant/20 rounded-xl flex flex-col gap-2">
+                        <p className="text-[9px] font-black uppercase tracking-widest text-on-surface-variant flex items-center gap-1">
+                          <span className="material-symbols-outlined text-sm">warning</span> Agent 3 · Risk Audit
+                        </p>
+                        <span className={`self-start px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider border ${
+                          contemptUrgency === 'HIGH' ? 'bg-error-red/10 text-error-red border-error-red/20' :
+                          contemptUrgency === 'MEDIUM' ? 'bg-amber-400/10 text-amber-400 border-amber-400/20' :
+                          'bg-green-500/10 text-green-400 border-green-500/20'
+                        }`}>Contempt: {contemptUrgency}</span>
+                        <p className="text-xs text-on-surface-variant leading-relaxed line-clamp-3">
+                          {ao.limitation_analysis || ao.contempt_risk_assessment || 'No risk data available.'}
+                        </p>
+                      </div>
+                    </div>
+                    {/* Decision strip */}
+                    <div className="flex flex-wrap gap-3">
+                      <span className="px-3 py-1 bg-surface-dim rounded-lg text-xs font-bold border border-outline-variant/30 text-on-surface">
+                        Decision: <span className="text-primary-blue">{recommendation.verdict.decision}</span>
+                      </span>
+                      <span className="px-3 py-1 bg-surface-dim rounded-lg text-xs font-bold border border-outline-variant/30 text-on-surface">
+                        Cases analysed: <span className="text-amber-400">{recommendation.statistical_basis?.similar_cases_analyzed || 0}</span>
+                      </span>
+                      {(ao.pro_appeal_count > 0 || ao.pro_compliance_count > 0) && (
+                        <span className="px-3 py-1 bg-surface-dim rounded-lg text-xs font-bold border border-outline-variant/30 text-on-surface">
+                          <span className="text-amber-400">{ao.pro_appeal_count}</span> appeal grounds ·{' '}
+                          <span className="text-green-400">{ao.pro_compliance_count}</span> compliance reasons
+                        </span>
+                      )}
+                    </div>
+                  </div>
                 );
-              })}
+              })()}
+              {/* Build Agent 1 analysis lookup: case_id → {key_holding, relevance, applicability} */}
+              {(() => {
+                const agent1Map: Record<string, any> = {};
+                (recommendation?.agent_outputs?.precedents || []).forEach((ap: any) => {
+                  if (ap.case_id) agent1Map[ap.case_id] = ap;
+                });
+
+                const displayList = recommendation?.agent_outputs?.rag_precedents?.length
+                  ? recommendation.agent_outputs.rag_precedents
+                  : precedents;
+
+                return displayList.map((p: any, i: number) => {
+                  const isAllowed = p.outcome?.toLowerCase().includes('allow') || p.outcome?.toLowerCase().includes('upheld');
+                  const score = p.similarity_score
+                    ? Math.round(p.similarity_score * 100)
+                    : p.relevance === 'High' ? 90 : p.relevance === 'Moderate' ? 75 : 55;
+
+                  // Only accept years 1900-2099 — avoids "0100" from bad metadata
+                  const yearFromMeta = /^(19|20)\d{2}$/.test(p.year || '') ? p.year : null;
+                  const yearFromId = p.case_id?.match(/\b(19|20)\d{2}\b/)?.[0] ?? null;
+                  const year: string = yearFromMeta || yearFromId || '';
+
+                  const courtName = p.court && p.court !== 'Unknown' ? p.court : 'Supreme Court';
+                  const formattedOutcome =
+                    p.outcome === 'APPEAL_ALLOWED' || p.outcome === 'Appeal(s) allowed' ? 'Allowed' :
+                    p.outcome === 'APPEAL_DISMISSED' || p.outcome === 'Dismissed' ? 'Dismissed' :
+                    p.outcome === 'Disposed off' ? 'Disposed' :
+                    p.outcome === 'Case Partly allowed' ? 'Partly Allowed' :
+                    p.outcome || 'Unknown';
+
+                  // Agent 1 LLM analysis for this case (available in 4-agent mode)
+                  const a1 = agent1Map[p.case_id] || null;
+                  const aiRelevance: string | null = a1?.relevance || null;
+                  const aiKeyHolding: string | null = a1?.key_holding || null;
+                  const aiApplicability: string | null = a1?.applicability || null;
+
+                  // Description: prefer AI relevance explanation (why it's similar), else short raw excerpt
+                  const rawExcerpt = p.key_holding ? p.key_holding.substring(0, 150) + (p.key_holding.length > 150 ? '...' : '') : '';
+                  const description = aiRelevance || rawExcerpt;
+
+                  const partyLine = (p.petitioner || p.respondent)
+                    ? `${p.petitioner || ''}${p.petitioner && p.respondent ? ' v. ' : ''}${p.respondent || ''}`
+                    : null;
+
+                  // Evidence points: show AI analysis when available, else raw chunk (never duplicate description)
+                  const evidencePoints: string[] = [
+                    aiKeyHolding
+                      ? `<span class="font-semibold text-on-surface/90">Key Holding:</span> ${aiKeyHolding.substring(0, 260)}${aiKeyHolding.length > 260 ? '...' : ''}`
+                      : (p.key_holding ? p.key_holding.substring(0, 260) + (p.key_holding.length > 260 ? '...' : '') : null),
+                    aiApplicability
+                      ? `<span class="font-semibold text-on-surface/90">AI Analysis:</span> ${aiApplicability}`
+                      : null,
+                    partyLine ? `<span class="font-semibold text-on-surface/80">${partyLine}</span>` : null,
+                    `<span class="text-primary-blue/70 font-bold">🔍 Search:</span> <span class="italic">${p.case_title || p.case_id}${year ? ' (' + year + ')' : ''} — ${courtName}</span>`,
+                  ].filter((x): x is string => Boolean(x));
+
+                  return (
+                    <PrecedentCard
+                      key={i}
+                      id={p.case_id || `PRE-${1000 + i}`}
+                      title={p.case_title || p.case}
+                      description={description}
+                      matchScore={Math.max(score - i * 2, 50)}
+                      outcome={formattedOutcome}
+                      court={courtName}
+                      year={year}
+                      borderClass={isAllowed ? "border-l-primary-blue" : "border-l-amber-400"}
+                      scoreColor={isAllowed ? "text-primary-blue" : "text-amber-400"}
+                      evidencePoints={evidencePoints}
+                    />
+                  );
+                });
+              })()}
             </>
           )}
         </div>

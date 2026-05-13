@@ -234,3 +234,37 @@ class HybridRAGEngine:
                 logger.warning(f"Cross-encoder reranking failed, using raw scores: {e}")
         
         return results[:top_k]
+
+    def retrieve_for_case(self, case_context: dict, domain_key: str, top_k: int = 15, filters: dict = None) -> list[dict]:
+        from apps.action_plans.services.domain_prompts import DOMAIN_RAG_KEYWORDS
+        
+        domain_keywords = DOMAIN_RAG_KEYWORDS.get(domain_key, DOMAIN_RAG_KEYWORDS["GENERAL"])
+        
+        ratio = case_context.get("ratio_decidendi", "")
+        operative = case_context.get("operative_order_text", "")
+        case_text = case_context.get("case_text", "")
+        
+        q1_text = ratio[:350] if ratio else (operative[:350] if operative else case_text[:350])
+        query1 = f"{domain_keywords} {q1_text}"
+        
+        primary_statute = case_context.get("primary_statute", " ".join(case_context.get("issues", [])[:1]))
+        area = case_context.get("area_of_law", "")
+        disposition = case_context.get("disposition", "")
+        query2 = f"{primary_statute} {area} {disposition} government"
+        
+        issues = case_context.get("issues", [])
+        query3 = ""
+        if issues:
+            query3 = f"{issues[0][:300]} {issues[1][:150] if len(issues)>1 else ''}"
+        else:
+            query3 = case_text[:450]
+            
+        queries = [query1, query2, query3]
+        all_results = []
+        
+        for q in queries:
+            if not q.strip(): continue
+            res = self.retrieve(q, top_k=top_k, filters=filters)
+            all_results.extend(res)
+            
+        return all_results

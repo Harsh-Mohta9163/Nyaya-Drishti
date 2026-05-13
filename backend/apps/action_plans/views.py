@@ -48,7 +48,7 @@ def backfill_precedents(case_text: str, cached_rec: dict, action_plan=None) -> d
                 "similarity_score": round(score, 4),
                 "key_holding": text[:500] + ("..." if len(text) > 500 else ""),
                 "outcome": str(meta.get('disposal_nature', 'UNKNOWN')),
-                "applicability": f"Cosine similarity: {score:.2%} via InLegalBERT semantic search"
+                "applicability": ""
             }
         
         extracted_precedents = [v for v in seen_cases.values() if isinstance(v, dict)]
@@ -167,7 +167,8 @@ class GenerateRecommendationView(APIView):
                 date_of_order=judgment.date_of_order if 'judgment' in locals() and judgment else "",
                 court_directions=judgment.court_directions if 'judgment' in locals() and judgment else [],
                 operative_order_text=judgment.operative_order_text if 'judgment' in locals() and judgment else "",
-                ratio_decidendi=judgment.ratio_decidendi if 'judgment' in locals() and judgment else ""
+                ratio_decidendi=judgment.ratio_decidendi if 'judgment' in locals() and judgment else "",
+                use_rag=True
             )
             
             # Cache it

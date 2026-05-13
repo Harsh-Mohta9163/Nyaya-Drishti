@@ -11,7 +11,9 @@ import logging
 import json
 import uuid
 import time
-from typing import List, Dict, Any, Optional
+import re
+import os
+from typing import List, Dict, Any
 from datetime import date, timedelta, datetime
 
 from pydantic import BaseModel, Field
@@ -20,8 +22,53 @@ from openai import OpenAI
 
 from apps.action_plans.services.rag_engine import HybridRAGEngine
 from apps.rag.parquet_store import DuckDBStore
+from apps.action_plans.services.domain_prompts import get_domain_key, build_agent_prompt
 
 logger = logging.getLogger(__name__)
+
+def validate_financial_math(financial_implications: list[str], domain: str) -> dict:
+    """
+    Pure deterministic validation using regex.
+    Returns: { "flags": list[str], "summary": str }
+    """
+    flags = []
+    text = " ".join(financial_implications)
+
+    if domain == "LAND_ACQUISITION":
+        # Check deduction percentage
+        deductions = re.findall(r'(\d+(?:\.\d+)?)\s*%\s*(?:developmental|deduction|discount)', text, re.IGNORECASE)
+        for d in deductions:
+            pct = float(d)
+            if pct > 53:
+                flags.append(f"WARNING: Deduction {pct}% exceeds SC-approved ceiling of 53% (Lal Chand v. Union)")
+            elif pct < 20:
+                flags.append(f"NOTE: Deduction {pct}% is very low — government may have grounds to challenge")
+
+        # Check interest rate
+        interest = re.findall(r'(\d+)\s*%\s*(?:per annum|p\.a\.|interest)', text, re.IGNORECASE)
+        for i in interest:
+            if int(i) > 9:
+                flags.append(f"WARNING: Interest rate {i}% exceeds Section 28/34 LAA statutory rate of 9% p.a.")
+
+    elif domain == "MOTOR_VEHICLES":
+        # Check multiplier
+        multipliers = re.findall(r'multiplier[:\s]+(\d+)', text, re.IGNORECASE)
+        for m in multipliers:
+            if not (8 <= int(m) <= 18):
+                flags.append(f"WARNING: Multiplier {m} is outside Sarla Verma/Pranay Sethi table range [8-18]")
+            if int(m) > 15:
+                flags.append(f"NOTE: High multiplier {m} — verify victim's age matches this bracket")
+
+    elif domain == "SERVICE_LAW":
+        # Check if back wages are for very long period
+        years = re.findall(r'(\d+)\s*years?\s*(?:back wages|arrears)', text, re.IGNORECASE)
+        for y in years:
+            if int(y) > 10:
+                flags.append(f"NOTE: Back wages for {y} years is substantial — quantify total liability")
+
+    summary = "\n".join(flags) if flags else "No mathematical anomalies detected."
+    return {"flags": flags, "summary": summary}
+
 
 # ==============================================================================
 # Pydantic Schemas (Enhanced)
@@ -144,9 +191,22 @@ def _build_example_json(response_model) -> str:
     return examples.get(response_model.__name__, "{}")
 
 
-def _call_nvidia(prompt: str, response_model, system_prompt: str, model: str = "meta/llama-3.3-70b-instruct") -> BaseModel:
-    """Call NVIDIA NIM API with retry logic."""
-    client = OpenAI(base_url=settings.NVIDIA_BASE_URL, api_key=settings.NVIDIA_API_KEY)
+def _call_llm_provider(prompt: str, response_model, system_prompt: str, is_agent4: bool = False) -> BaseModel:
+    """Call NVIDIA NIM or OpenRouter API based on environment toggle."""
+    use_openrouter = os.environ.get("USE_OPENROUTER", "False").lower() == "true"
+    
+    if use_openrouter:
+        base_url = "https://openrouter.ai/api/v1"
+        api_key = os.environ.get("OPENROUTER_API_KEY", "")
+        model = "deepseek/deepseek-r1" if is_agent4 else "deepseek/deepseek-chat"
+        provider_name = "OpenRouter"
+    else:
+        base_url = getattr(settings, "NVIDIA_BASE_URL", "https://integrate.api.nvidia.com/v1")
+        api_key = getattr(settings, "NVIDIA_API_KEY", "")
+        model = "qwen/qwen3-next-80b-a3b-thinking" if is_agent4 else "meta/llama-3.3-70b-instruct"
+        provider_name = "NVIDIA"
+
+    client = OpenAI(base_url=base_url, api_key=api_key)
     example_json = _build_example_json(response_model)
     messages = [
         {"role": "system", "content": f"{system_prompt}\n\nIMPORTANT: Respond ONLY with valid JSON. No explanation or markdown.\nFollow this structure:\n{example_json}"},
@@ -154,31 +214,48 @@ def _call_nvidia(prompt: str, response_model, system_prompt: str, model: str = "
     ]
     for attempt in range(3):
         try:
-            logger.info(f"[NVIDIA] Calling {model} for {response_model.__name__} (attempt {attempt+1}/3)")
+            logger.info(f"[{provider_name}] Calling {model} for {response_model.__name__} (attempt {attempt+1}/3)")
+            
+            # Use extra body params for openrouter json mode support depending on model
+            extra_params = {}
+            if use_openrouter:
+                # OpenRouter deepseek json support
+                extra_params["response_format"] = {"type": "json_object"}
+            else:
+                extra_params["response_format"] = {"type": "json_object"}
+                
             response = client.chat.completions.create(
                 model=model, messages=messages, temperature=0.15,
-                response_format={"type": "json_object"}
+                **extra_params
             )
             content = response.choices[0].message.content
-            logger.info(f"[NVIDIA] Response ({len(content)} chars): {content[:150]}...")
+            
+            # Clean up thinking tokens if deepseek-r1 was used and returned them inside content
+            if use_openrouter and is_agent4 and "</think>" in content:
+                content = content.split("</think>")[-1].strip()
+                
+            # If the model surrounds JSON with ```json ... ```, strip it
+            if content.startswith("```json"):
+                content = content.replace("```json", "").replace("```", "").strip()
+            elif content.startswith("```"):
+                content = content.replace("```", "").strip()
+                
+            logger.info(f"[{provider_name}] Response ({len(content)} chars): {content[:150]}...")
             return response_model.model_validate_json(content)
         except Exception as e:
-            logger.warning(f"[NVIDIA] Attempt {attempt+1} failed: {e}")
+            logger.warning(f"[{provider_name}] Attempt {attempt+1} failed: {e}")
             if attempt == 2: raise
             time.sleep(8 * (attempt + 1))
 
 
+def _call_nvidia(prompt: str, response_model, system_prompt: str, model: str = "meta/llama-3.3-70b-instruct") -> BaseModel:
+    """Legacy call function for single-agent pipeline."""
+    return _call_llm_provider(prompt, response_model, system_prompt, is_agent4=(model == "qwen/qwen3-next-80b-a3b-thinking"))
+
+
 def _call_synthesis(prompt: str, response_model, system_prompt: str) -> BaseModel:
-    """Call NVIDIA NIM for the synthesis agent (Agent 4).
-    Uses Llama 3.3 70B as the primary model.
-    """
-    # Primary: Llama 3.3 70B (best available on NVIDIA NIM for reasoning)
-    for model in ["meta/llama-3.3-70b-instruct"]:
-        try:
-            return _call_nvidia(prompt, response_model, system_prompt, model=model)
-        except Exception as e:
-            logger.warning(f"[Synthesis] {model} failed: {e}")
-    raise RuntimeError("All LLM providers failed for Agent 4")
+    """Call synthesis agent."""
+    return _call_llm_provider(prompt, response_model, system_prompt, is_agent4=True)
 
 
 # ==============================================================================
@@ -311,10 +388,10 @@ Ratio Decidendi (Court's Reasoning):
 Make your final recommendation following the financial cost-of-delay rules and the court hierarchy disambiguation. Remember: use the CORRECT NEXT APPELLATE FORUM from the case details."""
 
     try:
-        agent_out = _call_nvidia(agent_prompt, Agent4Output, agent_sys, model="deepseek-ai/deepseek-v4-pro")
+        agent_out = _call_nvidia(agent_prompt, Agent4Output, agent_sys, model="qwen/qwen3-next-80b-a3b-thinking")
     except Exception as e:
-        logger.warning(f"DeepSeek failed, falling back to Llama 70B: {e}")
-        agent_out = _call_nvidia(agent_prompt, Agent4Output, agent_sys, model="meta/llama-3.3-70b-instruct")
+        logger.warning(f"Qwen 80B Thinking failed, falling back to Mixtral 8x22B: {e}")
+        agent_out = _call_nvidia(agent_prompt, Agent4Output, agent_sys, model="mistralai/mixtral-8x22b-instruct-v0.1")
 
     appeal_days = 90 if "supreme" in appeal_info["next"].lower() else 30
     
@@ -340,7 +417,7 @@ Make your final recommendation following the financial cost-of-delay rules and t
 
     return {
         "recommendation_id": str(uuid.uuid4()),
-        "case_id": "single-model",
+        "case_id": case_id,
         "status": "COMPLETED",
         "verdict": {
             "decision": agent_out.verdict.decision,
@@ -351,7 +428,7 @@ Make your final recommendation following the financial cost-of-delay rules and t
             "days_remaining": days_remaining,
         },
         "statistical_basis": {
-            "similar_cases_analyzed": 0,
+            "similar_cases_analyzed": len(precedents) if precedents else 0,
             "government_appeal_win_rate": 0,
             "dismissed_rate": 0,
             "total_cases_in_corpus": 0,
@@ -366,8 +443,17 @@ Make your final recommendation following the financial cost-of-delay rules and t
             "precedent_strength": "MODERATE" if precedents else "WEAK",
             "overall_trend": "Precedents extracted for reference via semantic search." if precedents else "Precedent analysis currently disabled for focused reasoning.",
             "precedents": precedents if precedents else [],
+            "rag_precedents": precedents if precedents else [],
             "balance_assessment": "BALANCED",
+            "strongest_appeal_ground": "",
+            "strongest_compliance_reason": "",
+            "pro_appeal_count": 0,
+            "pro_compliance_count": 0,
             "contempt_urgency": agent_out.verdict.urgency,
+            "contempt_risk_assessment": "",
+            "limitation_analysis": "",
+            "financial_risk": "",
+            "procedural_loopholes": [],
         },
     }
 
@@ -385,7 +471,7 @@ def generate_recommendation(
     court_directions: List[dict] = None,
     operative_order_text: str = "",
     ratio_decidendi: str = "",
-    use_rag: bool = False
+    use_rag: bool = True
 ) -> Dict[str, Any]:
     """Main entry point for the 4-agent recommendation pipeline."""
     logger.info(f"Starting recommendation pipeline V2 for case {case_id}")
@@ -403,29 +489,31 @@ def generate_recommendation(
     # ---------------------------------------------------------
     rag = HybridRAGEngine()
     
-    # Build a targeted query from legal substance, not just the first 2000 chars
-    # Priority: ratio_decidendi > operative_order > case_text header
-    rag_query_parts = []
-    if ratio_decidendi:
-        rag_query_parts.append(ratio_decidendi[:800])
-    if operative_order_text:
-        rag_query_parts.append(operative_order_text[:800])
-    if not rag_query_parts:
-        rag_query_parts.append(case_text[:2000])
-    rag_query = " ".join(rag_query_parts)[:2500]
+    domain_key = get_domain_key(area_of_law)
     
-    raw_chunks = rag.retrieve(rag_query, top_k=15, filters=None)
+    case_context_dict = {
+        "ratio_decidendi": ratio_decidendi,
+        "operative_order_text": operative_order_text,
+        "case_text": case_text,
+        "issues": issues,
+        "area_of_law": area_of_law,
+        "disposition": disposition
+    }
+    raw_chunks = rag.retrieve_for_case(case_context_dict, domain_key=domain_key, top_k=10, filters=None)
 
     # Group by case_id to provide multiple chunks per case (broader context)
     grouped_cases = {}
+    from apps.action_plans.services.domain_prompts import RAG_THRESHOLDS
+    rag_threshold = RAG_THRESHOLDS.get(domain_key, 0.75)
+    
     for c in (raw_chunks or []):
         cid = c.get('metadata', {}).get('case_id', c.get('metadata', {}).get('title', ''))
         score = c.get('score', 0)
         
         # Scores are now cosine similarity (0.0 to 1.0) since we fixed the
         # cross-encoder to not overwrite them. Use a reasonable threshold.
-        if score < 0.85:
-            logger.info(f"Dropping weak chunk (cosine sim {score:.4f}): {cid}")
+        if score < rag_threshold:
+            logger.info(f"Dropping weak chunk (cosine sim {score:.4f} < {rag_threshold}): {cid}")
             continue
             
         if cid not in grouped_cases:
@@ -452,13 +540,16 @@ def generate_recommendation(
     for c in retrieved_chunks:
         sim_score = c.get('score', 0)
         # Bucket relevance for frontend display
-        if sim_score >= 0.93:
+        if sim_score >= 0.85:
             relevance_label = "High"
-        elif sim_score >= 0.91:
+        elif sim_score >= 0.78:
             relevance_label = "Moderate"
         else:
             relevance_label = "Low"
         
+        decision_date = str(c['metadata'].get('decision_date', ''))
+        raw_year = decision_date[:4] if decision_date else ''
+        valid_year = raw_year if (raw_year.isdigit() and 1900 <= int(raw_year) <= 2100) else ''
         extracted_precedents.append({
             "case_id": str(c['metadata'].get('case_id', '')),
             "case_title": str(c['metadata'].get('title', 'Unknown')),
@@ -466,7 +557,7 @@ def generate_recommendation(
             "similarity_score": round(sim_score, 4),
             "key_holding": (" ".join(c['texts']))[:500] + "...",
             "outcome": str(c['metadata'].get('disposal_nature', 'UNKNOWN')),
-            "applicability": f"Cosine similarity: {sim_score:.2%} via InLegalBERT semantic search"
+            "applicability": ""
         })
 
     if not use_rag:
@@ -482,13 +573,11 @@ def generate_recommendation(
         stuffed_context = "No direct precedents found in the database."
     else:
         stuffed_context = "\n\n".join([
-            f"--- PRECEDENT {i+1} ---\n"
-            f"Case: {c['metadata'].get('title', 'Unknown')}\n"
-            f"Case ID: {c['metadata'].get('case_id', 'Unknown')}\n"
-            f"Court: {c['metadata'].get('court', 'Unknown')}\n"
-            f"Outcome: {c['metadata'].get('disposal_nature', 'Unknown')}\n"
-            f"Similarity Score: {c.get('score', 0):.2f}\n"
-            f"Judgment Excerpts:\n" + "\n[...] ".join(c['texts'])[:2500]
+            f"PRECEDENT {i+1}: {c['metadata'].get('title', 'Unknown')}\n"
+            f"Outcome: {c['metadata'].get('disposal_nature', 'Unknown')} | "
+            f"Court: {c['metadata'].get('court', 'Unknown')} | "
+            f"Domain: {c['metadata'].get('area_of_law', 'Unknown')}\n"
+            f"Key Text: " + ("\n[...] ".join(c['texts']))[:500]
             for i, c in enumerate(retrieved_chunks)
         ])
 
@@ -518,7 +607,7 @@ def generate_recommendation(
     # AGENT 1: Precedent Researcher
     # ---------------------------------------------------------
     logger.info("Running Agent 1 (Precedent Researcher)...")
-    agent1_sys = """You are a Senior Legal Researcher at the Supreme Court of India with 20+ years of experience analyzing case precedents.
+    agent1_sys_base = """You are a Senior Legal Researcher at the Supreme Court of India with 20+ years of experience analyzing case precedents.
 
 YOUR TASK: Analyze the retrieved precedent cases and determine how they relate to the current case.
 
@@ -531,6 +620,8 @@ INSTRUCTIONS:
 6. Rate PRECEDENT STRENGTH as STRONG (>70% precedents support one side), MODERATE (50-70%), or WEAK (<50% or insufficient data).
 
 IMPORTANT: If the current case was DISMISSED by the court, precedents showing other DISMISSED cases WEAKEN the appeal case. Precedents showing ALLOWED appeals STRENGTHEN it."""
+    
+    agent1_sys = build_agent_prompt(1, domain_key, agent1_sys_base)
 
     agent1_prompt = f"""{case_context}
 
@@ -546,7 +637,7 @@ Analyze each precedent's relevance and provide your overall assessment."""
     # AGENT 2: Argument Mapper
     # ---------------------------------------------------------
     logger.info("Running Agent 2 (Argument Mapper)...")
-    agent2_sys = """You are a Senior Appellate Advocate practicing before the Supreme Court of India with expertise in Indian constitutional and statutory law.
+    agent2_sys_base = """You are a Senior Appellate Advocate practicing before the Supreme Court of India with expertise in Indian constitutional and statutory law.
 
 YOUR TASK: Generate balanced pro-appeal and pro-compliance arguments for the current case.
 
@@ -564,8 +655,14 @@ CRITICAL RULES:
 - If there are constitutional violations (Art 14, 19, 21), appeal arguments gain weight.
 - If precedents overwhelmingly favor one side, reflect that in your balance assessment."""
 
-    agent2_prompt = f"""{case_context}
+    agent2_sys = build_agent_prompt(2, domain_key, agent2_sys_base)
+    
+    financial_implications = [str(d) for d in (court_directions or [])]
+    math_validation = validate_financial_math(financial_implications, domain_key)
+    math_validation_text = f"\n=== MATH VALIDATION REPORT ===\n{math_validation['summary']}\n=== END MATH VALIDATION ===\n"
 
+    agent2_prompt = f"""{case_context}
+{math_validation_text}
 === PRECEDENT ANALYSIS FROM AGENT 1 ===
 {agent1_out.model_dump_json(indent=2)}
 === END PRECEDENT ANALYSIS ===
@@ -582,7 +679,7 @@ Generate balanced arguments for both sides."""
     # AGENT 3: Risk Auditor
     # ---------------------------------------------------------
     logger.info("Running Agent 3 (Risk Auditor)...")
-    agent3_sys = """You are a Legal Risk Auditor specializing in Indian government litigation and contempt proceedings.
+    agent3_sys_base = """You are a Legal Risk Auditor specializing in Indian government litigation and contempt proceedings.
 
 YOUR TASK: Identify procedural risks, contempt exposure, and limitation issues.
 
@@ -600,8 +697,10 @@ INSTRUCTIONS:
 
 CRITICAL: Base your contempt urgency on the ACTUAL directives in the case, not hypotheticals."""
 
-    agent3_prompt = f"""{case_context}
+    agent3_sys = build_agent_prompt(3, domain_key, agent3_sys_base)
 
+    agent3_prompt = f"""{case_context}
+{math_validation_text}
 === ARGUMENT ANALYSIS FROM AGENT 2 ===
 Balance Assessment: {agent2_out.balance_assessment}
 Strongest Appeal Ground: {agent2_out.strongest_appeal_ground}
@@ -616,7 +715,7 @@ Assess all risks and limitations."""
     # AGENT 4: Chief Legal Advisor (NVIDIA Llama 3.3 70B)
     # ---------------------------------------------------------
     logger.info("Running Agent 4 (Chief Legal Advisor — NVIDIA Llama 3.3 70B)...")
-    agent4_sys = """You are the Chief Legal Advisor to the Government of India, responsible for making the final decision on whether to APPEAL or COMPLY with a court order.
+    agent4_sys_base = """You are the Chief Legal Advisor to the Government of India, responsible for making the final decision on whether to APPEAL or COMPLY with a court order.
 
 YOUR TASK: Synthesize ALL inputs from the previous 3 agents and make a definitive recommendation.
 
@@ -650,8 +749,10 @@ DECISION FRAMEWORK — You MUST follow this logic:
 
 7. ACTION PLAN must include SPECIFIC deadlines and steps."""
 
-    agent4_prompt = f"""{case_context}
+    agent4_sys = build_agent_prompt(4, domain_key, agent4_sys_base)
 
+    agent4_prompt = f"""{case_context}
+{math_validation_text}
 === AGENT 1: PRECEDENT RESEARCH ===
 Overall Trend: {agent1_out.overall_trend}
 Precedent Strength: {agent1_out.precedent_strength}
@@ -738,6 +839,7 @@ Make your final recommendation. Remember: use the CORRECT NEXT APPELLATE FORUM f
         "agent_outputs": {
             "precedent_strength": agent1_out.precedent_strength,
             "overall_trend": agent1_out.overall_trend,
+            "rag_precedents": extracted_precedents,
             "precedents": [p.model_dump() for p in agent1_out.precedents],
             "balance_assessment": agent2_out.balance_assessment,
             "contempt_urgency": agent3_out.contempt_urgency,
