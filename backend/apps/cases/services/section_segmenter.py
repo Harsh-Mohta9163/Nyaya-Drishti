@@ -43,15 +43,27 @@ _DISPOSAL_TRIGGERS = [
     r"^\s*\**\s*DIRECTIONS?\s*\**\s*$",
     r"^\s*\**\s*OPERATIVE\s+PORTION\s*\**\s*$",
     r"^\s*\**\s*FINAL\s+ORDER\s*\**\s*$",
+    r"^\s*\**\s*SENTENCE\s*\**\s*$",
     # Formulaic preamble to the order
     r"For\s+the\s+(foregoing|above|aforesaid)\s+reasons",
+    r"For\s+the\s+aforesaid\s+reasons",
     r"In\s+view\s+of\s+the\s+(above|foregoing|discussions?|observations?)",
     r"In\s+the\s+result",
     r"For\s+these\s+reasons",
+    r"For\s+the\s+reasons\s+stated\s+above",
     r"I\s+(therefore\s+)?pass\s+the\s+following",
     r"The\s+following\s+order\s+is\s+(made|passed)",
     r"We\s+are\s+of\s+the\s+considered\s+view",
     r"Consequently,?\s+the\s+(following|writ)",
+    # Criminal appeal / sentencing triggers
+    r"We\s+now\s+proceed\s+to\s+sentence",
+    r"we\s+proceed\s+to\s+(pass\s+the\s+following|sentence|hear)",
+    r"The\s+sentence\s+is\s+as\s+follows",
+    r"we\s+sentence\s+(each|the|accused)",
+    r"(is|are)\s+sentenced\s+to\s+(life|death|rigorous|simple)",
+    r"(convicted|acquitted)\s+(under|of\s+the\s+offences?)",
+    r"Having\s+heard\s+the\s+arguments.*we\s+(are|hold|direct|order)",
+    r"In\s+view\s+of\s+the\s+above\s+discussions?",
     # Disposition sentences
     r"(Petition|Appeal|Writ\s+petition|W\.?P\.?|Application)\s+is\s+(hereby\s+)?(allowed|dismissed|disposed\s+of|partly\s+allowed|rejected)",
     r"(Hence|Therefore|Accordingly),?\s+(this\s+|the\s+)?(petition|appeal|writ|application|W\.?P\.?)",
@@ -60,6 +72,7 @@ _DISPOSAL_TRIGGERS = [
     r"With\s+the\s+above\s+observations?",
     r"The\s+writ\s+petition\s+stands\s+(dismissed|allowed|disposed)",
     r"The\s+appeal\s+stands\s+(dismissed|allowed|disposed)",
+    r"The\s+appeal\s+(against\s+the\s+)?(acquittal|conviction)\s+(is|stands)",
 ]
 
 _NARRATIVE_RE = re.compile("|".join(_NARRATIVE_TRIGGERS), re.IGNORECASE)
@@ -146,8 +159,10 @@ def segment_judgment(text: str) -> dict:
         operative_start = int(doc_len * 0.80)
         body_len = operative_start - header_end
 
-    # Overlap size: 10% of body length, minimum 300 chars
-    overlap_chars = max(300, int(body_len * 0.10))
+    # Overlap size: 20% of body length for operative section, minimum 500 chars.
+    # Increased from 10% to capture complete operative sections in complex judgments
+    # (e.g., criminal appeals with sentencing + procedural orders spanning multiple pages).
+    overlap_chars = max(500, int(body_len * 0.20))
 
     # Body (middle) extends 10% INTO operative zone
     middle_end = min(doc_len, operative_start + overlap_chars)
