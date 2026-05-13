@@ -4,7 +4,7 @@ import { fetchCases, CaseData } from '../api/client';
 import { shortPartyTitle } from '../utils/truncate';
 
 const StatCard = ({ icon, label, value, trend, trendColor, iconBg }: any) => (
-  <div className="glass-card p-6 flex flex-col gap-4 glass-card-hover group">
+  <div className="glass-card p-4 sm:p-6 flex flex-col gap-3 sm:gap-4 glass-card-hover group">
     <div className="flex justify-between items-start">
       <div className={`p-2 rounded-lg flex items-center justify-center ${iconBg}`}>
         <span className="material-symbols-outlined text-xl">{icon}</span>
@@ -17,7 +17,7 @@ const StatCard = ({ icon, label, value, trend, trendColor, iconBg }: any) => (
     </div>
     <div>
       <p className="text-on-surface-variant text-[10px] font-bold uppercase tracking-widest opacity-60">{label}</p>
-      <h3 className="text-4xl font-bold text-on-surface mt-1 tracking-tight">{value}</h3>
+      <h3 className="text-3xl sm:text-4xl font-bold text-on-surface mt-1 tracking-tight">{value}</h3>
     </div>
   </div>
 );
@@ -121,17 +121,17 @@ export const Dashboard = ({ onSelectCase }: { onSelectCase: (id: string) => void
   }
 
   return (
-    <div className="py-10 space-y-8 max-w-[1440px] mx-auto">
+    <div className="py-6 sm:py-10 space-y-6 sm:space-y-8 max-w-[1440px] mx-auto">
       {/* Header */}
       <div className="space-y-1">
-        <h2 className="text-5xl font-bold text-on-surface tracking-tighter">System Dashboard</h2>
-        <p className="text-on-surface-variant text-lg font-medium opacity-70">
+        <h2 className="text-3xl sm:text-4xl lg:text-5xl font-bold text-on-surface tracking-tighter">System Dashboard</h2>
+        <p className="text-on-surface-variant text-base sm:text-lg font-medium opacity-70">
           Monitoring <span className="text-on-surface">{totalCases}</span> active cases across judicial circuits.
         </p>
       </div>
 
       {/* Stats Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+      <div className="grid grid-cols-2 md:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-6">
         <StatCard 
           icon="folder_managed" 
           label="Total Cases" 
@@ -167,11 +167,11 @@ export const Dashboard = ({ onSelectCase }: { onSelectCase: (id: string) => void
       {/* Main Grid */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
         {/* Heatmap Section */}
-        <div className="lg:col-span-8 glass-card p-8">
-          <div className="flex justify-between items-center mb-10">
+        <div className="lg:col-span-8 glass-card p-5 sm:p-8">
+          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 sm:mb-10 gap-3">
             <div>
-              <h4 className="text-3xl font-bold text-on-surface tracking-tight">Deadline Heatmap</h4>
-              <p className="text-on-surface-variant text-sm font-medium mt-1">Next 30 days — case filing urgency distribution.</p>
+              <h4 className="text-xl sm:text-2xl lg:text-3xl font-bold text-on-surface tracking-tight">Deadline Heatmap</h4>
+              <p className="text-on-surface-variant text-xs sm:text-sm font-medium mt-1">Next 30 days — case filing urgency distribution.</p>
             </div>
             <div className="flex items-center gap-1.5 opacity-40">
               <div className="w-3.5 h-3.5 rounded bg-surface-container-highest"></div>
@@ -181,12 +181,12 @@ export const Dashboard = ({ onSelectCase }: { onSelectCase: (id: string) => void
             </div>
           </div>
           
-          <div className="grid grid-cols-5 sm:grid-cols-10 gap-4">
+          <div className="grid grid-cols-5 sm:grid-cols-6 md:grid-cols-10 gap-2 sm:gap-4">
             {heatmapCells.map((cell, i) => (
               <div 
                 key={i}
                 onClick={() => cell.caseId && onSelectCase(cell.caseId)}
-                className={`aspect-square rounded-xl border flex items-center justify-center text-sm font-bold transition-all ${cell.bgColor}`}
+                className={`aspect-square rounded-lg sm:rounded-xl border flex items-center justify-center text-xs sm:text-sm font-bold transition-all ${cell.bgColor}`}
               >
                 {cell.day.toString().padStart(2, '0')}
               </div>
@@ -195,9 +195,9 @@ export const Dashboard = ({ onSelectCase }: { onSelectCase: (id: string) => void
         </div>
 
         {/* Risk Board */}
-        <div className="lg:col-span-4 glass-card p-8 flex flex-col">
-          <h4 className="text-2xl font-bold text-on-surface tracking-tight mb-8">Risk Board</h4>
-          <div className="space-y-4 flex-grow">
+        <div className="lg:col-span-4 glass-card p-5 sm:p-8 flex flex-col">
+          <h4 className="text-xl sm:text-2xl font-bold text-on-surface tracking-tight mb-6 sm:mb-8">Risk Board</h4>
+          <div className="space-y-3 sm:space-y-4 flex-grow">
             {riskBoard.length > 0 ? riskBoard.map(c => {
               const risk = caseRisk(c);
               const days = daysUntilDeadline(c);
@@ -205,9 +205,9 @@ export const Dashboard = ({ onSelectCase }: { onSelectCase: (id: string) => void
                 <div 
                   key={c.id} 
                   onClick={() => onSelectCase(c.id)}
-                  className="bg-surface-dim/40 border border-outline-variant/20 rounded-2xl p-4 hover:bg-surface-container-high transition-colors cursor-pointer group"
+                  className="bg-surface-dim/40 border border-outline-variant/20 rounded-xl sm:rounded-2xl p-3 sm:p-4 hover:bg-surface-container-high transition-colors cursor-pointer group"
                 >
-                  <div className="flex justify-between items-start mb-3">
+                  <div className="flex justify-between items-start mb-2 sm:mb-3">
                     <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-widest ${
                       risk === 'High' ? 'bg-error-red/10 text-error-red' : 'bg-tertiary-container/10 text-tertiary-container'
                     }`}>
@@ -222,16 +222,16 @@ export const Dashboard = ({ onSelectCase }: { onSelectCase: (id: string) => void
                       </div>
                     )}
                   </div>
-                  <h5 className="text-on-surface font-bold text-lg tracking-tight group-hover:text-primary-blue transition-colors">
+                  <h5 className="text-on-surface font-bold text-base sm:text-lg tracking-tight group-hover:text-primary-blue transition-colors line-clamp-1">
                     {shortPartyTitle(c.petitioner_name, c.respondent_name)}
                   </h5>
-                  <p className="text-on-surface-variant text-[10px] font-bold uppercase tracking-widest mt-1 opacity-70">
+                  <p className="text-on-surface-variant text-[10px] font-bold uppercase tracking-widest mt-1 opacity-70 truncate">
                     {c.case_number} • {c.court_name}
                   </p>
                 </div>
               );
             }) : (
-              <div className="flex flex-col items-center justify-center text-center p-10 opacity-50">
+              <div className="flex flex-col items-center justify-center text-center p-6 sm:p-10 opacity-50">
                 <span className="material-symbols-outlined text-4xl mb-3">verified_user</span>
                 <p className="font-bold text-on-surface-variant">No high-risk cases</p>
                 <p className="text-sm text-on-surface-variant">All cases are at low risk currently.</p>
@@ -240,23 +240,23 @@ export const Dashboard = ({ onSelectCase }: { onSelectCase: (id: string) => void
           </div>
           <button 
             onClick={() => onSelectCase('')}
-            className="w-full mt-8 py-3 text-primary-blue font-bold text-xs uppercase tracking-widest border border-primary-blue/20 rounded-xl hover:bg-primary-blue/5 transition-all"
+            className="w-full mt-6 sm:mt-8 py-3 text-primary-blue font-bold text-xs uppercase tracking-widest border border-primary-blue/20 rounded-xl hover:bg-primary-blue/5 transition-all"
           >
             View All Cases
           </button>
         </div>
 
         {/* Recent Cases */}
-        <div className="lg:col-span-12 glass-card p-8">
-          <div className="flex justify-between items-center mb-8">
-            <h4 className="text-2xl font-bold text-on-surface tracking-tight">Recent Cases</h4>
+        <div className="lg:col-span-12 glass-card p-5 sm:p-8">
+          <div className="flex justify-between items-center mb-6 sm:mb-8">
+            <h4 className="text-xl sm:text-2xl font-bold text-on-surface tracking-tight">Recent Cases</h4>
             <span className="text-[10px] font-bold text-on-surface-variant uppercase tracking-widest opacity-60">
               Last {Math.min(cases.length, 5)} of {totalCases}
             </span>
           </div>
           
-          {/* Table Header */}
-          <div className="grid grid-cols-12 gap-4 pb-4 border-b border-outline-variant/20 text-on-surface-variant text-[10px] font-bold uppercase tracking-[0.15em]">
+          {/* Desktop Table Header — hidden on mobile */}
+          <div className="hidden md:grid grid-cols-12 gap-4 pb-4 border-b border-outline-variant/20 text-on-surface-variant text-[10px] font-bold uppercase tracking-[0.15em]">
             <div className="col-span-4">Case</div>
             <div className="col-span-2">Court</div>
             <div className="col-span-2">Risk</div>
@@ -264,7 +264,7 @@ export const Dashboard = ({ onSelectCase }: { onSelectCase: (id: string) => void
             <div className="col-span-2 text-right">Date</div>
           </div>
           
-          {/* Table Rows */}
+          {/* Table Rows — card layout on mobile, grid on desktop */}
           {cases.slice(0, 5).map(c => {
             const risk = caseRisk(c);
             const j = c.judgments?.[0];
@@ -275,32 +275,35 @@ export const Dashboard = ({ onSelectCase }: { onSelectCase: (id: string) => void
               <div 
                 key={c.id}
                 onClick={() => onSelectCase(c.id)}
-                className="grid grid-cols-12 gap-4 py-4 border-b border-outline-variant/10 items-center hover:bg-white/[0.02] -mx-4 px-4 transition-colors cursor-pointer group"
+                className="md:grid md:grid-cols-12 md:gap-4 py-4 border-b border-outline-variant/10 items-center hover:bg-white/[0.02] md:-mx-4 md:px-4 transition-colors cursor-pointer group"
               >
-                <div className="col-span-4 min-w-0">
+                {/* Mobile: stacked layout */}
+                <div className="md:col-span-4 min-w-0">
                   <p className="font-bold text-on-surface text-sm truncate group-hover:text-primary-blue transition-colors">
                     {shortPartyTitle(c.petitioner_name, c.respondent_name)}
                   </p>
                   <p className="text-on-surface-variant text-[10px] font-medium truncate">{c.case_number}</p>
                 </div>
-                <div className="col-span-2 text-on-surface-variant text-xs font-medium truncate">{c.court_name}</div>
-                <div className="col-span-2">
-                  <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider ${
-                    risk === 'High' ? 'bg-error-red/10 text-error-red' :
-                    risk === 'Medium' ? 'bg-tertiary-container/10 text-tertiary-container' :
-                    'bg-green-500/10 text-green-400'
-                  }`}>
-                    {risk}
-                  </span>
+                <div className="md:col-span-2 text-on-surface-variant text-xs font-medium truncate hidden md:block">{c.court_name}</div>
+                <div className="flex items-center gap-2 mt-2 md:mt-0 md:contents">
+                  <div className="md:col-span-2">
+                    <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider ${
+                      risk === 'High' ? 'bg-error-red/10 text-error-red' :
+                      risk === 'Medium' ? 'bg-tertiary-container/10 text-tertiary-container' :
+                      'bg-green-500/10 text-green-400'
+                    }`}>
+                      {risk}
+                    </span>
+                  </div>
+                  <div className="md:col-span-2">
+                    <span className={`text-[10px] font-bold uppercase tracking-wider ${
+                      c.status === 'pending' ? 'text-amber-400' : 'text-green-400'
+                    }`}>
+                      {c.status}
+                    </span>
+                  </div>
+                  <div className="md:col-span-2 text-right text-on-surface-variant text-xs font-medium ml-auto md:ml-0">{dateStr}</div>
                 </div>
-                <div className="col-span-2">
-                  <span className={`text-[10px] font-bold uppercase tracking-wider ${
-                    c.status === 'pending' ? 'text-amber-400' : 'text-green-400'
-                  }`}>
-                    {c.status}
-                  </span>
-                </div>
-                <div className="col-span-2 text-right text-on-surface-variant text-xs font-medium">{dateStr}</div>
               </div>
             );
           })}

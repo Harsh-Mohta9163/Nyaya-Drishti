@@ -374,13 +374,13 @@ export const VerifyActions = ({
   }, [activeActionId]);
 
   return (
-    <div className="flex flex-col lg:flex-row gap-8 py-8 h-[calc(100vh-100px)] min-h-[800px] overflow-hidden">
+    <div className="flex flex-col lg:flex-row gap-6 sm:gap-8 py-4 sm:py-8 h-auto lg:h-[calc(100vh-100px)] lg:min-h-[800px] overflow-visible lg:overflow-hidden">
       {/* Left: PDF Viewer */}
-      <div className="w-full lg:w-1/2 flex flex-col glass-card border-outline-variant/20 h-full relative group shrink-0 overflow-hidden">
+      <div className="w-full lg:w-1/2 flex flex-col glass-card border-outline-variant/20 h-[50vh] sm:h-[60vh] lg:h-full relative group shrink-0 overflow-hidden">
         <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-primary-blue/50 via-primary-blue/20 to-transparent"></div>
         
         {/* Toolbar */}
-        <div className="h-14 border-b border-outline-variant/20 bg-surface-container/30 flex items-center justify-between px-6 shrink-0 z-20">
+        <div className="h-12 sm:h-14 border-b border-outline-variant/20 bg-surface-container/30 flex items-center justify-between px-3 sm:px-6 shrink-0 z-20">
           <div className="flex items-center gap-4">
             <button className="p-1.5 rounded hover:bg-surface-container-high transition-colors text-on-surface-variant">
               <span className="material-symbols-outlined text-base">menu</span>
@@ -427,7 +427,7 @@ export const VerifyActions = ({
         {/* Document Area */}
         <div 
           ref={scrollRef}
-          className="flex-1 overflow-y-auto bg-surface-container-lowest/50 p-10 flex flex-col items-center gap-10 scrollbar-thin relative"
+          className="flex-1 overflow-y-auto bg-surface-container-lowest/50 p-4 sm:p-10 flex flex-col items-center gap-6 sm:gap-10 scrollbar-thin relative"
         >
           {pdfUrl ? (
             <Document
@@ -495,11 +495,11 @@ export const VerifyActions = ({
       </div>
 
       {/* Right Column — Action List */}
-      <div className="w-full lg:w-1/2 flex flex-col gap-6 h-full">
+      <div className="w-full lg:w-1/2 flex flex-col gap-4 sm:gap-6 h-auto lg:h-full">
         {/* Header & Controls */}
         <div className="flex items-center justify-between flex-wrap gap-4 shrink-0">
           <div className="flex items-center gap-4 flex-wrap">
-            <h3 className="text-xl font-bold text-on-surface tracking-tight whitespace-nowrap">Court Directions — Verify</h3>
+            <h3 className="text-lg sm:text-xl font-bold text-on-surface tracking-tight whitespace-nowrap">Court Directions — Verify</h3>
             <span className="px-2 py-1 bg-surface-container-high rounded text-[10px] font-bold text-on-surface-variant uppercase tracking-widest whitespace-nowrap">
               {actions.filter(a => a.isVerified).length} / {actions.length} Verified
             </span>

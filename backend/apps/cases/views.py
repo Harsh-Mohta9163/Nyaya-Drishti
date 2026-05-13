@@ -155,8 +155,11 @@ class CaseExtractView(APIView):
             )
 
             # Refresh from DB — extract_structured_data saves internally
+            # NOTE: The extractor may delete the original temp case and re-point
+            # the judgment to an existing case (dedup logic). So we must get the
+            # case from the judgment, not refresh the potentially-deleted local var.
             judgment.refresh_from_db()
-            case.refresh_from_db()
+            case = judgment.case
 
             # 5. Source Highlighting — annotate with PyMuPDF bounding boxes
             if judgment.court_directions:
@@ -183,6 +186,10 @@ class CaseStatusView(APIView):
 
 
 class ServePdfView(APIView):
+    # Public — PDFs need to be fetchable by react-pdf without auth headers
+    authentication_classes = []
+    permission_classes = []
+
     def get(self, request, pk, *args, **kwargs):
         judgment = get_object_or_404(Judgment, pk=pk)
         if not judgment.pdf_file:
@@ -190,7 +197,10 @@ class ServePdfView(APIView):
         
         file_path = judgment.pdf_file.path
         if os.path.exists(file_path):
-            return FileResponse(open(file_path, "rb"), content_type="application/pdf")
+            response = FileResponse(open(file_path, "rb"), content_type="application/pdf")
+            # Explicit CORS header for cross-origin PDF loading (react-pdf)
+            response["Access-Control-Allow-Origin"] = "*"
+            return response
         return Response(status=status.HTTP_404_NOT_FOUND)
 
 

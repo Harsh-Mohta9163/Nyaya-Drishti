@@ -17,13 +17,13 @@ const PrecedentCard = ({
     <motion.article 
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
-      className={`bg-surface-container/40 backdrop-blur-md rounded-2xl p-6 border-l-4 ${borderClass} border-outline-variant/20 hover:bg-surface-container-high/60 transition-all group relative overflow-hidden`}
+      className={`bg-surface-container/40 backdrop-blur-md rounded-xl sm:rounded-2xl p-4 sm:p-6 border-l-4 ${borderClass} border-outline-variant/20 hover:bg-surface-container-high/60 transition-all group relative overflow-hidden`}
     >
       <div className="absolute top-0 right-0 w-32 h-32 bg-primary-blue/5 rounded-full blur-3xl -mr-16 -mt-16 group-hover:bg-primary-blue/10 transition-colors"></div>
       
-      <div className="flex flex-col md:flex-row gap-8 relative z-10">
+      <div className="flex flex-col gap-5 sm:gap-8 relative z-10">
         {/* Left: Score & Meta */}
-        <div className="w-full md:w-48 shrink-0 flex flex-col gap-4">
+        <div className="w-full md:w-48 shrink-0 flex flex-row md:flex-col gap-3 sm:gap-4 items-center md:items-start">
           <div className="flex flex-col gap-1">
             <div className="flex justify-between items-end">
               <span className={`text-4xl font-black ${scoreColor}`}>{matchScore}%</span>
@@ -104,10 +104,10 @@ export const Precedents = ({
   const precedents = recommendation?.agent_outputs?.precedents || [];
 
   return (
-    <div className="flex flex-col lg:flex-row gap-10 py-8">
+    <div className="flex flex-col gap-6 sm:gap-10 py-4 sm:py-8">
       {/* Main content */}
-      <div className="flex-1 flex flex-col gap-8">
-        <div className="flex items-center justify-between">
+      <div className="flex-1 flex flex-col gap-6 sm:gap-8">
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
           <h2 className="text-xl font-bold text-on-surface tracking-tight flex items-center gap-3">
             <div className="p-2 bg-primary-blue/10 rounded-lg">
               <span className="material-symbols-outlined text-primary-blue">library_books</span>

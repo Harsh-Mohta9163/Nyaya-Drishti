@@ -89,19 +89,19 @@ export const CaseOverview = ({
   const allDirections = verifiedActions || [];
 
   return (
-    <div className="grid grid-cols-1 xl:grid-cols-12 gap-8 py-8">
+    <div className="grid grid-cols-1 xl:grid-cols-12 gap-6 sm:gap-8 py-4 sm:py-8">
       {/* Left Column */}
-      <div className="xl:col-span-7 space-y-8">
+      <div className="xl:col-span-7 space-y-6 sm:space-y-8">
         
         {/* Case Details Card */}
-        <div className="glass-card p-6">
+        <div className="glass-card p-4 sm:p-6">
           <div className="flex items-center gap-4 mb-8">
             <div className="bg-secondary-container/40 p-2.5 rounded-lg border border-outline-variant/20">
               <span className="material-symbols-outlined text-primary-blue">description</span>
             </div>
             <h4 className="font-bold text-on-surface text-xl tracking-tight">Case Details</h4>
           </div>
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-10">
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-6 sm:gap-10">
             <DetailItem label="Jurisdiction" value={caseData?.court_name || '—'} />
             <DetailItem label="Bench" value={judgment?.presiding_judges?.join(', ') || '—'} clamp={true} />
             <DetailItem label="Filing Date" value={filingDate} />
@@ -112,7 +112,7 @@ export const CaseOverview = ({
         </div>
 
         {/* Executive Case Brief Card */}
-        <div className="glass-card p-8 border-l-4 border-l-primary-blue relative overflow-hidden group">
+        <div className="glass-card p-5 sm:p-8 border-l-4 border-l-primary-blue relative overflow-hidden group">
           <div className="absolute -right-20 -top-20 w-48 h-48 bg-primary-blue/5 blur-[100px] group-hover:bg-primary-blue/10 transition-all duration-500"></div>
           
           <div className="flex items-start justify-between mb-6">
@@ -159,7 +159,7 @@ export const CaseOverview = ({
 
         {/* AI Recommendation Card */}
         {recommendation ? (
-          <div className="glass-card flex flex-col gap-6 p-8 border border-primary-blue/30 relative overflow-hidden">
+          <div className="glass-card flex flex-col gap-4 sm:gap-6 p-4 sm:p-8 border border-primary-blue/30 relative overflow-hidden">
             <div className="absolute top-0 right-0 w-32 h-32 bg-primary-blue/10 rounded-full blur-[50px]"></div>
             
             <div className="flex flex-wrap justify-between items-start gap-4">
@@ -247,7 +247,7 @@ export const CaseOverview = ({
                 <h4 className="text-[10px] font-bold text-on-surface-variant uppercase tracking-widest mb-4 flex items-center gap-2">
                   <span className="material-symbols-outlined text-sm">schedule</span> Key Deadlines & Limitation
                 </h4>
-                <div className="grid grid-cols-3 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4">
                   <div className="bg-surface-container-high/40 rounded-lg p-3 text-center border border-outline-variant/15">
                     <p className="text-[9px] font-bold text-on-surface-variant uppercase tracking-widest mb-1">Limitation Deadline</p>
                     <p className="text-base font-bold text-on-surface">
@@ -437,17 +437,17 @@ export const CaseOverview = ({
         )}
 
         {/* Similar Cases Table Card */}
-        <div className="glass-card p-8">
+        <div className="glass-card p-4 sm:p-8">
           <div className="flex items-center justify-between mb-8">
             <h4 className="font-bold text-on-surface text-xl tracking-tight">Similar Cases & RAG Evidence</h4>
           </div>
           
           <div className="space-y-1">
-            <div className="grid grid-cols-12 gap-4 pb-4 border-b border-outline-variant/20 text-on-surface-variant text-[10px] font-bold uppercase tracking-[0.2em]">
+            <div className="hidden sm:grid grid-cols-12 gap-4 pb-4 border-b border-outline-variant/20 text-on-surface-variant text-[10px] font-bold uppercase tracking-[0.2em]">
               <div className="col-span-4">Case ID</div>
               <div className="col-span-2">Similarity</div>
               <div className="col-span-2">Outcome</div>
-              <div className="col-span-4 text-right sm:text-left">Core Precedent</div>
+              <div className="col-span-4">Core Precedent</div>
             </div>
             
             {similarCases.length > 0 ? (
@@ -492,7 +492,7 @@ export const CaseOverview = ({
 
       {/* Right Column */}
       <div className="xl:col-span-5">
-        <div className="glass-card flex flex-col p-8 sticky top-8">
+        <div className="glass-card flex flex-col p-4 sm:p-8 sticky top-8">
           <div className="flex items-center gap-4 mb-4">
             <div className="bg-secondary-container/30 p-2.5 rounded-xl border border-outline-variant/20">
               <span className="material-symbols-outlined text-on-surface-variant">gavel</span>
@@ -589,19 +589,36 @@ export const CaseOverview = ({
 };
 
 const CaseRow: React.FC<{ id: string, similarity: number, outcome: string, precedent: string }> = ({ id, similarity, outcome, precedent }) => (
-  <div className="grid grid-cols-12 gap-4 py-5 border-b border-outline-variant/10 items-center hover:bg-white/[0.02] -mx-4 px-4 transition-colors">
-    <div className="col-span-4 font-mono font-bold text-on-surface text-sm truncate" title={id}>{id}</div>
-    <div className="col-span-2 flex items-center gap-2">
-      <div className="flex-grow h-1.5 bg-surface-container-highest rounded-full overflow-hidden">
-        <div className="h-full bg-primary-blue transition-all duration-1000" style={{ width: `${similarity}%` }}></div>
+  <>
+    {/* Desktop row */}
+    <div className="hidden sm:grid grid-cols-12 gap-4 py-5 border-b border-outline-variant/10 items-center hover:bg-white/[0.02] -mx-4 px-4 transition-colors">
+      <div className="col-span-4 font-mono font-bold text-on-surface text-sm truncate" title={id}>{id}</div>
+      <div className="col-span-2 flex items-center gap-2">
+        <div className="flex-grow h-1.5 bg-surface-container-highest rounded-full overflow-hidden">
+          <div className="h-full bg-primary-blue transition-all duration-1000" style={{ width: `${similarity}%` }}></div>
+        </div>
+        <span className="text-xs font-bold text-primary-blue whitespace-nowrap">{similarity}%</span>
       </div>
-      <span className="text-xs font-bold text-primary-blue whitespace-nowrap">{similarity}%</span>
+      <div className={`col-span-2 text-xs font-bold uppercase tracking-widest ${outcome === 'Dismissed' ? 'text-green-400' : 'text-tertiary-container'}`}>
+        {outcome}
+      </div>
+      <div className="col-span-4 flex items-center justify-between gap-4">
+        <span className="text-on-surface-variant text-sm font-medium italic truncate">{precedent}</span>
+      </div>
     </div>
-    <div className={`col-span-2 text-xs font-bold uppercase tracking-widest ${outcome === 'Dismissed' ? 'text-green-400' : 'text-tertiary-container'}`}>
-      {outcome}
+    {/* Mobile card */}
+    <div className="sm:hidden py-4 border-b border-outline-variant/10">
+      <div className="flex items-center justify-between gap-2 mb-2">
+        <span className="font-mono font-bold text-on-surface text-xs truncate" title={id}>{id}</span>
+        <span className="text-xs font-bold text-primary-blue whitespace-nowrap">{similarity}%</span>
+      </div>
+      <div className="flex items-center gap-2 mb-1">
+        <div className="flex-grow h-1.5 bg-surface-container-highest rounded-full overflow-hidden">
+          <div className="h-full bg-primary-blue" style={{ width: `${similarity}%` }}></div>
+        </div>
+        <span className={`text-[10px] font-bold uppercase ${outcome === 'Dismissed' ? 'text-green-400' : 'text-tertiary-container'}`}>{outcome}</span>
+      </div>
+      <p className="text-on-surface-variant text-xs font-medium italic truncate mt-1">{precedent}</p>
     </div>
-    <div className="col-span-4 flex items-center justify-between gap-4">
-      <span className="text-on-surface-variant text-sm font-medium italic truncate">{precedent}</span>
-    </div>
-  </div>
+  </>
 );

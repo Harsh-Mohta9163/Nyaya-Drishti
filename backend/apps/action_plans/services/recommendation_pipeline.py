@@ -515,7 +515,6 @@ def generate_recommendation(
         if score < rag_threshold:
             logger.info(f"Dropping weak chunk (cosine sim {score:.4f} < {rag_threshold}): {cid}")
             continue
-            
         if cid not in grouped_cases:
             grouped_cases[cid] = {
                 "metadata": c.get('metadata', {}),

@@ -6,23 +6,21 @@ import { Gavel, User, Lock, ArrowRight, Eye, EyeOff, Brain, TrendingUp, ShieldCh
 
 const S = {
   page: {
-    height: '100vh',
+    minHeight: '100vh',
     width: '100%',
     display: 'flex' as const,
-    backgroundColor: '#0b0e14', // bg-background
+    backgroundColor: '#0b0e14',
     fontFamily: "'Inter', system-ui, sans-serif",
     overflow: 'hidden' as const,
     position: 'relative' as const,
   },
   leftCol: {
-    width: '50%',
-    display: 'flex' as const,
     flexDirection: 'column' as const,
     justifyContent: 'center' as const,
     padding: '3rem',
     position: 'relative' as const,
     zIndex: 1,
-    backgroundColor: '#10131a', // bg-surface-dim
+    backgroundColor: '#10131a',
   },
   logoRow: {
     display: 'flex' as const,
@@ -51,6 +49,7 @@ const S = {
     position: 'relative' as const,
     zIndex: 1,
     overflowY: 'auto' as const,
+    minHeight: '100vh',
   },
   card: {
     width: '100%',
@@ -156,8 +155,8 @@ export default function LoginPage() {
       {/* Dot Grid Background */}
       <div style={{ position: 'absolute', inset: 0, opacity: 0.1, backgroundImage: 'radial-gradient(#ffffff 1px, transparent 1px)', backgroundSize: '24px 24px', pointerEvents: 'none', zIndex: 0 }} />
 
-      {/* Left column */}
-      <div className="hidden lg:flex" style={S.leftCol}>
+      {/* Left column — hidden on mobile via className, width 50% on desktop */}
+      <div className="hidden lg:flex w-1/2" style={S.leftCol}>
         <div style={{ position: 'absolute', inset: 0, zIndex: 0, overflow: 'hidden', pointerEvents: 'none' }}>
           {/* Deep Dark Gradient */}
           <div style={{ position: 'absolute', inset: 0, background: 'radial-gradient(circle at 100% 50%, rgba(59,130,246,0.15) 0%, rgba(10,12,18,1) 100%)' }} />
@@ -260,8 +259,8 @@ export default function LoginPage() {
         </div>
       </div>
 
-      {/* Right column */}
-      <main style={S.rightCol}>
+      {/* Right column — full width on mobile */}
+      <main className="w-full lg:w-1/2" style={S.rightCol}>
         <motion.div initial={{ opacity: 0, scale: 0.96 }} animate={{ opacity: 1, scale: 1 }} transition={{ duration: 0.4 }} style={S.card}>
           <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: '4px', background: 'linear-gradient(90deg, transparent, rgba(59,130,246,0.5), transparent)' }} />
 
