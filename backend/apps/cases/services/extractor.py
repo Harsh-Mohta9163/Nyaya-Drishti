@@ -53,7 +53,7 @@ class ScholarExtraction(BaseModel):
 
 # Agent 4: Compliance Officer (70B — most critical agent)
 class DirectiveExtraction(BaseModel):
-    text: str = Field(description="The COMPLETE verbatim paragraph(s) from the operative order. Include ALL details: amounts, percentages, calculations, conditions, and reasoning. Do NOT shorten or summarize.")
+    text: str = Field(description="The COMPLETE verbatim paragraph(s) of the operative ORDER ITSELF — the court's actual command/direction. Do NOT include legal reasoning or citations that precede the order. Include ALL details: amounts, percentages, calculations, conditions.")
     responsible_entity: str = Field(description="The specific department/party/court who must carry out this directive.")
     action_required: str = Field(description="Clear 1-2 sentence summary of the compliance action for a government officer. Include specific amounts and deadlines.")
     deadline_mentioned: Optional[str] = Field(description="Exact phrase describing deadline, e.g. 'within 8 weeks'", default=None)
@@ -90,7 +90,7 @@ def _call_agent_70b(prompt: str, schema: type[BaseModel], temperature: float) ->
         "model": model,
         "messages": [{"role": "user", "content": full_prompt}],
         "temperature": temperature,
-        "max_tokens": 4096,
+        "max_tokens": 8192,
         "response_format": {"type": "json_object"},
     }
 
@@ -256,17 +256,33 @@ def extract_structured_data(
             "You are a senior compliance officer for a government department. "
             "Extract the COMPLETE operative order from this Indian court judgment.\n\n"
             "CRITICAL INSTRUCTIONS:\n"
-            "1. IGNORE any case law citations or legal reasoning. Focus ONLY on what the department MUST DO.\n"
-            "2. For each court direction, capture the FULL PARAGRAPH — do NOT extract isolated sentences.\n"
+            "1. Extract ALL OPERATIVE ORDERS — not just enforcement/compliance actions. This includes EVERY category:\n"
+            "   a) Sentencing / conviction orders (life imprisonment, rigorous imprisonment, fines, default sentences)\n"
+            "   b) Acquittal orders (e.g., 'appeal against acquittal dismissed', acquittal upheld)\n"
+            "   c) Orders for absconding accused (e.g., 'to be heard separately when produced')\n"
+            "   d) Set-off / remission rights (e.g., 'entitled to set-off for period already spent in jail')\n"
+            "   e) Conviction warrant directions (e.g., 'Registrar to issue conviction warrants forthwith')\n"
+            "   f) Compensation orders — including WHO receives the money (e.g., 'widow of deceased')\n"
+            "   g) Procedural orders (supply of copies, printing of judgment, free copies to accused)\n"
+            "   h) Welfare / medical care orders (e.g., 'Jail Superintendent to monitor health of accused')\n"
+            "   i) Costs / interest / penalty orders\n"
+            "   j) Any other direction by the court\n"
+            "2. For each court direction, the 'text' field must contain ONLY the verbatim text of the OPERATIVE ORDER ITSELF.\n"
+            "   Do NOT include legal reasoning, citations, or analysis paragraphs that precede the order.\n"
+            "   The text should start with the actual direction/command of the court.\n"
+            "3. Capture the FULL PARAGRAPH for each direction — do NOT extract isolated sentences.\n"
             "   A government officer reading your extraction must understand the COMPLETE order without referring back to the judgment.\n"
-            "3. Include ALL financial details: exact rupee amounts, percentages, base values, calculation methods, deductions.\n"
-            "4. The 'action_required' field should read like a clear compliance instruction, e.g.:\n"
+            "4. Include ALL financial details: exact rupee amounts, percentages, base values, calculation methods, deductions.\n"
+            "5. The 'action_required' field should read like a clear compliance instruction, e.g.:\n"
             "   BAD: 'Pay market value to appellants'\n"
             "   GOOD: 'Pay enhanced compensation of ₹3,38,400/- per acre to appellants (base value ₹7,20,000 per acre minus 53% developmental charges under HUDCO scheme), plus statutory benefits and interest under Sections 23(1A), 23(2), and 28 of the Land Acquisition Act.'\n"
-            "5. For 'operative_order_summary': Write a complete 3-5 sentence summary that a government secretary can read to understand the entire order.\n\n"
+            "6. For 'operative_order_summary': Write a complete 3-5 sentence summary that a government secretary can read to understand the ENTIRE order — including procedural directions, not just the headline sentence/fine.\n"
+            "7. You MUST extract at least one directive for each distinct court order. If there are 8 separate orders, there must be 8 directives.\n\n"
             "RESPONSIBLE ENTITY RULES:\n"
-            "- If the court itself must act (e.g. 'modified award shall be drawn'), responsible_entity = 'Reference Court' or the specific court/tribunal.\n"
+            "- If the court itself must act (e.g. 'conviction warrants to be issued', 'copies to be supplied'), responsible_entity = 'Reference Court' or 'Registrar (Judicial)' or the specific court/tribunal.\n"
+            "- If a jail authority must act (e.g. 'monitor health'), responsible_entity = 'Jail Superintendent' or the specific authority.\n"
             "- If a government department/officer must pay or act, identify the SPECIFIC entity.\n"
+            "- If the order is about an accused's rights (e.g. set-off), responsible_entity = the specific accused.\n"
             "- Different directives may have DIFFERENT responsible entities.\n\n"
             f"Case Type: {case.case_type or 'Unknown'}\n"
             f"Petitioner/Appellant: {case.petitioner_name or 'Unknown'}\n"

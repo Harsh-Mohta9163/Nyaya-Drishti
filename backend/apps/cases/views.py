@@ -26,9 +26,19 @@ def _annotate_source_locations(pdf_path: str, directions: list[dict]) -> list[di
     For each court direction, find ALL bounding boxes in the PDF using PyMuPDF.
     Stores page number, page dimensions (for frontend scaling), and an array
     of rects covering the full paragraph — not just the first line.
+
+    STRATEGY: Search pages in REVERSE order (last page first) because operative
+    orders are always at the end of the judgment. This prevents false matches on
+    earlier pages where similar text may appear in legal reasoning sections.
     """
     try:
         doc = fitz.open(pdf_path)
+        total_pages = len(doc)
+
+        # Prefer searching only the last 30% of pages first, then expand
+        # to all pages if not found. This avoids matching reasoning text
+        # that precedes the operative order.
+        back_threshold = max(1, int(total_pages * 0.70))  # page index
 
         for direction in directions:
             text = (direction.get("text") or "").strip()
@@ -36,28 +46,52 @@ def _annotate_source_locations(pdf_path: str, directions: list[dict]) -> list[di
                 direction["source_location"] = None
                 continue
 
+            # Build snippet candidates: start-of-text, and also middle-of-text
+            # to avoid matching leading context from reasoning sections.
+            snippet_candidates = []
+            # Primary: beginning of text at various lengths
+            for slen in [120, 80, 50, 30]:
+                s = text[:slen].strip()
+                if s:
+                    snippet_candidates.append((s, 0))  # (snippet, offset)
+            # Secondary: middle-of-text snippets (skip leading context)
+            for offset in [40, 80]:
+                if len(text) > offset + 30:
+                    for slen in [80, 50, 30]:
+                        s = text[offset:offset + slen].strip()
+                        if s:
+                            snippet_candidates.append((s, offset))
+                            break  # one snippet per offset
+
             found = False
-            for page in doc:
-                # Try progressively shorter snippets for robustness
-                for snippet_len in [120, 80, 50, 30]:
-                    snippet = text[:snippet_len].strip()
-                    if not snippet:
-                        continue
-                    rects = page.search_for(snippet)
-                    if not rects:
-                        continue
 
-                    # Collect all rects for the beginning of the text
-                    all_rects = [{"x0": round(r.x0, 2), "y0": round(r.y0, 2),
-                                  "x1": round(r.x1, 2), "y1": round(r.y1, 2)}
-                                 for r in rects]
+            # PASS 1: Search only the last 30% of pages (reverse order)
+            # PASS 2: If not found, search remaining pages (reverse order)
+            page_ranges = [
+                range(total_pages - 1, back_threshold - 1, -1),  # last 30%
+                range(back_threshold - 1, -1, -1),                # rest
+            ]
 
-                    # Search for later parts of the text to cover the full paragraph
-                    if len(text) > snippet_len:
-                        later = text[snippet_len:snippet_len + 60].strip()
-                        if later:
-                            for sl in [min(len(later), 50), 30]:
-                                more = page.search_for(later[:sl])
+            for page_range in page_ranges:
+                if found:
+                    break
+                for page_idx in page_range:
+                    page = doc[page_idx]
+                    for snippet, _offset in snippet_candidates:
+                        rects = page.search_for(snippet)
+                        if not rects:
+                            continue
+
+                        # Collect all rects for the matched snippet
+                        all_rects = [{"x0": round(r.x0, 2), "y0": round(r.y0, 2),
+                                      "x1": round(r.x1, 2), "y1": round(r.y1, 2)}
+                                     for r in rects]
+
+                        # Search for later parts of the text to cover the full paragraph
+                        text_after = text[_offset + len(snippet):_offset + len(snippet) + 80].strip()
+                        if text_after:
+                            for sl in [min(len(text_after), 60), 40, 25]:
+                                more = page.search_for(text_after[:sl])
                                 if more:
                                     for r in more:
                                         rd = {"x0": round(r.x0, 2), "y0": round(r.y0, 2),
@@ -66,17 +100,17 @@ def _annotate_source_locations(pdf_path: str, directions: list[dict]) -> list[di
                                             all_rects.append(rd)
                                     break
 
-                    page_rect = page.rect
-                    direction["source_location"] = {
-                        "page": page.number + 1,          # 1-indexed
-                        "page_width": round(page_rect.width, 2),
-                        "page_height": round(page_rect.height, 2),
-                        "rects": all_rects,
-                    }
-                    found = True
-                    break  # snippet_len loop
-                if found:
-                    break  # page loop
+                        page_rect = page.rect
+                        direction["source_location"] = {
+                            "page": page.number + 1,          # 1-indexed
+                            "page_width": round(page_rect.width, 2),
+                            "page_height": round(page_rect.height, 2),
+                            "rects": all_rects,
+                        }
+                        found = True
+                        break  # snippet_candidates loop
+                    if found:
+                        break  # page loop
 
             if not found:
                 direction["source_location"] = None
