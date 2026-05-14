@@ -1,6 +1,8 @@
 import React, { useState } from 'react';
 import { motion } from 'motion/react';
-import { CaseData } from '../api/client';
+import { CaseData, fetchCase } from '../api/client';
+import { useAuth, isGlobalRole } from '../context/AuthContext';
+import { DepartmentOverrideModal } from './DepartmentOverrideModal';
 
 const ExpandableText = ({ text, maxLines = 3 }: { text: string, maxLines?: number }) => {
   const [expanded, setExpanded] = useState(false);
@@ -68,6 +70,21 @@ export const CaseOverview = ({
   decision?: 'none' | 'appeal' | 'comply',
   onDecision?: (decision: 'none' | 'appeal' | 'comply') => void
 }) => {
+  const { user } = useAuth();
+  const [overrideOpen, setOverrideOpen] = useState(false);
+  const [overrideKey, setOverrideKey] = useState(0); // bump to force re-fetch of case after save
+
+  const primaryDept = caseData?.primary_department;
+  const secondaryDepts = caseData?.secondary_departments || [];
+  const userDeptCode = user?.department_code;
+  const canEditDept = !!user && (
+    isGlobalRole(user.role)
+    || (user.role === 'head_legal_cell' && !!userDeptCode && (
+      primaryDept?.code === userDeptCode
+      || secondaryDepts.some(d => d.code === userDeptCode)
+    ))
+  );
+
   const judgment = caseData?.judgments?.[0];
   const filingDate = judgment?.date_of_order
     ? new Date(judgment.date_of_order).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
@@ -90,9 +107,75 @@ export const CaseOverview = ({
 
   return (
     <div className="grid grid-cols-1 xl:grid-cols-12 gap-6 sm:gap-8 py-4 sm:py-8">
+      {/* Override modal */}
+      <DepartmentOverrideModal
+        open={overrideOpen}
+        caseId={caseData?.id || ''}
+        currentPrimaryCode={primaryDept?.code || null}
+        currentSecondaryCodes={secondaryDepts.map(d => d.code)}
+        onClose={() => setOverrideOpen(false)}
+        onSaved={async () => {
+          setOverrideKey(k => k + 1);
+          if (caseData?.id) {
+            try {
+              const fresh = await fetchCase(caseData.id);
+              // Mutate in place so parent component sees the new dept tags.
+              Object.assign(caseData, fresh);
+            } catch (_) { /* ignore — page refresh will fix it */ }
+          }
+        }}
+      />
+
       {/* Left Column */}
       <div className="xl:col-span-7 space-y-6 sm:space-y-8">
-        
+
+        {/* Department Assignment Card — AI tags + override pencil */}
+        <div className="glass-card p-4 sm:p-5 flex flex-wrap items-center gap-3" key={overrideKey}>
+          <div className="flex items-center gap-2 shrink-0">
+            <span className="material-symbols-outlined text-primary-blue text-lg">apartment</span>
+            <span className="text-[10px] font-bold uppercase tracking-[0.15em] text-on-surface-variant opacity-70">Responsible Dept</span>
+          </div>
+
+          {primaryDept ? (
+            <span
+              className="px-3 py-1 rounded-full text-xs font-bold bg-primary-blue/15 text-primary-blue border border-primary-blue/30 tracking-tight"
+              title={`Primary department (AI classified) · ${primaryDept.sector}`}
+            >
+              {primaryDept.name}
+            </span>
+          ) : (
+            <span className="px-3 py-1 rounded-full text-xs font-bold bg-error-red/10 text-error-red border border-error-red/30">
+              UNCLASSIFIED — AI could not match a department
+            </span>
+          )}
+
+          {secondaryDepts.length > 0 && (
+            <>
+              <span className="text-on-surface-variant text-[10px] uppercase tracking-widest opacity-50">also affects</span>
+              {secondaryDepts.map(d => (
+                <span
+                  key={d.code}
+                  title={d.sector}
+                  className="px-2.5 py-1 rounded-full text-[11px] font-bold border border-outline-variant/40 text-on-surface-variant"
+                >
+                  {d.name}
+                </span>
+              ))}
+            </>
+          )}
+
+          {canEditDept && (
+            <button
+              onClick={() => setOverrideOpen(true)}
+              className="ml-auto flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[10px] font-bold uppercase tracking-widest border border-outline-variant/40 text-on-surface-variant hover:text-primary-blue hover:border-primary-blue/40 hover:bg-primary-blue/5 transition-all"
+              title="Override AI-assigned department"
+            >
+              <span className="material-symbols-outlined text-sm">edit</span>
+              Reassign
+            </button>
+          )}
+        </div>
+
         {/* Case Details Card */}
         <div className="glass-card p-4 sm:p-6">
           <div className="flex items-center gap-4 mb-8">

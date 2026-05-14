@@ -80,10 +80,28 @@ export async function apiPostForm<T>(path: string, formData: FormData): Promise<
 
 // ─── Auth helpers ────────────────────────────────────────────────────────────
 
+export interface UserShape {
+  id: number;
+  username: string;
+  email: string;
+  role: string;
+  language?: string;
+  department_id: number | null;
+  department_code: string | null;
+  department_name: string | null;
+}
+
 export interface LoginResponse {
   access: string;
   refresh: string;
-  user: { id: number; username: string; email: string; role: string; department: string };
+  user: UserShape;
+}
+
+export interface Department {
+  id: number;
+  code: string;
+  name: string;
+  sector: string;
 }
 
 export async function authLogin(email: string, password: string): Promise<LoginResponse> {
@@ -151,6 +169,8 @@ export interface CaseData {
   status: string;
   area_of_law: string;
   primary_statute: string;
+  primary_department: Department | null;
+  secondary_departments: Department[];
   judgments: JudgmentData[];
   appeals: any[];
   incoming_citations: any[];
@@ -158,13 +178,24 @@ export interface CaseData {
   updated_at: string;
 }
 
+export interface DeptDashboardRow {
+  id: number;
+  code: string;
+  name: string;
+  sector: string;
+  total_cases: number;
+  high_risk: number;
+  pending: number;
+}
+
 export interface CaseListResponse {
   count: number;
   results: CaseData[];
 }
 
-export async function fetchCases(): Promise<CaseData[]> {
-  const resp = await apiGet<CaseListResponse | CaseData[]>('/api/cases/');
+export async function fetchCases(deptCode?: string | null): Promise<CaseData[]> {
+  const qs = deptCode ? `?department=${encodeURIComponent(deptCode)}` : '';
+  const resp = await apiGet<CaseListResponse | CaseData[]>(`/api/cases/${qs}`);
   if (Array.isArray(resp)) return resp;
   if ('results' in (resp as any)) return (resp as CaseListResponse).results;
   return [];
@@ -172,6 +203,31 @@ export async function fetchCases(): Promise<CaseData[]> {
 
 export async function fetchCase(caseId: string): Promise<CaseData> {
   return apiGet<CaseData>(`/api/cases/${caseId}/`);
+}
+
+// ─── Department APIs ─────────────────────────────────────────────────────────
+
+export async function fetchDepartments(): Promise<Department[]> {
+  const resp = await fetch(`${BASE_URL}/api/auth/departments/`).then(r => r.json());
+  // /api/auth/departments/ is public; uses default pagination
+  if (Array.isArray(resp)) return resp;
+  if ('results' in resp) return resp.results;
+  return [];
+}
+
+export async function fetchByDepartmentDashboard(): Promise<DeptDashboardRow[]> {
+  return apiGet<DeptDashboardRow[]>('/api/dashboard/by-department/');
+}
+
+export async function updateCaseDepartment(
+  caseId: string,
+  primaryCode: string,
+  secondaryCodes: string[],
+): Promise<CaseData> {
+  return apiPatch<CaseData>(`/api/cases/${caseId}/department/`, {
+    primary_department: primaryCode,
+    secondary_departments: secondaryCodes,
+  });
 }
 
 /**
@@ -204,4 +260,104 @@ export async function extractCase(pdfFile: File): Promise<CaseData> {
  */
 export async function reAnnotateSource(caseId: string): Promise<any> {
   return apiPost<any>(`/api/cases/${caseId}/re-annotate/`, {});
+}
+
+// ─── LCO Execution dashboard ─────────────────────────────────────────────────
+
+export type ExecutionStatus = 'pending' | 'in_progress' | 'completed' | 'blocked';
+
+export interface DirectiveExecution {
+  id: string;
+  action_plan: number;
+  directive_index: number;
+  directive_text: string;
+  responsible_entity: string;
+  action_required: string;
+  deadline_mentioned: string;
+  status: ExecutionStatus;
+  executed_by: number | null;
+  executed_by_name: string | null;
+  completed_at: string | null;
+  proof_file: string | null;
+  proof_file_url: string | null;
+  notes: string;
+  case_id: string;
+  case_number: string;
+  case_title: string;
+  department_code: string | null;
+  department_name: string | null;
+  compliance_deadline: string | null;
+  // Government-perspective enrichment
+  actor_type: string | null;
+  gov_action_required: boolean | null;
+  implementation_steps: string[];
+  display_note: string;
+  govt_summary: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export async function fetchExecutions(opts?: {
+  department?: string | null;
+  status?: ExecutionStatus | null;
+}): Promise<DirectiveExecution[]> {
+  const params = new URLSearchParams();
+  if (opts?.department) params.set('department', opts.department);
+  if (opts?.status) params.set('status', opts.status);
+  const qs = params.toString() ? `?${params.toString()}` : '';
+  return apiGet<DirectiveExecution[]>(`/api/action-plans/execution/${qs}`);
+}
+
+export async function updateExecution(
+  executionId: string,
+  patch: { status?: ExecutionStatus; notes?: string; proof_file?: File | null },
+): Promise<DirectiveExecution> {
+  const fd = new FormData();
+  if (patch.status) fd.append('status', patch.status);
+  if (typeof patch.notes === 'string') fd.append('notes', patch.notes);
+  if (patch.proof_file) fd.append('proof_file', patch.proof_file);
+
+  const res = await fetch(`${BASE_URL}/api/action-plans/execution/${executionId}/`, {
+    method: 'PATCH',
+    headers: authHeaders(), // no Content-Type — browser sets multipart boundary
+    body: fd,
+  });
+  if (res.status === 401) {
+    authLogout();
+    window.location.href = '/login';
+    throw new Error('Session expired');
+  }
+  if (!res.ok) {
+    const err = await res.text();
+    throw new Error(`PATCH execution failed: ${res.status} - ${err}`);
+  }
+  return res.json();
+}
+
+// ─── Nodal Officer Deadlines ─────────────────────────────────────────────────
+
+export interface DeadlineRow {
+  action_plan_id: number;
+  case_id: string;
+  case_number: string;
+  case_title: string;
+  department_code: string | null;
+  department_name: string | null;
+  recommendation: string;
+  verification_status: string;
+  compliance_deadline: string | null;
+  internal_compliance_deadline: string | null;
+  statutory_appeal_deadline: string | null;
+  internal_appeal_deadline: string | null;
+  statutory_period_type: string;
+  contempt_risk: string;
+  next_deadline: string | null;
+  next_deadline_label: string;
+  days_remaining: number | null;
+  urgency: 'overdue' | 'critical' | 'warning' | 'safe' | 'unknown';
+}
+
+export async function fetchDeadlines(department?: string | null): Promise<DeadlineRow[]> {
+  const qs = department ? `?department=${encodeURIComponent(department)}` : '';
+  return apiGet<DeadlineRow[]>(`/api/dashboard/deadlines-monitor/${qs}`);
 }

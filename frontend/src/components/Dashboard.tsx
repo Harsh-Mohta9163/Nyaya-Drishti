@@ -2,6 +2,7 @@ import React, { useEffect, useState, useMemo } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { fetchCases, CaseData } from '../api/client';
 import { shortPartyTitle } from '../utils/truncate';
+import { useAuth, isGlobalRole } from '../context/AuthContext';
 
 const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
@@ -88,6 +89,7 @@ function toLocalDateStr(d: Date): string {
 }
 
 export const Dashboard = ({ onSelectCase }: { onSelectCase: (id: string) => void }) => {
+  const { user } = useAuth();
   const [cases, setCases] = useState<CaseData[]>([]);
   const [loading, setLoading] = useState(true);
   const [calendarMonth, setCalendarMonth] = useState(() => {
@@ -228,9 +230,22 @@ export const Dashboard = ({ onSelectCase }: { onSelectCase: (id: string) => void
     <div className="py-6 sm:py-10 space-y-6 sm:space-y-8 max-w-[1440px] mx-auto">
       {/* Header */}
       <div className="space-y-1">
-        <h2 className="text-3xl sm:text-4xl lg:text-5xl font-bold text-on-surface tracking-tighter">System Dashboard</h2>
+        <div className="flex items-baseline gap-3 flex-wrap">
+          <h2 className="text-3xl sm:text-4xl lg:text-5xl font-bold text-on-surface tracking-tighter">System Dashboard</h2>
+          {user?.department_name && (
+            <span className="px-3 py-1 rounded-full text-xs font-bold bg-primary-blue/15 text-primary-blue border border-primary-blue/30 tracking-tight">
+              {user.department_name}
+            </span>
+          )}
+          {isGlobalRole(user?.role) && (
+            <span className="px-3 py-1 rounded-full text-xs font-bold bg-primary-blue/15 text-primary-blue border border-primary-blue/30 tracking-tight uppercase">
+              All Departments
+            </span>
+          )}
+        </div>
         <p className="text-on-surface-variant text-base sm:text-lg font-medium opacity-70">
-          Monitoring <span className="text-on-surface">{totalCases}</span> active cases across judicial circuits.
+          Monitoring <span className="text-on-surface">{totalCases}</span> active cases
+          {user?.department_name ? ` assigned to ${user.department_name}` : ' across judicial circuits'}.
         </p>
       </div>
 

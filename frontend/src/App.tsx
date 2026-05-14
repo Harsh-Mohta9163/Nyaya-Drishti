@@ -5,6 +5,9 @@ import { CaseOverview } from './components/CaseOverview';
 import { VerifyActionsSafe as VerifyActions } from './components/VerifyActions';
 import { Dashboard } from './components/Dashboard';
 import { CaseList } from './components/CaseList';
+import { CentralLawView } from './components/CentralLawView';
+import { LCOExecutionView } from './components/LCOExecutionView';
+import { NodalDeadlineView } from './components/NodalDeadlineView';
 import { motion, AnimatePresence } from 'motion/react';
 import { Routes, Route, Navigate, useNavigate } from 'react-router-dom';
 import { useAuth } from './context/AuthContext';
@@ -16,7 +19,20 @@ import { shortPartyTitle, extractCoreName } from './utils/truncate';
 import { Precedents } from './components/Precedents';
 
 function MainApp() {
-  const [currentView, setCurrentView] = useState('dashboard');
+  const { user } = useAuth();
+  // Role-based default landing view.
+  //   central_law / state_monitoring → 'central-view'
+  //   lco                            → 'execution'
+  //   nodal_officer                  → 'deadlines'
+  //   everyone else                  → 'dashboard'
+  const defaultView = (() => {
+    if (!user) return 'dashboard';
+    if (user.role === 'central_law' || user.role === 'state_monitoring') return 'central-view';
+    if (user.role === 'lco') return 'execution';
+    if (user.role === 'nodal_officer') return 'deadlines';
+    return 'dashboard';
+  })();
+  const [currentView, setCurrentView] = useState(defaultView);
   const [selectedCaseId, setSelectedCaseId] = useState<string | null>(null);
   const [selectedCase, setSelectedCase] = useState<CaseData | null>(null);
   const [activeTab, setActiveTab] = useState('overview');
@@ -27,6 +43,7 @@ function MainApp() {
   const [isGeneratingAnalysis, setIsGeneratingAnalysis] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
+  const [caseListDeptFilter, setCaseListDeptFilter] = useState<string | null>(null);
   const sidebarFileInputRef = useRef<HTMLInputElement>(null);
 
   // Handler for "New Case Analysis" — opens file picker, uploads, navigates to case
@@ -50,6 +67,15 @@ function MainApp() {
     }
   };
   
+  // Auto-collapse the sidebar when entering the Verify tab so the PDF
+  // viewer gets the full horizontal width. The user can still expand it
+  // manually via the hamburger.
+  useEffect(() => {
+    if (activeTab === 'verify') {
+      setSidebarCollapsed(true);
+    }
+  }, [activeTab]);
+
   // Fetch selected case from backend when a case is clicked
   useEffect(() => {
     if (!selectedCaseId) {
@@ -132,7 +158,19 @@ function MainApp() {
       sourceLocation: d.sourceLocation || d.source_location || null,
       sourceText: d.sourceText || d.text || '',
       financialDetails: d.financialDetails || d.financial_details || null,
+      // Government-perspective enrichment from apps/cases/services/directive_enricher.py
+      actorType: d.actor_type || null,
+      govActionRequired: typeof d.gov_action_required === 'boolean' ? d.gov_action_required : null,
+      implementationSteps: Array.isArray(d.implementation_steps) ? d.implementation_steps : [],
+      displayNote: d.display_note || '',
+      govtSummary: d.govt_summary || '',
     }));
+    // Sort: government-action directives first (so HLC/LCO see them on top).
+    mapped.sort((a, b) => {
+      const ga = a.govActionRequired ? 0 : 1;
+      const gb = b.govActionRequired ? 0 : 1;
+      return ga - gb;
+    });
     setActions(mapped.length > 0 ? mapped : [{
       id: '1',
       title: 'Review Operative Order',
@@ -147,8 +185,30 @@ function MainApp() {
 
   const saveActionsToBackend = async (newActions: any[]) => {
     if (!judgment) return;
+    // Write BOTH frontend camelCase + backend snake_case key shapes so the
+    // server-side enricher (which reads snake_case) and the React UI (camelCase)
+    // both keep working after HLC edits.
+    const serialized = newActions.map(a => ({
+      ...a,
+      text: a.description ?? a.text ?? '',
+      action_required: a.title ?? a.action_required ?? '',
+      responsible_entity: a.source ?? a.responsible_entity ?? '',
+      deadline_mentioned: a.dueDate ?? a.deadline_mentioned ?? '',
+      financial_details: a.financialDetails ?? a.financial_details ?? null,
+      isVerified: !!a.isVerified,
+      // Enrichment (snake_case mirrors)
+      actor_type: a.actorType ?? a.actor_type ?? null,
+      gov_action_required: typeof a.govActionRequired === 'boolean'
+        ? a.govActionRequired
+        : (typeof a.gov_action_required === 'boolean' ? a.gov_action_required : null),
+      implementation_steps: Array.isArray(a.implementationSteps)
+        ? a.implementationSteps
+        : (Array.isArray(a.implementation_steps) ? a.implementation_steps : []),
+      display_note: a.displayNote ?? a.display_note ?? '',
+      govt_summary: a.govtSummary ?? a.govt_summary ?? '',
+    }));
     try {
-      await updateJudgment(judgment.id, { court_directions: newActions });
+      await updateJudgment(judgment.id, { court_directions: serialized });
     } catch (err) {
       console.error("Failed to save actions to backend", err);
     }
@@ -166,8 +226,8 @@ function MainApp() {
     saveActionsToBackend(newActions);
   };
 
-  const editAction = (id: string, description: string) => {
-    const newActions = actions.map(a => a.id === id ? { ...a, description } : a);
+  const editAction = (id: string, patch: { description?: string; govtSummary?: string; implementationSteps?: string[] }) => {
+    const newActions = actions.map(a => a.id === id ? { ...a, ...patch } : a);
     setActions(newActions);
     saveActionsToBackend(newActions);
   };
@@ -235,7 +295,7 @@ function MainApp() {
       </div>
 
       {/* Sidebar Navigation */}
-      <Sidebar 
+      <Sidebar
         currentView={currentView}
         onNavigate={(view) => {
           setCurrentView(view);
@@ -243,6 +303,7 @@ function MainApp() {
             setSelectedCaseId(null);
             setActiveTab('overview');
             setCaseDecision('none');
+            setCaseListDeptFilter(null);  // sidebar "Cases" means "my dept's cases"
           }
         }}
         isCollapsed={sidebarCollapsed}
@@ -261,7 +322,50 @@ function MainApp() {
         <style>{`@media (max-width: 1023px) { main { padding-left: 0 !important; } }`}</style>
         
         <AnimatePresence mode="wait">
-          {currentView === 'dashboard' ? (
+          {currentView === 'central-view' ? (
+            <motion.div
+              key="central-view"
+              initial={{ opacity: 0, scale: 0.98 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 1.02 }}
+              transition={{ duration: 0.3 }}
+              className="px-4 sm:px-6 lg:px-10"
+            >
+              <CentralLawView onSelectDepartment={(deptCode) => {
+                setCaseListDeptFilter(deptCode);
+                setSelectedCaseId(null);
+                setCurrentView('cases');
+              }} />
+            </motion.div>
+          ) : currentView === 'execution' ? (
+            <motion.div
+              key="execution"
+              initial={{ opacity: 0, scale: 0.98 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 1.02 }}
+              transition={{ duration: 0.3 }}
+              className="px-4 sm:px-6 lg:px-10"
+            >
+              <LCOExecutionView onSelectCase={(id) => {
+                setSelectedCaseId(id);
+                setCurrentView('cases');
+              }} />
+            </motion.div>
+          ) : currentView === 'deadlines' ? (
+            <motion.div
+              key="deadlines"
+              initial={{ opacity: 0, scale: 0.98 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 1.02 }}
+              transition={{ duration: 0.3 }}
+              className="px-4 sm:px-6 lg:px-10"
+            >
+              <NodalDeadlineView onSelectCase={(id) => {
+                setSelectedCaseId(id);
+                setCurrentView('cases');
+              }} />
+            </motion.div>
+          ) : currentView === 'dashboard' ? (
             <motion.div
               key="dashboard"
               initial={{ opacity: 0, scale: 0.98 }}
@@ -277,14 +381,16 @@ function MainApp() {
             </motion.div>
           ) : currentView === 'cases' && !selectedCaseId ? (
             <motion.div
-              key="case-list"
+              key={`case-list-${caseListDeptFilter || 'all'}`}
               initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -10 }}
               transition={{ duration: 0.3 }}
               className="px-4 sm:px-6 lg:px-10"
             >
-              <CaseList 
+              <CaseList
+                deptFilter={caseListDeptFilter}
+                onClearDeptFilter={() => setCaseListDeptFilter(null)}
                 onSelectCase={(id) => setSelectedCaseId(id)}
               />
             </motion.div>
@@ -338,18 +444,15 @@ function MainApp() {
                             />
                           )}
                           {activeTab === 'verify' && (
-                              <VerifyActions 
+                              <VerifyActions
                               actions={actions}
                               pdfUrl={
-                                judgment?.id 
+                                judgment?.id
                                   ? `${import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:8000'}/api/cases/judgments/${judgment.id}/pdf/`
                                   : null
                               }
                               highlightedPage={highlightedPage}
                               onActionClick={(pageNum) => {
-                                // If pageNum is actually an ID mapped from the generic click in VerifyActions,
-                                // we will estimate the page based on total pages. But for now we just use it as page number.
-                                // A typical judgment has directives in the last 20%. Let's just default to the page passed.
                                 setHighlightedPage(null);
                                 setTimeout(() => setHighlightedPage(Math.max(1, pageNum)), 50);
                               }}
@@ -358,6 +461,13 @@ function MainApp() {
                               onEdit={editAction}
                               onAdd={addAction}
                               onVerifyAll={verifyAll}
+                              canVerify={
+                                user?.role === 'head_legal_cell'
+                                || user?.role === 'central_law'
+                                || user?.role === 'reviewer'
+                                || user?.role === 'dept_head'
+                                || user?.role === 'legal_advisor'
+                              }
                             />
                           )}
                           {activeTab === 'precedents' && (

@@ -1,5 +1,6 @@
 from rest_framework import serializers
 
+from apps.accounts.serializers import DepartmentSerializer
 from apps.action_plans.serializers import ActionPlanSerializer
 from apps.action_plans.models import ActionPlan
 
@@ -69,6 +70,8 @@ class CaseSerializer(serializers.ModelSerializer):
     judgments = JudgmentSerializer(many=True, read_only=True)
     appeals = serializers.SerializerMethodField()
     incoming_citations = CitationSerializer(many=True, read_only=True)
+    primary_department = DepartmentSerializer(read_only=True)
+    secondary_departments = DepartmentSerializer(many=True, read_only=True)
 
     class Meta:
         model = Case
@@ -85,6 +88,8 @@ class CaseSerializer(serializers.ModelSerializer):
             "status",
             "area_of_law",
             "primary_statute",
+            "primary_department",
+            "secondary_departments",
             "appealed_from_case",
             "uploaded_by",
             "judgments",

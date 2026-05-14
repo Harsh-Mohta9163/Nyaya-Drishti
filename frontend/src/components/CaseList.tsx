@@ -213,8 +213,12 @@ const CaseRow: React.FC<{ c: CaseData; onClick: () => void }> = ({ c, onClick })
 
 export const CaseList = ({
   onSelectCase,
+  deptFilter,
+  onClearDeptFilter,
 }: {
   onSelectCase: (id: string) => void;
+  deptFilter?: string | null;
+  onClearDeptFilter?: () => void;
   cases?: any[];
   onAddCase?: (c: any) => void;
 }) => {
@@ -235,14 +239,14 @@ export const CaseList = ({
   const loadCases = useCallback(async () => {
     try {
       setError(null);
-      const data = await fetchCases();
+      const data = await fetchCases(deptFilter || null);
       setCases(data);
     } catch (e: any) {
       setError(e.message ?? 'Failed to load cases');
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [deptFilter]);
 
   useEffect(() => { loadCases(); }, [loadCases]);
 
@@ -311,6 +315,24 @@ export const CaseList = ({
           <p className="text-on-surface-variant text-sm sm:text-base lg:text-lg font-medium opacity-70">
             Manage and analyze your active legal proceedings with AI-driven intelligence.
           </p>
+          {deptFilter && (
+            <div className="flex items-center gap-3 mt-3">
+              <span className="text-[10px] font-bold uppercase tracking-widest text-on-surface-variant opacity-60">Filtered by:</span>
+              <span className="px-3 py-1 rounded-full text-xs font-bold bg-primary-blue/15 text-primary-blue border border-primary-blue/30 tracking-tight">
+                {deptFilter}
+              </span>
+              {onClearDeptFilter && (
+                <button
+                  onClick={onClearDeptFilter}
+                  className="flex items-center gap-1 text-[10px] font-bold uppercase tracking-widest text-on-surface-variant hover:text-on-surface transition-colors"
+                  title="Clear department filter"
+                >
+                  <span className="material-symbols-outlined text-sm">close</span>
+                  Clear
+                </button>
+              )}
+            </div>
+          )}
         </div>
 
         {/* Upload Zone */}

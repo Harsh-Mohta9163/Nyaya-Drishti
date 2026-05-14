@@ -194,10 +194,16 @@ def _call_agent_70b(prompt: str, schema: type[BaseModel], temperature: float) ->
 
 
 def _call_agent_8b(prompt: str, schema: type[BaseModel], temperature: float) -> dict:
-    """Agent 1 & 4: Calls Groq 8B for fast extraction, falls back to NVIDIA 70B."""
-    api_key = settings.GROQ_API_KEY
-    base_url = getattr(settings, "GROQ_BASE_URL", "https://api.groq.com/openai/v1").rstrip("/")
-    model = "llama-3.1-8b-instant"
+    """Agent 1 & 4: Calls OpenRouter Llama 3.1 8B for fast extraction, falls back to NVIDIA 70B.
+
+    Replaces the older Groq-hosted 8B path — OpenRouter has been more reliable
+    (no aggressive per-minute rate limits, larger context, same generation
+    model) and is cheap enough for routine extraction.
+    """
+    import os as _os
+    api_key = getattr(settings, "OPENROUTER_API_KEY", "") or _os.environ.get("OPENROUTER_API_KEY", "")
+    base_url = getattr(settings, "OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1").rstrip("/")
+    model = "meta-llama/llama-3.1-8b-instruct"
 
     schema_json = json.dumps(schema.model_json_schema(), indent=2)
     full_prompt = f"{prompt}\n\nRespond ONLY with valid JSON matching this schema:\n{schema_json}"
@@ -205,6 +211,8 @@ def _call_agent_8b(prompt: str, schema: type[BaseModel], temperature: float) -> 
     headers = {
         "Authorization": f"Bearer {api_key}",
         "Content-Type": "application/json",
+        "HTTP-Referer": "https://nyaya-drishti.onrender.com/",
+        "X-Title": "NyayaDrishti CCMS",
     }
     payload = {
         "model": model,
@@ -214,41 +222,50 @@ def _call_agent_8b(prompt: str, schema: type[BaseModel], temperature: float) -> 
         "response_format": {"type": "json_object"},
     }
 
-    last_error = None
-    for attempt in range(3):
-        try:
-            print(f"  [Groq 8B] Calling {model} (attempt {attempt+1})...")
-            resp = requests.post(
-                f"{base_url}/chat/completions",
-                headers=headers,
-                json=payload,
-                timeout=60,
-            )
-            if resp.status_code in (429, 503):
-                wait = 20 * (attempt + 1)
-                print(f"  [Groq 8B] Rate limited (HTTP {resp.status_code}), waiting {wait}s...")
-                time.sleep(wait)
-                continue
-            resp.raise_for_status()
-            content = resp.json()["choices"][0]["message"]["content"]
-            return json.loads(content)
-        except requests.exceptions.HTTPError as e:
-            status_code = e.response.status_code if e.response else 0
-            print(f"  [Groq 8B] HTTP error {status_code}: {e}")
-            last_error = e
-            if status_code in (429, 503):
-                wait = 20 * (attempt + 1)
-                print(f"  [Groq 8B] Waiting {wait}s before retry...")
-                time.sleep(wait)
-            else:
-                break
-        except Exception as e:
-            print(f"  [Groq 8B] Error: {e}")
-            last_error = e
-            time.sleep(5)
+    if not api_key:
+        print(f"  [OR-8B] OPENROUTER_API_KEY not set; falling straight through to NVIDIA 70B")
+        last_error = RuntimeError("OPENROUTER_API_KEY missing")
+    else:
+        last_error = None
+        for attempt in range(3):
+            try:
+                print(f"  [OR-8B] Calling {model} (attempt {attempt+1}/3)...")
+                resp = requests.post(
+                    f"{base_url}/chat/completions",
+                    headers=headers,
+                    json=payload,
+                    timeout=90,
+                )
+                if resp.status_code in (429, 503):
+                    wait = 15 * (attempt + 1)
+                    print(f"  [OR-8B] Rate limited (HTTP {resp.status_code}), waiting {wait}s...")
+                    time.sleep(wait)
+                    continue
+                resp.raise_for_status()
+                content = resp.json()["choices"][0]["message"]["content"]
+                try:
+                    return json.loads(content)
+                except json.JSONDecodeError:
+                    recovered = _salvage_json(content)
+                    if recovered:
+                        return recovered
+                    last_error = ValueError(f"Malformed JSON; first 200 chars: {content[:200]!r}")
+                    continue
+            except requests.exceptions.HTTPError as e:
+                status_code = e.response.status_code if e.response else 0
+                print(f"  [OR-8B] HTTP error {status_code}: {e}")
+                last_error = e
+                if status_code in (429, 503):
+                    time.sleep(15 * (attempt + 1))
+                else:
+                    break
+            except Exception as e:
+                print(f"  [OR-8B] Error: {e}")
+                last_error = e
+                time.sleep(5)
 
     # Fallback: use NVIDIA 70B instead of failing completely
-    print(f"  [Groq 8B] All attempts failed ({last_error}). Falling back to NVIDIA 70B...")
+    print(f"  [OR-8B] Falling back to NVIDIA 70B ({last_error})...")
     nvidia_key = settings.NVIDIA_API_KEY
     nvidia_url = settings.NVIDIA_BASE_URL.rstrip("/")
     nvidia_payload = {
@@ -406,8 +423,9 @@ def extract_structured_data(
     extracted_data = {}
 
     # Large-PDF routing: anything >= OPENROUTER_LARGE_PDF_THRESHOLD pages
-    # (default 25) goes through OpenRouter for ALL 4 agents. Small PDFs keep
-    # the Groq 8B + NVIDIA 70B path which is cheaper.
+    # (default 25) goes through OpenRouter Llama 70B for ALL 4 agents. Small
+    # PDFs use OpenRouter Llama 8B for Agents 1 & 4 and NVIDIA NIM 70B for
+    # Agents 2 & 3.
     large_threshold = getattr(settings, "OPENROUTER_LARGE_PDF_THRESHOLD", 25)
     use_openrouter = page_count >= large_threshold
     if use_openrouter:
@@ -416,7 +434,7 @@ def extract_structured_data(
         agent_70b_call = _call_openrouter_llama
     else:
         if page_count:
-            print(f"  [Extractor] PDF has {page_count} pages (< {large_threshold}); using Groq 8B + NVIDIA 70B path")
+            print(f"  [Extractor] PDF has {page_count} pages (< {large_threshold}); using OpenRouter Llama 8B + NVIDIA 70B path")
         agent_8b_call = _call_agent_8b
         agent_70b_call = _call_agent_70b
 
@@ -641,6 +659,36 @@ def extract_structured_data(
                     ))
         Citation.objects.bulk_create(citation_objs)
         print(f"  [Extractor] Saved {len(citation_objs)} citation records.")
+
+    # ─── Department classification ──────────────────────────────────────────
+    # Maps the judgment to one of the 48 Karnataka secretariat departments
+    # so dept-scoped users see this case in their queue. Verifier can override
+    # later via PATCH /api/cases/<uuid>/department/.
+    try:
+        from apps.cases.services.dept_classifier import classify as classify_dept
+        dept_haystack = (operative_text or "")[:6000] + "\n" + (middle_text or "")[:4000]
+        dept_result = classify_dept(
+            case_text=dept_haystack,
+            entities=list(judgment.entities or []),
+            parties=(case.petitioner_name or "", case.respondent_name or ""),
+        )
+        if dept_result.get("primary"):
+            from apps.accounts.models import Department
+            case.primary_department = Department.objects.filter(code=dept_result["primary"]).first()
+            case.save()
+            case.secondary_departments.set(
+                Department.objects.filter(code__in=dept_result.get("secondary", []))
+            )
+            print(
+                f"  [Extractor] Dept classification: primary={dept_result['primary']} "
+                f"secondary={dept_result.get('secondary')} confidence={dept_result.get('confidence')} "
+                f"method={dept_result.get('method')}"
+            )
+        else:
+            print("  [Extractor] Dept classification: no match — case will be visible only to central law role")
+    except Exception as e:
+        # Never let dept classification fail extraction itself.
+        print(f"  [Extractor] Dept classification skipped due to error: {e}")
 
     judgment.extraction_confidence = 0.95
     judgment.processing_status = "completed"

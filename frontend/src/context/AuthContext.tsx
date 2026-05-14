@@ -1,12 +1,16 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
-import { authLogin, authLogout, LoginResponse } from '../api/client';
+import { authLogin, authLogout, LoginResponse, UserShape } from '../api/client';
 
-interface User {
-  id: number;
-  username: string;
-  email: string;
-  role: string;
-  department: string;
+type User = UserShape;
+export const GLOBAL_ROLES = new Set(['central_law', 'state_monitoring']);
+export function isGlobalRole(role: string | undefined | null): boolean {
+  return !!role && GLOBAL_ROLES.has(role);
+}
+export function isLCO(role: string | undefined | null): boolean {
+  return role === 'lco';
+}
+export function isNodalOfficer(role: string | undefined | null): boolean {
+  return role === 'nodal_officer';
 }
 
 interface AuthContextType {

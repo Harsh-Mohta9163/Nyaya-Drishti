@@ -28,6 +28,12 @@ interface ActionData {
   sourceLocation?: SourceLocation | null;
   sourceText?: string;
   financialDetails?: string | null;
+  // Government-perspective enrichment (apps/cases/services/directive_enricher.py)
+  actorType?: 'government_department' | 'court_or_registry' | 'accused_or_petitioner' | 'third_party' | 'informational' | null;
+  govActionRequired?: boolean | null;
+  implementationSteps?: string[];
+  displayNote?: string;
+  govtSummary?: string;
 }
 
 // ─── Helpers ────────────────────────────────────────────────────────────────────
@@ -45,29 +51,51 @@ const PDF_RENDER_WIDTH = 580;
 
 // ─── ActionItem ─────────────────────────────────────────────────────────────────
 
-const ActionItem: React.FC<{ 
+type EditPatch = { description?: string; govtSummary?: string; implementationSteps?: string[] };
+
+const ActionItem: React.FC<{
   action: ActionData;
   isActive: boolean;
   onToggle: (id: string) => void;
   onDelete: (id: string) => void;
-  onEdit: (id: string, desc: string) => void;
+  onEdit: (id: string, patch: EditPatch) => void;
   onSelect: (action: ActionData) => void;
-}> = ({ 
-  action, 
+  onShowInPDF: (action: ActionData) => void;
+  canVerify?: boolean;
+}> = ({
+  action,
   isActive,
-  onToggle, 
-  onDelete, 
-  onEdit, 
-  onSelect 
+  onToggle,
+  onDelete,
+  onEdit,
+  onSelect,
+  onShowInPDF,
+  canVerify = true,
 }) => {
   const [isEditing, setIsEditing] = useState(false);
   const [editedDescription, setEditedDescription] = useState(action.description);
+  const [editedSummary, setEditedSummary] = useState(action.govtSummary || '');
+  const [editedSteps, setEditedSteps] = useState<string[]>(action.implementationSteps || []);
+
+  // Keep edit form in sync when the source action changes from above
+  // (e.g. after a backend save round-trip).
+  useEffect(() => {
+    setEditedDescription(action.description);
+    setEditedSummary(action.govtSummary || '');
+    setEditedSteps(action.implementationSteps || []);
+  }, [action.id, action.description, action.govtSummary, action.implementationSteps]);
 
   const handleSave = () => {
-    onEdit(action.id, editedDescription);
+    onEdit(action.id, {
+      description: editedDescription,
+      govtSummary: editedSummary,
+      implementationSteps: editedSteps.filter(s => s.trim().length > 0),
+    });
     setIsEditing(false);
   };
 
+  // Card click only HIGHLIGHTS the card — no longer auto-scrolls the PDF
+  // (the explicit "Show in PDF" button does that).
   const handleItemClick = (e: React.MouseEvent) => {
     if ((e.target as HTMLElement).closest('button')) return;
     onSelect(action);
@@ -87,13 +115,15 @@ const ActionItem: React.FC<{
       }`}
     >
       <div className="pt-1">
-        <button 
-          onClick={() => onToggle(action.id)}
+        <button
+          onClick={() => canVerify && onToggle(action.id)}
+          disabled={!canVerify}
+          title={canVerify ? undefined : 'Only HLC / Central Law can verify'}
           className={`flex items-center justify-center w-6 h-6 rounded border-2 transition-all ${
-            action.isVerified 
-              ? 'border-primary-blue bg-primary-blue/20 text-primary-blue' 
+            action.isVerified
+              ? 'border-primary-blue bg-primary-blue/20 text-primary-blue'
               : 'border-outline-variant/60 hover:border-primary-blue'
-          }`}
+          } ${!canVerify ? 'opacity-40 cursor-not-allowed' : ''}`}
         >
           {action.isVerified && <span className="material-symbols-outlined text-sm font-bold">check</span>}
         </button>
@@ -102,44 +132,119 @@ const ActionItem: React.FC<{
       <div className="flex-1 space-y-4">
         <div className="flex justify-between items-start">
           <div className="space-y-1">
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 flex-wrap">
               <span className={`inline-flex px-2 py-0.5 rounded text-[9px] font-black uppercase tracking-[0.1em] border ${getDepartmentColors(action.source)}`}>
                 {action.source}
               </span>
               {hasSource && (
-                <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[8px] font-black uppercase tracking-wider bg-yellow-400/10 border border-yellow-400/20 text-yellow-400">
-                  <span className="material-symbols-outlined text-[10px]">pin_drop</span>
-                  Pg {action.sourceLocation!.page}
-                </span>
+                <button
+                  type="button"
+                  onClick={(e) => { e.stopPropagation(); onShowInPDF(action); }}
+                  title="Scroll PDF to this directive's source paragraph"
+                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[9px] font-black uppercase tracking-wider bg-yellow-400/10 border border-yellow-400/20 text-yellow-400 hover:bg-yellow-400/20 hover:border-yellow-400/40 transition-all"
+                >
+                  <span className="material-symbols-outlined text-[12px]">find_in_page</span>
+                  Show in PDF · Pg {action.sourceLocation!.page}
+                </button>
               )}
             </div>
             <h4 className="font-bold text-on-surface text-lg tracking-tight group-hover:text-primary-blue transition-colors">{action.title}</h4>
           </div>
-          <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-            <button 
-              onClick={() => setIsEditing(!isEditing)}
-              className={`p-1.5 rounded transition-colors ${isEditing ? 'text-primary-blue bg-primary-blue/10' : 'text-on-surface-variant hover:text-primary-blue hover:bg-primary-blue/10'}`}
-            >
-              <span className="material-symbols-outlined text-sm">{isEditing ? 'close' : 'edit'}</span>
-            </button>
-            <button 
-              onClick={() => onDelete(action.id)}
-              className="p-1.5 text-on-surface-variant hover:text-error-red rounded hover:bg-error-red/10 transition-colors"
-            >
-              <span className="material-symbols-outlined text-sm">delete</span>
-            </button>
-          </div>
+          {canVerify && (
+            <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+              <button
+                onClick={() => setIsEditing(!isEditing)}
+                className={`p-1.5 rounded transition-colors ${isEditing ? 'text-primary-blue bg-primary-blue/10' : 'text-on-surface-variant hover:text-primary-blue hover:bg-primary-blue/10'}`}
+              >
+                <span className="material-symbols-outlined text-sm">{isEditing ? 'close' : 'edit'}</span>
+              </button>
+              <button
+                onClick={() => onDelete(action.id)}
+                className="p-1.5 text-on-surface-variant hover:text-error-red rounded hover:bg-error-red/10 transition-colors"
+              >
+                <span className="material-symbols-outlined text-sm">delete</span>
+              </button>
+            </div>
+          )}
         </div>
         
         {isEditing ? (
-          <div className="space-y-3">
-            <textarea
-              className="w-full bg-surface-dim/80 border border-primary-blue/30 rounded-lg p-3 text-[14px] text-on-surface focus:outline-none focus:ring-1 focus:ring-primary-blue min-h-[80px]"
-              value={editedDescription}
-              onChange={(e) => setEditedDescription(e.target.value)}
-            />
-            <div className="flex justify-end gap-2">
-              <button 
+          <div className="space-y-4 bg-primary-blue/[0.04] border border-primary-blue/20 rounded-lg p-4">
+            {/* Verbatim text */}
+            <div className="space-y-1">
+              <label className="text-[10px] font-bold uppercase tracking-widest text-on-surface-variant/80">
+                Verbatim Directive (from PDF)
+              </label>
+              <textarea
+                className="w-full bg-surface-dim/80 border border-primary-blue/30 rounded-lg p-3 text-[13px] text-on-surface focus:outline-none focus:ring-1 focus:ring-primary-blue min-h-[80px]"
+                value={editedDescription}
+                onChange={(e) => setEditedDescription(e.target.value)}
+              />
+            </div>
+
+            {/* Govt summary */}
+            <div className="space-y-1">
+              <label className="text-[10px] font-bold uppercase tracking-widest text-emerald-300/80">
+                Government Summary (one-liner)
+              </label>
+              <textarea
+                className="w-full bg-surface-dim/80 border border-emerald-400/30 rounded-lg p-3 text-[13px] text-on-surface focus:outline-none focus:ring-1 focus:ring-emerald-400/50 min-h-[48px]"
+                value={editedSummary}
+                onChange={(e) => setEditedSummary(e.target.value)}
+                placeholder="e.g. Refund excess service tax to petitioner."
+              />
+            </div>
+
+            {/* Implementation steps */}
+            <div className="space-y-2">
+              <label className="text-[10px] font-bold uppercase tracking-widest text-emerald-300/80">
+                Implementation Steps (LCO action plan)
+              </label>
+              {editedSteps.map((step, idx) => (
+                <div key={idx} className="flex items-start gap-2">
+                  <span className="text-on-surface-variant text-xs font-mono mt-2.5 shrink-0">{idx + 1}.</span>
+                  <input
+                    type="text"
+                    value={step}
+                    onChange={e => {
+                      const next = [...editedSteps];
+                      next[idx] = e.target.value;
+                      setEditedSteps(next);
+                    }}
+                    className="flex-1 bg-surface-dim/80 border border-emerald-400/30 rounded-lg px-3 py-2 text-[13px] text-on-surface focus:outline-none focus:ring-1 focus:ring-emerald-400/50"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setEditedSteps(editedSteps.filter((_, i) => i !== idx))}
+                    className="p-2 text-on-surface-variant hover:text-error-red rounded hover:bg-error-red/10"
+                    title="Remove step"
+                  >
+                    <span className="material-symbols-outlined text-sm">close</span>
+                  </button>
+                </div>
+              ))}
+              <button
+                type="button"
+                onClick={() => setEditedSteps([...editedSteps, ''])}
+                className="text-[11px] font-semibold text-emerald-300/80 hover:text-emerald-300 inline-flex items-center gap-1"
+              >
+                <span className="material-symbols-outlined text-sm">add</span> Add Step
+              </button>
+            </div>
+
+            <div className="flex justify-end gap-2 pt-1">
+              <button
+                onClick={() => {
+                  setIsEditing(false);
+                  setEditedDescription(action.description);
+                  setEditedSummary(action.govtSummary || '');
+                  setEditedSteps(action.implementationSteps || []);
+                }}
+                className="px-4 py-1.5 text-on-surface-variant hover:text-on-surface text-[11px] font-bold rounded-lg uppercase tracking-wider"
+              >
+                Cancel
+              </button>
+              <button
                 onClick={handleSave}
                 className="px-4 py-1.5 bg-primary-blue text-on-primary-blue text-[11px] font-bold rounded-lg uppercase tracking-wider"
               >
@@ -147,10 +252,13 @@ const ActionItem: React.FC<{
               </button>
             </div>
           </div>
-        ) : (
-          null
+        ) : null}
+
+        {/* Government-perspective enrichment block (read-only display) */}
+        {!isEditing && action.actorType && (
+          <GovtPerspectivePanel action={action} />
         )}
-        
+
         {action.financialDetails && (
           <div className="flex items-start gap-2 bg-amber-400/5 border border-amber-400/15 rounded-lg p-3">
             <span className="material-symbols-outlined text-amber-400 text-sm mt-0.5">currency_rupee</span>
@@ -178,6 +286,78 @@ const ActionItem: React.FC<{
           )}
         </div>
       </div>
+    </div>
+  );
+};
+
+// ─── Government Perspective Panel ──────────────────────────────────────────────
+
+const ACTOR_LABELS: Record<string, string> = {
+  government_department: 'Your Department',
+  court_or_registry: 'Court / Registrar',
+  accused_or_petitioner: 'Litigating Party',
+  third_party: 'Third Party',
+  informational: 'Informational',
+};
+const ACTOR_ICONS: Record<string, string> = {
+  government_department: 'account_balance',
+  court_or_registry: 'gavel',
+  accused_or_petitioner: 'person',
+  third_party: 'group',
+  informational: 'info',
+};
+
+const GovtPerspectivePanel: React.FC<{ action: ActionData }> = ({ action }) => {
+  const gov = action.govActionRequired === true;
+  const actor = action.actorType || 'informational';
+
+  return (
+    <div
+      className={`rounded-lg p-3 border ${
+        gov
+          ? 'bg-emerald-500/[0.06] border-emerald-400/30'
+          : 'bg-surface-container-highest/30 border-outline-variant/20'
+      }`}
+    >
+      {/* Header chip + summary */}
+      <div className="flex items-start gap-2 mb-2">
+        <span
+          className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[9px] font-black uppercase tracking-[0.1em] border shrink-0 ${
+            gov
+              ? 'bg-emerald-500/15 text-emerald-300 border-emerald-400/40'
+              : 'bg-surface-container/60 text-on-surface-variant border-outline-variant/40'
+          }`}
+        >
+          <span className="material-symbols-outlined text-[12px]">{ACTOR_ICONS[actor]}</span>
+          {gov ? 'Govt Action Required' : `Informational · ${ACTOR_LABELS[actor]}`}
+        </span>
+        {action.govtSummary && (
+          <p className="text-[11px] text-on-surface leading-relaxed flex-1 min-w-0">
+            {action.govtSummary}
+          </p>
+        )}
+      </div>
+
+      {/* Implementation steps for government-action items */}
+      {gov && (action.implementationSteps?.length ?? 0) > 0 && (
+        <div className="mt-2 pl-2 border-l-2 border-emerald-400/30 space-y-1.5">
+          <p className="text-[9px] font-bold uppercase tracking-widest text-emerald-300/80">
+            Implementation Steps for LCO
+          </p>
+          <ol className="space-y-1 text-[11px] text-on-surface-variant leading-relaxed list-decimal list-inside">
+            {action.implementationSteps!.map((step, i) => (
+              <li key={i} className="marker:text-emerald-300/70">{step}</li>
+            ))}
+          </ol>
+        </div>
+      )}
+
+      {/* Display note for non-government items */}
+      {!gov && action.displayNote && (
+        <p className="text-[11px] text-on-surface-variant opacity-80 italic mt-1 pl-2 border-l-2 border-outline-variant/30">
+          {action.displayNote}
+        </p>
+      )}
     </div>
   );
 };
@@ -265,26 +445,29 @@ const HighlightOverlay = ({
 
 // ─── Main Component ─────────────────────────────────────────────────────────────
 
-export const VerifyActions = ({ 
-  actions, 
-  onToggle, 
-  onDelete, 
-  onEdit, 
+export const VerifyActions = ({
+  actions,
+  onToggle,
+  onDelete,
+  onEdit,
   onVerifyAll,
   onActionClick,
   onAdd,
   highlightedPage: _highlightedPage,
-  pdfUrl
-}: { 
-  actions: ActionData[]; 
+  pdfUrl,
+  canVerify = true,
+}: {
+  actions: ActionData[];
   onToggle: (id: string) => void;
   onDelete: (id: string) => void;
-  onEdit: (id: string, desc: string) => void;
+  onEdit: (id: string, patch: { description?: string; govtSummary?: string; implementationSteps?: string[] }) => void;
   onVerifyAll: () => void;
   onActionClick: (page: number) => void;
   onAdd: (action: Omit<ActionData, 'id'>) => void;
   highlightedPage: number | null;
   pdfUrl?: string | null;
+  /** Hide approve/edit/reject/add controls when false (non-HLC roles). */
+  canVerify?: boolean;
 }) => {
   const [zoom, setZoom] = useState(100);
   const [numPages, setNumPages] = useState<number | null>(null);
@@ -314,21 +497,30 @@ export const VerifyActions = ({
     setNumPages(numPages);
   }
 
-  // Handle action selection — scroll to source in PDF
+  // Card click: only marks the card active + paints the overlay if we already
+  // have a source location. NEVER scrolls the PDF — that's the explicit
+  // "Show in PDF" button's job.
   const handleActionSelect = useCallback((action: ActionData) => {
+    setActiveActionId(action.id);
+    if (action.sourceLocation) {
+      setActiveSource(action.sourceLocation);
+    } else {
+      setActiveSource(null);
+    }
+  }, []);
+
+  // Explicit user action: scroll PDF to the source paragraph.
+  const handleShowInPDF = useCallback((action: ActionData) => {
     setActiveActionId(action.id);
 
     if (action.sourceLocation) {
-      // We have precise source location from PyMuPDF
       setActiveSource(action.sourceLocation);
       const targetPage = action.sourceLocation.page;
 
-      // Scroll to the target page
       requestAnimationFrame(() => {
         const el = pageRefs.current[targetPage - 1];
         const container = scrollRef.current;
         if (el && container) {
-          // Calculate scroll position to center the highlight in the viewport
           const rects = action.sourceLocation!.rects || [];
           const scale = PDF_RENDER_WIDTH / action.sourceLocation!.page_width;
           const highlightY = rects.length > 0 ? rects[0].y0 * scale : 0;
@@ -336,15 +528,14 @@ export const VerifyActions = ({
 
           container.scrollTo({
             top: Math.max(0, targetScroll),
-            behavior: 'smooth'
+            behavior: 'smooth',
           });
         }
       });
 
-      // Also notify parent (for backward compat)
       onActionClick(targetPage);
     } else {
-      // Fallback: no source location, estimate page
+      // No source location — fall back to an estimated page.
       setActiveSource(null);
       const lastPage = numPages || 1;
       const estimatedPage = Math.max(1, lastPage - 2 + parseInt(action.id));
@@ -356,7 +547,7 @@ export const VerifyActions = ({
         if (el && container) {
           container.scrollTo({
             top: el.offsetTop - 40,
-            behavior: 'smooth'
+            behavior: 'smooth',
           });
         }
       });
@@ -504,19 +695,29 @@ export const VerifyActions = ({
               {actions.filter(a => a.isVerified).length} / {actions.length} Verified
             </span>
           </div>
-          <div className="flex flex-wrap gap-3">
-            <button 
-              onClick={() => setIsAdding(!isAdding)}
-              className="flex items-center gap-2 px-4 py-2 rounded-lg border border-outline-variant/30 text-on-surface-variant hover:bg-surface-container-high transition-all font-bold text-xs uppercase tracking-widest"
-            >
-              <span className="material-symbols-outlined text-sm">{isAdding ? 'close' : 'add'}</span> {isAdding ? 'Cancel' : 'Add Action'}
-            </button>
-            <button 
-              onClick={onVerifyAll}
-              className="flex items-center gap-2 px-4 py-2 rounded-lg bg-primary-blue text-on-primary-blue hover:bg-primary-blue/90 transition-all font-bold text-xs uppercase tracking-widest shadow-lg shadow-primary-blue/20"
-            >
-              <span className="material-symbols-outlined text-sm">check_circle</span> Verify All ({actions.length})
-            </button>
+          <div className="flex flex-wrap gap-3 items-center">
+            {!canVerify && (
+              <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-surface-container-highest/60 border border-outline-variant/30 text-on-surface-variant text-[10px] font-bold uppercase tracking-wider">
+                <span className="material-symbols-outlined text-sm">visibility</span>
+                Read-only — HLC verifies
+              </span>
+            )}
+            {canVerify && (
+              <>
+                <button
+                  onClick={() => setIsAdding(!isAdding)}
+                  className="flex items-center gap-2 px-4 py-2 rounded-lg border border-outline-variant/30 text-on-surface-variant hover:bg-surface-container-high transition-all font-bold text-xs uppercase tracking-widest"
+                >
+                  <span className="material-symbols-outlined text-sm">{isAdding ? 'close' : 'add'}</span> {isAdding ? 'Cancel' : 'Add Action'}
+                </button>
+                <button
+                  onClick={onVerifyAll}
+                  className="flex items-center gap-2 px-4 py-2 rounded-lg bg-primary-blue text-on-primary-blue hover:bg-primary-blue/90 transition-all font-bold text-xs uppercase tracking-widest shadow-lg shadow-primary-blue/20"
+                >
+                  <span className="material-symbols-outlined text-sm">check_circle</span> Verify All ({actions.length})
+                </button>
+              </>
+            )}
           </div>
         </div>
 
@@ -585,7 +786,7 @@ export const VerifyActions = ({
 
           {actions.length > 0 ? (
             actions.map(action => (
-              <ActionItem 
+              <ActionItem
                 key={action.id}
                 action={action}
                 isActive={activeActionId === action.id}
@@ -593,6 +794,8 @@ export const VerifyActions = ({
                 onDelete={onDelete}
                 onEdit={onEdit}
                 onSelect={handleActionSelect}
+                onShowInPDF={handleShowInPDF}
+                canVerify={canVerify}
               />
             ))
           ) : (

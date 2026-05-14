@@ -72,7 +72,7 @@ Download from HuggingFace dataset `Harsh2005/nyaya-drishti-data` (see `README.md
 
 ### Required env vars (`backend/.env`)
 
-`DJANGO_SECRET_KEY`, `GROQ_API_KEY` (Agents 1 & 4 — fast), `NVIDIA_API_KEY` (Agents 2 & 3 — 70B reasoning), `GEMINI_API_KEY` (optional, used as final-agent fallback in 4-agent recommendation mode). `LLM_PROVIDER` defaults to `nvidia`. `DATABASE_URL` switches to Postgres if set.
+`DJANGO_SECRET_KEY`, `OPENROUTER_API_KEY` (Agent 1 fast 8B, plus all-agents fallback for large PDFs), `NVIDIA_API_KEY` (Agents 2, 3, 4 — 70B reasoning, also used by dept classifier), `GEMINI_API_KEY` (optional, used as final-agent fallback in 4-agent recommendation mode). `GROQ_API_KEY` is no longer required — extraction has migrated off Groq. `LLM_PROVIDER` defaults to `nvidia`. `DATABASE_URL` switches to Postgres if set.
 
 ## Architecture
 
@@ -83,11 +83,12 @@ POST /api/cases/extract/  (PDF)
    └─► apps/cases/services/
          pdf_processor.py        — PyMuPDF4LLM → Markdown
          section_segmenter.py    — bi-directional regex → {header, body, operative}
-         extractor.py            — 4-agent extraction (Groq 8B + NVIDIA 70B)
-                                   • Agent 1 RegistryExtraction   → header
-                                   • Agent 2 AnalystExtraction    → body
-                                   • Agent 3 ScholarExtraction    → body
-                                   • Agent 4 ComplianceExtraction → operative
+         extractor.py            — 4-agent extraction (OpenRouter 8B + NVIDIA 70B)
+                                   • Agent 1 RegistryExtraction   → header   (8B — fast metadata)
+                                   • Agent 2 AnalystExtraction    → body     (70B — reasoning)
+                                   • Agent 3 ScholarExtraction    → body     (70B — reasoning)
+                                   • Agent 4 ComplianceExtraction → operative (70B — critical)
+                                   PDFs >= 25 pages route all 4 agents through OpenRouter Llama 70B.
    └─► persists Case + Judgment + Citation rows; spatial-search annotates each
        directive with PDF bbox for source highlighting
 
@@ -126,8 +127,9 @@ URL mounts (see `backend/config/urls.py`): `/api/auth/`, `/api/cases/`, `/api/ac
 ### LLM provider abstraction (important when editing)
 
 `extractor.py` and `recommendation_pipeline.py` both implement provider-specific call functions with retry/backoff:
-- `_call_agent_8b` → Groq `llama-3.1-8b-instant` (fast, Agents 1 & 4)
-- `_call_agent_70b` → NVIDIA NIM `meta/llama-3.3-70b-instruct` (reasoning, Agents 2 & 3)
+- `_call_agent_8b` → OpenRouter `meta-llama/llama-3.1-8b-instruct` (fast, Agent 1 only)
+- `_call_agent_70b` → NVIDIA NIM `meta/llama-3.3-70b-instruct` (reasoning, Agents 2/3/4 + dept classifier)
+- `_call_openrouter_llama` → OpenRouter `meta-llama/llama-3.3-70b-instruct` (large-PDF routing for all 4 agents when page_count >= OPENROUTER_LARGE_PDF_THRESHOLD)
 - Final synthesis in 4-agent recommendation mode → Gemini 2.5 Pro with Llama 70B fallback
 
 Every call enforces a Pydantic schema via `response_format={"type": "json_object"}` and a schema-in-prompt fence. Rate limits (HTTP 429/503) are retried with linear backoff — preserve that behavior when adding providers.

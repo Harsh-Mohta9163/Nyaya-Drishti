@@ -1,13 +1,18 @@
+from django.db.models import Q
 from django.shortcuts import get_object_or_404
+from django.utils import timezone
 from rest_framework import permissions, status
 from rest_framework.generics import ListAPIView, RetrieveAPIView
+from rest_framework.parsers import FormParser, MultiPartParser
+from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from apps.accounts.permissions import GLOBAL_ACCESS_ROLES
 from apps.cases.models import Case
 
-from .models import ActionPlan
-from .serializers import ActionPlanSerializer
+from .models import ActionPlan, DirectiveExecution
+from .serializers import ActionPlanSerializer, DirectiveExecutionSerializer
 from .services.plan_generator import generate_or_refresh_action_plan
 from .services.recommendation_pipeline import generate_recommendation
 from .services.rag_engine import HybridRAGEngine
@@ -184,3 +189,161 @@ class GenerateRecommendationView(APIView):
             import traceback
             traceback.print_exc()
             return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+# ---------------------------------------------------------------------------
+# LCO Execution dashboard
+# ---------------------------------------------------------------------------
+
+def _approved_plans_for_user(user):
+    """Approved ActionPlans visible to the calling user.
+
+    Dept-scoped users see plans for cases whose primary or secondary department
+    matches theirs. Global roles see everything (or `?department=CODE`).
+    """
+    qs = (
+        ActionPlan.objects
+        .select_related("judgment__case__primary_department")
+        .filter(verification_status__startswith="approved")
+    )
+    if not user or not user.is_authenticated:
+        return qs.none()
+    if user.role in GLOBAL_ACCESS_ROLES:
+        return qs
+    if not user.department_id:
+        return qs.none()
+    return qs.filter(
+        Q(judgment__case__primary_department=user.department_id)
+        | Q(judgment__case__secondary_departments=user.department_id)
+    ).distinct()
+
+
+def _materialize_executions(plan: ActionPlan) -> list[DirectiveExecution]:
+    """Ensure one DirectiveExecution row exists per court_directions entry."""
+    judgment = plan.judgment
+    directions = judgment.court_directions or []
+    existing = {e.directive_index: e for e in plan.executions.all()}
+    created = []
+    for idx, d in enumerate(directions):
+        if idx in existing:
+            continue
+        if not isinstance(d, dict):
+            continue
+        created.append(DirectiveExecution.objects.create(
+            action_plan=plan,
+            directive_index=idx,
+            directive_text=(d.get("text") or "")[:5000],
+            responsible_entity=(d.get("responsible_entity") or "")[:300],
+            action_required=(d.get("action_required") or "")[:5000],
+            deadline_mentioned=(d.get("deadline_mentioned") or "")[:200],
+        ))
+    return list(plan.executions.all().order_by("directive_index"))
+
+
+class LCOExecutionListView(APIView):
+    """GET /api/action-plans/execution/
+
+    Returns approved directives for the LCO's department.
+    Optional query params:
+      - department=CODE  (central law / monitoring only — drill-down)
+      - status=pending|in_progress|completed|blocked
+    """
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        plans = _approved_plans_for_user(request.user)
+
+        if request.user.role in GLOBAL_ACCESS_ROLES:
+            code = (request.query_params.get("department") or "").strip().upper()
+            if code:
+                plans = plans.filter(judgment__case__primary_department__code=code)
+
+        # Materialize execution rows lazily.
+        for plan in plans:
+            _materialize_executions(plan)
+
+        execs = DirectiveExecution.objects.filter(action_plan__in=plans).select_related(
+            "action_plan__judgment__case__primary_department",
+            "executed_by",
+        )
+
+        status_filter = (request.query_params.get("status") or "").strip()
+        if status_filter:
+            execs = execs.filter(status=status_filter)
+
+        execs = execs.order_by("status", "action_plan__compliance_deadline", "created_at")
+
+        # Default: only show directives that are BOTH
+        #   (a) a government action (gov_action_required=True), AND
+        #   (b) explicitly verified by the HLC (isVerified=True).
+        # The HLC checkbox on the Verify-Actions tab is what flips isVerified.
+        # Pass ?include=all to show everything (central-law audit view).
+        include_all = (request.query_params.get("include") or "").lower() == "all"
+        rows = list(execs)
+        if not include_all:
+            filtered = []
+            for e in rows:
+                directions = e.action_plan.judgment.court_directions or []
+                if 0 <= e.directive_index < len(directions):
+                    d = directions[e.directive_index]
+                    if not isinstance(d, dict):
+                        continue
+                    if d.get("gov_action_required") is not True:
+                        continue
+                    if not d.get("isVerified"):
+                        continue
+                    filtered.append(e)
+            rows = filtered
+
+        ser = DirectiveExecutionSerializer(rows, many=True, context={"request": request})
+        return Response(ser.data)
+
+
+class LCOExecutionDetailView(APIView):
+    """PATCH /api/action-plans/execution/<uuid:pk>/
+
+    Updates status / notes / optional proof_file for a single directive.
+    """
+    permission_classes = [IsAuthenticated]
+    parser_classes = [MultiPartParser, FormParser]
+
+    def _can_edit(self, user, execution: DirectiveExecution) -> bool:
+        if user.role in GLOBAL_ACCESS_ROLES:
+            return True
+        if not user.department_id:
+            return False
+        case = execution.action_plan.judgment.case
+        return (
+            case.primary_department_id == user.department_id
+            or case.secondary_departments.filter(id=user.department_id).exists()
+        )
+
+    def patch(self, request, pk):
+        execution = get_object_or_404(DirectiveExecution, pk=pk)
+        if not self._can_edit(request.user, execution):
+            return Response({"detail": "Forbidden"}, status=status.HTTP_403_FORBIDDEN)
+
+        new_status = request.data.get("status")
+        if new_status:
+            valid = {c[0] for c in DirectiveExecution.Status.choices}
+            if new_status not in valid:
+                return Response(
+                    {"detail": f"status must be one of {sorted(valid)}"},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            execution.status = new_status
+            if new_status == DirectiveExecution.Status.COMPLETED:
+                execution.completed_at = timezone.now()
+                execution.executed_by = request.user
+            elif new_status != DirectiveExecution.Status.COMPLETED:
+                execution.completed_at = None
+
+        if "notes" in request.data:
+            execution.notes = (request.data.get("notes") or "")[:10000]
+        if "proof_file" in request.data and request.data["proof_file"]:
+            execution.proof_file = request.data["proof_file"]
+
+        execution.save()
+        return Response(
+            DirectiveExecutionSerializer(execution, context={"request": request}).data
+        )

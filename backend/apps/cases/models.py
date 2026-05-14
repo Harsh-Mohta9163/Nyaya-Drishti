@@ -30,6 +30,18 @@ class Case(models.Model):
         related_name="appeals"
     )
     
+    # Department routing — AI-classified, user-overridable.
+    # primary_department is the single responsible department for verification.
+    # secondary_departments are tagged dependencies (e.g., Finance for a PWD case
+    # that needs budgetary clearance). Both are filled by dept_classifier on upload.
+    primary_department = models.ForeignKey(
+        "accounts.Department", null=True, blank=True,
+        on_delete=models.SET_NULL, related_name="primary_cases",
+    )
+    secondary_departments = models.ManyToManyField(
+        "accounts.Department", blank=True, related_name="secondary_cases",
+    )
+
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
     uploaded_by = models.ForeignKey(
@@ -95,6 +107,12 @@ class Judgment(models.Model):
     # File storage
     pdf_file = models.FileField(upload_to="judgments/")
     pdf_storage_url = models.URLField(blank=True)
+    # SHA-256 of the uploaded PDF bytes. Used to short-circuit re-extraction
+    # when the same PDF is uploaded twice. Indexed for fast lookup.
+    pdf_hash = models.CharField(
+        max_length=64, blank=True, db_index=True,
+        help_text="SHA-256 of the uploaded PDF; used for dedup on extract.",
+    )
     
     # Processing status
     processing_status = models.CharField(max_length=20, default="uploaded",

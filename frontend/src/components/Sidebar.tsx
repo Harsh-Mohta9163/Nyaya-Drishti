@@ -1,6 +1,7 @@
 import React, { useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { useAuth } from '../context/AuthContext';
+import { useAuth, isGlobalRole } from '../context/AuthContext';
+import karnatakaLogo from '../karnataka_govt_logo.png';
 
 interface SidebarItemProps {
   icon: string;
@@ -68,9 +69,16 @@ export const Sidebar = ({
       {/* Header with hamburger */}
       <div className={`h-20 flex items-center border-b border-outline-variant/20 ${isCollapsed ? 'px-4 justify-center' : 'px-6 justify-between'}`}>
         {!isCollapsed && (
-          <div className="flex flex-col min-w-0">
-            <span className="text-2xl font-bold text-primary-blue tracking-tight whitespace-nowrap">NyayaDrishti</span>
-            <span className="text-[10px] uppercase font-bold text-on-surface-variant tracking-[0.2em] opacity-40 whitespace-nowrap">Legal Intelligence</span>
+          <div className="flex items-center gap-3 min-w-0">
+            <img
+              src={karnatakaLogo}
+              alt="Government of Karnataka"
+              className="w-10 h-10 shrink-0 rounded-full ring-1 ring-outline-variant/30 shadow-sm bg-white/5 p-0.5"
+            />
+            <div className="flex flex-col min-w-0 leading-tight">
+              <span className="text-xl font-bold text-primary-blue tracking-tight whitespace-nowrap">NyayaDrishti</span>
+              <span className="text-[9px] uppercase font-bold text-on-surface-variant tracking-[0.18em] opacity-60 whitespace-nowrap">Govt. of Karnataka</span>
+            </div>
           </div>
         )}
         <button
@@ -105,6 +113,32 @@ export const Sidebar = ({
           isCollapsed={isCollapsed}
           onClick={() => handleNavigate('cases')}
         />
+        {/* Execution dashboard — LCO landing page; HLC + global can also view */}
+        <SidebarItem
+          icon="checklist_rtl"
+          label="Execution"
+          isActive={currentView === 'execution'}
+          isCollapsed={isCollapsed}
+          onClick={() => handleNavigate('execution')}
+        />
+        {/* Deadlines monitor — Nodal Officer landing page; HLC + global can also view */}
+        <SidebarItem
+          icon="schedule"
+          label="Deadlines"
+          isActive={currentView === 'deadlines'}
+          isCollapsed={isCollapsed}
+          onClick={() => handleNavigate('deadlines')}
+        />
+        {/* Central Law / State Monitoring roles get the cross-department overview */}
+        {isGlobalRole(user?.role) && (
+          <SidebarItem
+            icon="account_tree"
+            label="Central View"
+            isActive={currentView === 'central-view'}
+            isCollapsed={isCollapsed}
+            onClick={() => handleNavigate('central-view')}
+          />
+        )}
         <SidebarItem
           icon="logout"
           label="Logout"
@@ -121,7 +155,7 @@ export const Sidebar = ({
         {!isCollapsed && (
           <div className="overflow-hidden min-w-0">
             <p className="text-on-surface font-semibold text-sm truncate capitalize">{user?.username || 'User'}</p>
-            <p className="text-on-surface-variant text-xs truncate capitalize">{user?.department || 'Legal'}</p>
+            <p className="text-on-surface-variant text-xs truncate">{user?.department_name || (isGlobalRole(user?.role) ? 'All Departments' : 'Legal')}</p>
           </div>
         )}
       </div>
@@ -162,9 +196,16 @@ export const Sidebar = ({
               >
                 {/* Header */}
                 <div className="h-20 flex items-center border-b border-outline-variant/20 px-6 justify-between">
-                  <div className="flex flex-col min-w-0">
-                    <span className="text-2xl font-bold text-primary-blue tracking-tight whitespace-nowrap">NyayaDrishti</span>
-                    <span className="text-[10px] uppercase font-bold text-on-surface-variant tracking-[0.2em] opacity-40 whitespace-nowrap">Legal Intelligence</span>
+                  <div className="flex items-center gap-3 min-w-0">
+                    <img
+                      src={karnatakaLogo}
+                      alt="Government of Karnataka"
+                      className="w-10 h-10 shrink-0 rounded-full ring-1 ring-outline-variant/30 shadow-sm bg-white/5 p-0.5"
+                    />
+                    <div className="flex flex-col min-w-0 leading-tight">
+                      <span className="text-xl font-bold text-primary-blue tracking-tight whitespace-nowrap">NyayaDrishti</span>
+                      <span className="text-[9px] uppercase font-bold text-on-surface-variant tracking-[0.18em] opacity-60 whitespace-nowrap">Govt. of Karnataka</span>
+                    </div>
                   </div>
                   <button
                     onClick={onMobileClose}
@@ -178,6 +219,11 @@ export const Sidebar = ({
                 <div className="flex-grow py-6 space-y-1 px-4">
                   <SidebarItem icon="dashboard" label="Dashboard" isActive={currentView === 'dashboard'} onClick={() => handleNavigate('dashboard')} />
                   <SidebarItem icon="folder_managed" label="Cases" isActive={currentView === 'cases'} onClick={() => handleNavigate('cases')} />
+                  <SidebarItem icon="checklist_rtl" label="Execution" isActive={currentView === 'execution'} onClick={() => handleNavigate('execution')} />
+                  <SidebarItem icon="schedule" label="Deadlines" isActive={currentView === 'deadlines'} onClick={() => handleNavigate('deadlines')} />
+                  {isGlobalRole(user?.role) && (
+                    <SidebarItem icon="account_tree" label="Central View" isActive={currentView === 'central-view'} onClick={() => handleNavigate('central-view')} />
+                  )}
                   <SidebarItem icon="logout" label="Logout" onClick={logout} />
                 </div>
 
@@ -187,7 +233,7 @@ export const Sidebar = ({
                   </div>
                   <div className="overflow-hidden min-w-0">
                     <p className="text-on-surface font-semibold text-sm truncate capitalize">{user?.username || 'User'}</p>
-                    <p className="text-on-surface-variant text-xs truncate capitalize">{user?.department || 'Legal'}</p>
+                    <p className="text-on-surface-variant text-xs truncate">{user?.department_name || (isGlobalRole(user?.role) ? 'All Departments' : 'Legal')}</p>
                   </div>
                 </div>
               </motion.aside>

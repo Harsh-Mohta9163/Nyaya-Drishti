@@ -1,149 +1,63 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import { useAuth } from './context/AuthContext';
-import { Gavel, User, Lock, Building, ArrowRight, ShieldCheck, Eye, EyeOff, Brain, TrendingUp, Calendar, Clock } from 'lucide-react';
+import { Department, fetchDepartments } from './api/client';
+import karnatakaLogo from './karnataka_govt_logo.png';
 
-const S = {
-  page: {
-    minHeight: '100vh',
-    width: '100%',
-    display: 'flex' as const,
-    backgroundColor: '#0b0e14',
-    fontFamily: "'Inter', system-ui, sans-serif",
-    overflow: 'hidden' as const,
-    position: 'relative' as const,
-  },
-  leftCol: {
-    flexDirection: 'column' as const,
-    justifyContent: 'center' as const,
-    padding: '3rem',
-    position: 'relative' as const,
-    zIndex: 1,
-    backgroundColor: '#10131a',
-  },
-  logoRow: {
-    display: 'flex' as const,
-    alignItems: 'center' as const,
-    gap: '0.75rem',
-    marginBottom: '1.5rem',
-  },
-  appName: {
-    fontSize: '3rem', fontWeight: 700,
-    color: '#3b82f6', letterSpacing: '-0.02em', lineHeight: 1.1,
-  },
-  tagline: {
-    fontSize: '1.875rem', fontWeight: 300,
-    color: '#e1e2ec', marginBottom: '1rem', lineHeight: 1.3,
-  },
-  desc: {
-    fontSize: '1.125rem', color: '#c2c6d6',
-    lineHeight: 1.6, fontWeight: 400, maxWidth: '30rem',
-  },
-  rightCol: {
-    flex: 1,
-    display: 'flex' as const,
-    alignItems: 'center' as const,
-    justifyContent: 'center' as const,
-    padding: '1rem',
-    position: 'relative' as const,
-    zIndex: 1,
-    overflowY: 'auto' as const,
-    minHeight: '100vh',
-  },
-  card: {
-    width: '100%',
-    maxWidth: '480px',
-    backgroundColor: 'rgba(29,32,39,0.7)', // surface-container/70
-    backdropFilter: 'blur(24px)',
-    WebkitBackdropFilter: 'blur(24px)',
-    border: '1px solid rgba(66,71,84,0.3)', // outline-variant/30
-    borderRadius: '8px',
-    boxShadow: '0 20px 40px -10px rgba(0,0,0,0.5)',
-    padding: '2rem',
-    position: 'relative' as const,
-    overflow: 'hidden' as const,
-    display: 'flex' as const,
-    flexDirection: 'column' as const,
-    gap: '1.5rem',
-  },
-  cardHeading: {
-    fontSize: '2rem', fontWeight: 700, color: '#e1e2ec',
-    textAlign: 'center' as const, marginBottom: '0.25rem', letterSpacing: '-0.02em',
-  },
-  cardSubheading: {
-    fontSize: '1rem', color: '#c2c6d6',
-    textAlign: 'center' as const, marginBottom: '0.5rem',
-  },
-  fieldLabel: {
-    display: 'block' as const, fontSize: '0.75rem', fontWeight: 700,
-    color: '#c2c6d6', textTransform: 'uppercase' as const,
-    letterSpacing: '0.05em', marginBottom: '0.25rem', marginLeft: '0.25rem',
-  },
-  inputWrap: { position: 'relative' as const },
-  iconWrap: {
-    position: 'absolute' as const, left: '0.75rem', top: '50%',
-    transform: 'translateY(-50%)', color: '#8c909f', // outline-variant
-    display: 'flex' as const, alignItems: 'center' as const,
-    pointerEvents: 'none' as const,
-  },
-  input: {
-    width: '100%', boxSizing: 'border-box' as const,
-    backgroundColor: 'rgba(50,53,60,0.4)', // surface-variant/40
-    border: 'none',
-    borderBottom: '2px solid rgba(140,144,159,0.3)', // border-b-outline/30
-    borderRadius: '8px 8px 0 0',
-    padding: '0.75rem 1rem 0.75rem 2.5rem',
-    color: '#e1e2ec', fontSize: '1rem', fontWeight: 400,
-    outline: 'none', transition: 'all 0.2s', fontFamily: 'inherit',
-  },
-  submitBtn: {
-    width: '100%',
-    backgroundColor: '#3b82f6', color: '#002e6a', // primary bg, on-primary text
-    fontWeight: 700, fontSize: '0.875rem',
-    padding: '0.75rem 1.5rem',
-    borderRadius: '8px', border: '1px solid transparent', cursor: 'pointer',
-    display: 'flex' as const, alignItems: 'center' as const,
-    justifyContent: 'center' as const, gap: '0.5rem',
-    letterSpacing: '0.05em', textTransform: 'uppercase' as const,
-    boxShadow: '0 0 15px rgba(59,130,246,0.25)',
-    transition: 'all 0.2s', fontFamily: 'inherit',
-    marginTop: '0.5rem',
-  },
-  footer: {
-    textAlign: 'center' as const, fontSize: '0.875rem',
-  },
-};
+const ROLE_OPTIONS = [
+  { value: 'head_legal_cell', label: 'Head of Legal Cell', desc: 'Verifies & approves AI extractions (department-scoped)' },
+  { value: 'nodal_officer', label: 'Nodal Officer', desc: 'Monitors statutory deadlines (department-scoped)' },
+  { value: 'lco', label: 'Litigation Conducting Officer', desc: 'Executes court directions (case-scoped)' },
+  { value: 'central_law', label: 'Central Law Department', desc: 'State-wide oversight across all 48 departments' },
+  { value: 'state_monitoring', label: 'State Monitoring Committee', desc: 'Audit & compliance reporting (global)' },
+];
 
-const focusOn  = (e: React.FocusEvent<HTMLInputElement | HTMLSelectElement>) => { 
-  e.currentTarget.style.borderColor = '#3b82f6';
-  e.currentTarget.style.backgroundColor = 'rgba(50,53,60,0.6)';
-};
-const focusOff = (e: React.FocusEvent<HTMLInputElement | HTMLSelectElement>) => { 
-  e.currentTarget.style.borderColor = 'rgba(140,144,159,0.3)';
-  e.currentTarget.style.backgroundColor = 'rgba(50,53,60,0.4)';
-};
+const FEATURES = [
+  { icon: 'auto_awesome', title: 'Intelligent Extraction', body: 'Multi-agent LLM pipeline reads judgment PDFs and extracts case metadata, directives, parties, and timelines.' },
+  { icon: 'fact_check', title: 'Actionable Plans', body: 'AI-generated compliance and appeal recommendations with statutory deadlines per the Limitation Act.' },
+  { icon: 'verified_user', title: 'Human-in-the-loop', body: 'Mandatory HLC verification ensures only accurate, approved data reaches the department dashboard.' },
+];
 
 export default function RegisterPage() {
   const { register, isLoading } = useAuth();
   const navigate = useNavigate();
   const [form, setForm] = useState({
-    username: '', password: '', confirm_password: '', department: '',
+    username: '',
+    password: '',
+    confirm_password: '',
+    role: 'head_legal_cell',
+    department_code: '',
   });
   const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [error, setError] = useState('');
+  const [departments, setDepartments] = useState<Department[]>([]);
+
+  useEffect(() => {
+    fetchDepartments().then(setDepartments).catch(err => console.error('Dept list fetch failed:', err));
+  }, []);
+
+  const isGlobalRole = form.role === 'central_law' || form.role === 'state_monitoring';
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
-    if (form.password !== form.confirm_password) { setError('Passwords do not match'); return; }
+    if (form.password !== form.confirm_password) {
+      setError('Passwords do not match');
+      return;
+    }
+    if (!isGlobalRole && !form.department_code) {
+      setError('Please pick a department (required for department-scoped roles).');
+      return;
+    }
     try {
       await register({
         username: form.username,
         email: form.username.includes('@') ? form.username : `${form.username}@nyayadrishti.in`,
         password: form.password,
-        role: 'reviewer', // default role
-        department: form.department || 'legal',
+        role: form.role,
+        department_code: isGlobalRole ? '' : form.department_code,
       });
       navigate('/login');
     } catch (err: any) {
@@ -153,182 +67,284 @@ export default function RegisterPage() {
 
   const upd = (field: string, value: string) => setForm(p => ({ ...p, [field]: value }));
 
+  const inputCls = 'w-full bg-surface-container-highest/40 border-b-2 border-outline-variant/30 focus:border-primary-blue/70 focus:bg-surface-container-highest/60 outline-none rounded-t-lg pl-10 pr-10 py-2.5 text-sm text-on-surface transition-all placeholder:text-on-surface-variant/50';
+
   return (
-    <div style={S.page}>
-      {/* Dot Grid Background over everything */}
-      <div style={{ position: 'absolute', inset: 0, opacity: 0.1, backgroundImage: 'radial-gradient(#ffffff 1px, transparent 1px)', backgroundSize: '24px 24px', pointerEvents: 'none', zIndex: 0 }} />
+    <div className="min-h-screen w-full flex flex-col lg:flex-row bg-surface-dim text-on-surface relative">
+      {/* Background dot grid (whole page) */}
+      <div
+        className="absolute inset-0 opacity-[0.06] pointer-events-none z-0"
+        style={{
+          backgroundImage: 'radial-gradient(currentColor 1px, transparent 1px)',
+          backgroundSize: '24px 24px',
+        }}
+      />
 
-      {/* Left column */}
-      <div className="hidden lg:flex w-1/2" style={S.leftCol}>
-        <div style={{ position: 'absolute', inset: 0, zIndex: 0, overflow: 'hidden', pointerEvents: 'none' }}>
-          {/* Deep Dark Gradient */}
-          <div style={{ position: 'absolute', inset: 0, background: 'radial-gradient(circle at 100% 50%, rgba(59,130,246,0.15) 0%, rgba(10,12,18,1) 100%)' }} />
-          
-          {/* Left Side Dot Grid - Matching Screenshot */}
-          <div style={{ 
-            position: 'absolute', 
-            top: 0, 
-            left: 0, 
-            bottom: 0, 
-            width: '240px', 
-            opacity: 0.2, 
-            backgroundImage: 'radial-gradient(rgba(59,130,246,0.5) 1.5px, transparent 1.5px)', 
-            backgroundSize: '32px 32px',
-            maskImage: 'linear-gradient(to right, black, transparent)'
-          }} />
+      {/* ─── Left panel: marketing (hidden on small) ─── */}
+      <aside className="hidden lg:flex lg:w-1/2 relative z-10 px-10 xl:px-16 py-12 flex-col justify-center overflow-hidden bg-surface">
+        {/* Decorative gradient + extra dot column */}
+        <div className="absolute inset-0 pointer-events-none">
+          <div
+            className="absolute inset-0"
+            style={{ background: 'radial-gradient(circle at 100% 50%, rgba(173,198,255,0.10) 0%, transparent 60%)' }}
+          />
+          <div
+            className="absolute left-0 top-0 bottom-0 w-60 opacity-25"
+            style={{
+              backgroundImage: 'radial-gradient(rgba(173,198,255,0.5) 1.5px, transparent 1.5px)',
+              backgroundSize: '32px 32px',
+              maskImage: 'linear-gradient(to right, black, transparent)',
+              WebkitMaskImage: 'linear-gradient(to right, black, transparent)',
+            }}
+          />
+        </div>
 
-          {/* Faint Document Background */}
-          <img alt="" src="https://images.unsplash.com/photo-1589829545856-d10d557cf95f?q=80&w=2070&auto=format&fit=crop" 
-            style={{ position: 'absolute', top: 0, right: 0, width: '80%', height: '100%', objectFit: 'cover', opacity: 0.03, mixBlendMode: 'luminosity', filter: 'blur(4px)' }} />
-
-          {/* Glowing Shield/Lock with Orbits Graphic - Right side of left panel */}
-          <div style={{ position: 'absolute', top: '50%', right: '-80px', transform: 'translateY(-50%)', width: '400px', height: '400px' }}>
-             {/* Orbits */}
-             <div style={{ position: 'absolute', inset: 0, borderRadius: '50%', border: '1px solid rgba(59,130,246,0.1)', transform: 'scale(1.2)' }} />
-             <div style={{ position: 'absolute', inset: 0, borderRadius: '50%', border: '1px solid rgba(59,130,246,0.05)', transform: 'scale(1.5) rotate(15deg)' }} />
-             
-             {/* Glowing Shield Icon */}
-             <div style={{ 
-               position: 'absolute', 
-               top: '50%', 
-               left: '50%', 
-               transform: 'translate(-50%, -50%)', 
-               width: '80px', 
-               height: '80px', 
-               backgroundColor: 'rgba(59,130,246,0.1)', 
-               borderRadius: '20px', 
-               display: 'flex', 
-               alignItems: 'center', 
-               justifyContent: 'center',
-               border: '1px solid rgba(59,130,246,0.3)',
-               boxShadow: '0 0 40px rgba(59,130,246,0.2)'
-             }}>
-                <Lock size={32} color="#3b82f6" />
-                <div style={{ position: 'absolute', top: '-10px', right: '20px', width: '6px', height: '6px', borderRadius: '50%', backgroundColor: '#3b82f6', boxShadow: '0 0 10px #3b82f6' }} />
-                <div style={{ position: 'absolute', bottom: '20px', left: '-10px', width: '4px', height: '4px', borderRadius: '50%', backgroundColor: '#3b82f6', opacity: 0.6 }} />
-             </div>
+        <motion.div
+          initial={{ opacity: 0, x: -24 }}
+          animate={{ opacity: 1, x: 0 }}
+          transition={{ duration: 0.6 }}
+          className="relative z-10 max-w-xl"
+        >
+          <div className="flex items-center gap-4 mb-8">
+            <img
+              src={karnatakaLogo}
+              alt="Government of Karnataka"
+              className="w-14 h-14 rounded-full ring-1 ring-outline-variant/40 shadow-lg bg-white/5 p-1"
+            />
+            <div>
+              <h1 className="text-4xl xl:text-5xl font-bold text-primary-blue tracking-tighter leading-none">
+                NyayaDrishti
+              </h1>
+              <p className="text-[10px] uppercase font-bold tracking-[0.2em] text-on-surface-variant opacity-60 mt-1">
+                Govt. of Karnataka · CCMS
+              </p>
+            </div>
           </div>
-        </div>
 
-        <div style={{ position: 'relative', zIndex: 1, height: '100%', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
-          <motion.div initial={{ opacity: 0, x: -28 }} animate={{ opacity: 1, x: 0 }} transition={{ duration: 0.8 }} style={{ maxWidth: '36rem' }}>
-            <div style={S.logoRow}>
-              <Gavel style={{ width: '52px', height: '52px', color: '#3b82f6' }} />
-              <h1 style={{ ...S.appName, fontSize: '3.5rem', fontWeight: 800 }}>NyayaDrishti</h1>
-            </div>
-            <h2 style={{ ...S.tagline, fontSize: '2rem', marginTop: '0.5rem' }}>Integrated Legal Intelligence</h2>
-            <p style={{ ...S.desc, fontSize: '1.125rem', lineHeight: 1.6, maxWidth: '90%', marginTop: '1.5rem', color: '#c2c6d6' }}>
-              AI-powered system that reads court judgments, generates actionable plans, and ensures human-verified accuracy for government use.
-            </p>
-          </motion.div>
+          <h2 className="text-2xl xl:text-3xl font-semibold text-on-surface mt-6 leading-tight">
+            Integrated Legal Intelligence for the State Secretariat
+          </h2>
+          <p className="text-base text-on-surface-variant leading-relaxed mt-4 max-w-md">
+            AI reads court judgments, drafts actionable compliance plans, and routes them to the
+            responsible department — with mandatory human verification at every step.
+          </p>
+        </motion.div>
 
-          {/* Feature Highlight Boxes */}
-          <motion.div 
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.5, duration: 0.8 }}
-            style={{ display: 'flex', gap: '1.5rem', marginTop: '8rem' }}
-          >
-            <div style={{ flex: 1, backgroundColor: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)', padding: '1.5rem', borderRadius: '16px', display: 'flex', alignItems: 'flex-start', gap: '1.25rem' }}>
-              <div style={{ padding: '0.85rem', backgroundColor: 'rgba(59,130,246,0.1)', borderRadius: '12px', color: '#3b82f6', border: '1px solid rgba(59,130,246,0.2)' }}>
-                <ShieldCheck size={24} />
+        <motion.div
+          initial={{ opacity: 0, y: 16 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.3, duration: 0.6 }}
+          className="relative z-10 mt-12 xl:mt-16 grid grid-cols-1 gap-3 max-w-xl"
+        >
+          {FEATURES.map(f => (
+            <div
+              key={f.title}
+              className="flex items-start gap-4 p-4 rounded-2xl bg-surface-container/50 backdrop-blur-sm border border-outline-variant/20"
+            >
+              <div className="shrink-0 w-10 h-10 rounded-xl bg-primary-blue/10 border border-primary-blue/20 flex items-center justify-center text-primary-blue">
+                <span className="material-symbols-outlined text-xl">{f.icon}</span>
               </div>
-              <div style={{ flex: 1 }}>
-                <h4 style={{ color: '#e1e2ec', fontSize: '15px', fontWeight: 700, marginBottom: '6px' }}>Intelligent Extraction</h4>
-                <p style={{ color: '#c2c6d6', fontSize: '12px', lineHeight: 1.5, opacity: 0.8 }}>Extract case details, directions, parties, timelines, and more from judgment PDFs.</p>
-              </div>
-            </div>
-
-            <div style={{ flex: 1, backgroundColor: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)', padding: '1.5rem', borderRadius: '16px', display: 'flex', alignItems: 'flex-start', gap: '1.25rem' }}>
-              <div style={{ padding: '0.85rem', backgroundColor: 'rgba(59,130,246,0.1)', borderRadius: '12px', color: '#3b82f6', border: '1px solid rgba(59,130,246,0.2)' }}>
-                <Calendar size={24} />
-              </div>
-              <div style={{ flex: 1 }}>
-                <h4 style={{ color: '#e1e2ec', fontSize: '15px', fontWeight: 700, marginBottom: '6px' }}>Actionable Plans</h4>
-                <p style={{ color: '#c2c6d6', fontSize: '12px', lineHeight: 1.5, opacity: 0.8 }}>Generate compliance needs, appeal considerations, responsible departments, and timelines.</p>
+              <div className="min-w-0">
+                <h4 className="text-sm font-bold text-on-surface">{f.title}</h4>
+                <p className="text-xs text-on-surface-variant opacity-80 leading-relaxed mt-0.5">{f.body}</p>
               </div>
             </div>
+          ))}
+        </motion.div>
+      </aside>
 
-            <div style={{ flex: 1, backgroundColor: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)', padding: '1.5rem', borderRadius: '16px', display: 'flex', alignItems: 'flex-start', gap: '1.25rem' }}>
-              <div style={{ padding: '0.85rem', backgroundColor: 'rgba(59,130,246,0.1)', borderRadius: '12px', color: '#3b82f6', border: '1px solid rgba(59,130,246,0.2)' }}>
-                <ShieldCheck size={24} />
-              </div>
-              <div style={{ flex: 1 }}>
-                <h4 style={{ color: '#e1e2ec', fontSize: '15px', fontWeight: 700, marginBottom: '6px' }}>Verified & Trusted</h4>
-                <p style={{ color: '#c2c6d6', fontSize: '12px', lineHeight: 1.5, opacity: 0.8 }}>Human-in-the-loop verification ensures only accurate, approved data reaches the dashboard.</p>
-              </div>
-            </div>
-          </motion.div>
-        </div>
-      </div>
+      {/* ─── Right panel: registration form ─── */}
+      <main className="relative z-10 w-full lg:w-1/2 flex items-start justify-center px-4 sm:px-6 py-6 sm:py-8 lg:py-10 overflow-y-auto min-h-screen">
+        <motion.div
+          initial={{ opacity: 0, y: 18 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.5 }}
+          className="w-full max-w-md glass-card p-5 sm:p-6 relative my-auto"
+        >
+          <div className="absolute top-0 inset-x-0 h-1 bg-gradient-to-r from-transparent via-primary-blue/60 to-transparent" />
 
-      {/* Right column */}
-      <main className="w-full lg:w-1/2" style={S.rightCol}>
-        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.6 }} style={S.card}>
-          <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: '4px', background: 'linear-gradient(90deg, transparent, rgba(59,130,246,0.5), transparent)' }} />
-          
-          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '1rem' }}>
-            <div style={{ width: '56px', height: '56px', borderRadius: '50%', backgroundColor: 'rgba(59,130,246,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center', border: '1px solid rgba(59,130,246,0.2)' }}>
-              <User size={28} color="#3b82f6" />
+          {/* Mobile-only brand (shown above the card on <lg) */}
+          <div className="flex lg:hidden items-center gap-3 mb-5">
+            <img
+              src={karnatakaLogo}
+              alt="Government of Karnataka"
+              className="w-10 h-10 rounded-full ring-1 ring-outline-variant/40 bg-white/5 p-0.5 shrink-0"
+            />
+            <div className="leading-tight">
+              <p className="text-lg font-bold text-primary-blue tracking-tight">NyayaDrishti</p>
+              <p className="text-[9px] uppercase tracking-[0.18em] font-bold text-on-surface-variant opacity-60">
+                Govt. of Karnataka · CCMS
+              </p>
             </div>
-            <div style={{ textAlign: 'center' }}>
-              <h2 style={S.cardHeading}>Create Account</h2>
-              <p style={S.cardSubheading}>Initialize your secure legal intelligence node.</p>
+          </div>
+
+          {/* Card header */}
+          <div className="flex flex-col items-center text-center gap-2 mb-4">
+            <div className="w-11 h-11 rounded-full bg-primary-blue/10 border border-primary-blue/20 flex items-center justify-center">
+              <span className="material-symbols-outlined text-xl text-primary-blue">person_add</span>
+            </div>
+            <div>
+              <h2 className="text-xl sm:text-2xl font-bold text-on-surface tracking-tight">Create Account</h2>
+              <p className="text-xs text-on-surface-variant opacity-80 mt-0.5">
+                Register a new node on the CCMS network.
+              </p>
             </div>
           </div>
 
           <AnimatePresence>
             {error && (
-              <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }}
-                style={{ backgroundColor: 'rgba(255,180,171,0.1)', border: '1px solid rgba(255,180,171,0.2)', padding: '0.75rem', borderRadius: '8px', color: '#ffb4ab', fontSize: '12px', fontWeight: 600 }}>
+              <motion.div
+                initial={{ opacity: 0, height: 0 }}
+                animate={{ opacity: 1, height: 'auto' }}
+                exit={{ opacity: 0, height: 0 }}
+                className="mb-4 px-3 py-2 rounded-lg bg-error-red/10 border border-error-red/30 text-error-red text-xs font-semibold"
+              >
                 {error}
               </motion.div>
             )}
           </AnimatePresence>
 
-          <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
-            <Field id="username" label="User ID" placeholder="Enter your credentials ID" value={form.username} onChange={v => upd('username', v)} icon={<User style={{ width: '18px', height: '18px' }} />} />
-            
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
-              <label style={S.fieldLabel}>Password</label>
-              <div style={S.inputWrap}>
-                <div style={S.iconWrap}><Lock style={{ width: '18px', height: '18px' }} /></div>
-                <input id="password" type={showPassword ? 'text' : 'password'} placeholder="Create secure password"
-                  value={form.password} onChange={e => upd('password', e.target.value)} required
-                  style={{ ...S.input, paddingRight: '2.5rem' }} onFocus={focusOn} onBlur={focusOff} />
-                <button type="button" onClick={() => setShowPassword(!showPassword)}
-                  style={{ position: 'absolute', right: '0.75rem', top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: '#8c909f' }}>
-                  {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+          <form onSubmit={handleSubmit} className="space-y-3">
+            {/* User ID */}
+            <Field
+              id="username"
+              label="User ID"
+              placeholder="your.name or email"
+              value={form.username}
+              onChange={v => upd('username', v)}
+              icon="person"
+            />
+
+            {/* Password (with toggle) */}
+            <div className="space-y-1">
+              <label htmlFor="password" className="block text-[10px] font-bold uppercase tracking-wider text-on-surface-variant ml-0.5">
+                Password
+              </label>
+              <div className="relative">
+                <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-on-surface-variant text-lg pointer-events-none">
+                  lock
+                </span>
+                <input
+                  id="password"
+                  type={showPassword ? 'text' : 'password'}
+                  required
+                  value={form.password}
+                  onChange={e => upd('password', e.target.value)}
+                  placeholder="Choose a secure password"
+                  className={inputCls}
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(s => !s)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-on-surface-variant hover:text-on-surface transition-colors"
+                  aria-label={showPassword ? 'Hide password' : 'Show password'}
+                >
+                  <span className="material-symbols-outlined text-lg">
+                    {showPassword ? 'visibility_off' : 'visibility'}
+                  </span>
                 </button>
               </div>
             </div>
 
-            <Field id="confirm_password" label="Confirm Password" type="password" placeholder="Verify password"
-              value={form.confirm_password} onChange={v => upd('confirm_password', v)}
-              icon={<ShieldCheck style={{ width: '18px', height: '18px' }} />} />
+            {/* Confirm Password (with toggle) */}
+            <div className="space-y-1">
+              <label htmlFor="confirm_password" className="block text-[10px] font-bold uppercase tracking-wider text-on-surface-variant ml-0.5">
+                Confirm Password
+              </label>
+              <div className="relative">
+                <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-on-surface-variant text-lg pointer-events-none">
+                  shield
+                </span>
+                <input
+                  id="confirm_password"
+                  type={showConfirmPassword ? 'text' : 'password'}
+                  required
+                  value={form.confirm_password}
+                  onChange={e => upd('confirm_password', e.target.value)}
+                  placeholder="Re-enter password"
+                  className={inputCls}
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowConfirmPassword(s => !s)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-on-surface-variant hover:text-on-surface transition-colors"
+                  aria-label={showConfirmPassword ? 'Hide confirm password' : 'Show confirm password'}
+                >
+                  <span className="material-symbols-outlined text-lg">
+                    {showConfirmPassword ? 'visibility_off' : 'visibility'}
+                  </span>
+                </button>
+              </div>
+            </div>
 
-            <SelectField id="department" label="Department" value={form.department} onChange={v => upd('department', v)} icon={<Building style={{ width: '18px', height: '18px' }} />}>
-              <option value="" disabled style={{ backgroundColor: '#10131a' }}>Select Designation...</option>
-              <option value="legal">Legal</option>
-              <option value="finance">Finance</option>
-              <option value="executive">Executive</option>
-              <option value="external">External Counsel</option>
-            </SelectField>
+            {/* Role */}
+            <div className="space-y-1">
+              <SelectField
+                id="role"
+                label="Role"
+                value={form.role}
+                onChange={v => upd('role', v)}
+                icon="badge"
+              >
+                {ROLE_OPTIONS.map(opt => (
+                  <option key={opt.value} value={opt.value} className="bg-surface-dim text-on-surface">
+                    {opt.label}
+                  </option>
+                ))}
+              </SelectField>
+              <p className="text-[10px] text-on-surface-variant opacity-70 ml-1">
+                {ROLE_OPTIONS.find(o => o.value === form.role)?.desc}
+              </p>
+            </div>
 
-            <button type="submit" disabled={isLoading}
-              style={{ ...S.submitBtn, opacity: isLoading ? 0.6 : 1 }}
-              onMouseEnter={e => !isLoading && (e.currentTarget.style.backgroundColor = '#2563eb')}
-              onMouseLeave={e => (e.currentTarget.style.backgroundColor = '#3b82f6')}>
-              {isLoading ? 'Creating account...' : (<>CREATE ACCOUNT <ArrowRight size={18} /></>)}
+            {/* Department (only for dept-scoped roles) */}
+            {!isGlobalRole && (
+              <SelectField
+                id="department_code"
+                label="Department (Karnataka Secretariat)"
+                value={form.department_code}
+                onChange={v => upd('department_code', v)}
+                icon="account_balance"
+              >
+                <option value="" disabled className="bg-surface-dim">Select your department…</option>
+                {departments.map(d => (
+                  <option key={d.code} value={d.code} className="bg-surface-dim text-on-surface">
+                    {d.name}
+                  </option>
+                ))}
+              </SelectField>
+            )}
+            {isGlobalRole && (
+              <p className="text-[10px] text-on-surface-variant opacity-70 italic text-center">
+                Central / monitoring roles have global access — no single department.
+              </p>
+            )}
+
+            {/* Submit */}
+            <button
+              type="submit"
+              disabled={isLoading}
+              className="w-full mt-1 px-4 py-2.5 rounded-lg bg-primary-blue text-on-primary-blue font-bold text-xs uppercase tracking-widest shadow-lg shadow-primary-blue/20 hover:bg-primary-blue/90 active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 transition-all"
+            >
+              {isLoading ? (
+                <>
+                  <span className="material-symbols-outlined text-base animate-spin">progress_activity</span>
+                  Creating account…
+                </>
+              ) : (
+                <>
+                  Create Account
+                  <span className="material-symbols-outlined text-base">arrow_forward</span>
+                </>
+              )}
             </button>
 
-            <div style={S.footer}>
-              <Link to="/login" style={{ color: '#3b82f6', fontWeight: 600, textDecoration: 'none' }}
-                onMouseEnter={e => (e.currentTarget.style.textDecoration = 'underline')}
-                onMouseLeave={e => (e.currentTarget.style.textDecoration = 'none')}>
-                Already have an account? Login
+            <p className="text-center text-xs text-on-surface-variant pb-1">
+              Already have an account?{' '}
+              <Link to="/login" className="text-primary-blue font-semibold hover:underline">
+                Sign in
               </Link>
-            </div>
+            </p>
           </form>
         </motion.div>
       </main>
@@ -336,38 +352,66 @@ export default function RegisterPage() {
   );
 }
 
-const Field = ({ id, label, type = 'text', placeholder, value, onChange, icon, pr }: {
-  id: string; label: string; type?: string; placeholder: string;
-  value: string; onChange: (v: string) => void; icon: React.ReactNode; pr?: boolean;
-}) => (
-  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
-    <label style={S.fieldLabel} htmlFor={id}>{label}</label>
-    <div style={S.inputWrap}>
-      <div style={S.iconWrap}>{icon}</div>
-      <input id={id} type={type} placeholder={placeholder} value={value}
-        onChange={e => onChange(e.target.value)} required
-        style={{ ...S.input, ...(pr ? { paddingRight: '2.5rem' } : {}) }}
-        onFocus={focusOn} onBlur={focusOff} />
+// ─── Field primitives ───────────────────────────────────────────────────────
+
+const Field: React.FC<{
+  id: string;
+  label: string;
+  placeholder: string;
+  value: string;
+  onChange: (v: string) => void;
+  icon: string;
+  type?: string;
+}> = ({ id, label, placeholder, value, onChange, icon, type = 'text' }) => (
+  <div className="space-y-1">
+    <label htmlFor={id} className="block text-[10px] font-bold uppercase tracking-wider text-on-surface-variant ml-0.5">
+      {label}
+    </label>
+    <div className="relative">
+      <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-on-surface-variant text-lg pointer-events-none">
+        {icon}
+      </span>
+      <input
+        id={id}
+        type={type}
+        required
+        value={value}
+        onChange={e => onChange(e.target.value)}
+        placeholder={placeholder}
+        className="w-full bg-surface-container-highest/40 border-b-2 border-outline-variant/30 focus:border-primary-blue/70 focus:bg-surface-container-highest/60 outline-none rounded-t-lg pl-10 pr-3 py-2.5 text-sm text-on-surface transition-all placeholder:text-on-surface-variant/50"
+      />
     </div>
   </div>
 );
 
-const SelectField = ({ id, label, value, onChange, icon, children }: {
-  id: string; label: string; value: string;
-  onChange: (v: string) => void; icon: React.ReactNode; children: React.ReactNode;
-}) => (
-  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
-    <label style={S.fieldLabel} htmlFor={id}>{label}</label>
-    <div style={S.inputWrap}>
-      <div style={S.iconWrap}>{icon}</div>
-      <select id={id} value={value} onChange={e => onChange(e.target.value)} required
-        style={{ ...S.input, appearance: 'none' as const, cursor: 'pointer' }}
-        onFocus={focusOn} onBlur={focusOff}>
+const SelectField: React.FC<{
+  id: string;
+  label: string;
+  value: string;
+  onChange: (v: string) => void;
+  icon: string;
+  children: React.ReactNode;
+}> = ({ id, label, value, onChange, icon, children }) => (
+  <div className="space-y-1">
+    <label htmlFor={id} className="block text-[10px] font-bold uppercase tracking-wider text-on-surface-variant ml-0.5">
+      {label}
+    </label>
+    <div className="relative">
+      <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-on-surface-variant text-lg pointer-events-none">
+        {icon}
+      </span>
+      <select
+        id={id}
+        required
+        value={value}
+        onChange={e => onChange(e.target.value)}
+        className="w-full appearance-none bg-surface-container-highest/40 border-b-2 border-outline-variant/30 focus:border-primary-blue/70 focus:bg-surface-container-highest/60 outline-none rounded-t-lg pl-10 pr-10 py-2.5 text-sm text-on-surface cursor-pointer transition-all"
+      >
         {children}
       </select>
-      <div style={{ position: 'absolute', right: '0.75rem', top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none', color: '#8c909f' }}>
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
-      </div>
+      <span className="material-symbols-outlined absolute right-3 top-1/2 -translate-y-1/2 text-on-surface-variant text-lg pointer-events-none">
+        expand_more
+      </span>
     </div>
   </div>
 );

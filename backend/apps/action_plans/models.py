@@ -1,4 +1,5 @@
 import uuid
+from django.conf import settings
 from django.db import models
 from apps.cases.models import Judgment
 
@@ -79,3 +80,52 @@ class ActionPlan(models.Model):
 
     def __str__(self) -> str:
         return f"{self.judgment.case.case_number} - {self.recommendation}"
+
+
+class DirectiveExecution(models.Model):
+    """One row per court direction that an LCO must physically execute.
+
+    Materialized lazily the first time an LCO opens the Execution view for an
+    approved ActionPlan — we copy each entry from Judgment.court_directions
+    so the LCO has a stable row to attach status / notes / proof to even if
+    the upstream JSON is re-extracted later.
+    """
+
+    class Status(models.TextChoices):
+        PENDING = "pending", "Pending"
+        IN_PROGRESS = "in_progress", "In Progress"
+        COMPLETED = "completed", "Completed"
+        BLOCKED = "blocked", "Blocked"
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    action_plan = models.ForeignKey(
+        ActionPlan, on_delete=models.CASCADE, related_name="executions"
+    )
+    directive_index = models.IntegerField(
+        help_text="Zero-based index into Judgment.court_directions"
+    )
+    directive_text = models.TextField(blank=True)
+    responsible_entity = models.CharField(max_length=300, blank=True)
+    action_required = models.TextField(blank=True)
+    deadline_mentioned = models.CharField(max_length=200, blank=True)
+
+    status = models.CharField(
+        max_length=20, choices=Status.choices, default=Status.PENDING
+    )
+    executed_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, null=True, blank=True,
+        on_delete=models.SET_NULL, related_name="executions",
+    )
+    completed_at = models.DateTimeField(null=True, blank=True)
+    proof_file = models.FileField(upload_to="execution_proofs/", null=True, blank=True)
+    notes = models.TextField(blank=True)
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        unique_together = ["action_plan", "directive_index"]
+        ordering = ["action_plan_id", "directive_index"]
+
+    def __str__(self):
+        return f"Exec {self.action_plan.judgment.case.case_number}/#{self.directive_index} [{self.status}]"

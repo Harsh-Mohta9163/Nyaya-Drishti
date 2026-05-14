@@ -1,194 +1,880 @@
 <div align="center">
 
-# ⚖️ NyayaDrishti — Legal Intelligence Platform
+# NyayaDrishti — Court Case Monitoring System (CCMS)
 
-### From Court Judgments to Verified Action Plans
+### From Court Judgments to Verified, Routed, Executable Action Plans
 
 **Theme 11 — Centre for e-Governance, Government of Karnataka**
 
-<!-- [Live Demo](#-deployed-url) · [Architecture](#-system-architecture) · [Setup Guide](#-getting-started) · [Evaluation](#-evaluation-criteria-mapping) -->
+[Problem](#problem-statement) · [Workflow](#how-it-fits-the-karnataka-ccms-workflow) · [Architecture](#system-architecture) · [Agents](#agentic-workflow) · [Setup](#local-setup) · [Demo](#demo-runbook)
 
 </div>
 
 ---
 
+## Table of Contents
+
+1. [Problem Statement](#problem-statement)
+2. [Solution at a Glance](#solution-at-a-glance)
+3. [How It Fits the Karnataka CCMS Workflow](#how-it-fits-the-karnataka-ccms-workflow)
+4. [The 48-Department Routing Layer](#the-48-department-routing-layer)
+5. [Role-Based Workspaces](#role-based-workspaces)
+6. [System Architecture](#system-architecture)
+7. [End-to-End Pipeline (5 Phases)](#end-to-end-pipeline-5-phases)
+8. [Agentic Workflow](#agentic-workflow)
+9. [PDF Source-Highlighting (Verifier Trust)](#pdf-source-highlighting-verifier-trust)
+10. [Hybrid RAG Engine](#hybrid-rag-engine)
+11. [Data Privacy & On-Premise Deployment](#data-privacy--on-premise-deployment)
+12. [Tech Stack](#tech-stack)
+13. [Local Setup](#local-setup)
+14. [Demo Runbook](#demo-runbook)
+15. [Project Structure](#project-structure)
+16. [API Endpoints](#api-endpoints)
+17. [Management Commands](#management-commands)
+18. [ML Models](#ml-models)
+19. [Evaluation Criteria Mapping](#evaluation-criteria-mapping)
+20. [License & Team](#license--team)
+
+---
+
 ## Problem Statement
 
-The **Court Case Monitoring System (CCMS)** — integrated with the High Court's CIS — automatically fetches judgment PDFs once a case is disposed. These judgments contain critical directives requiring timely administrative decisions: whether to comply, who is responsible, whether to appeal, and the limitation period.
+The Government of Karnataka faces ~24,000 active litigations per year across 48 secretariat departments. The **Court Case Monitoring System (CCMS)** — which sits between the Karnataka High Court and the state secretariat — must convert judgment PDFs into actionable compliance steps before the **30-day Limitation Act deadline** expires.
 
-**The challenge:** Judgments are lengthy, complex legal PDFs. Critical actions are buried in dense text, causing delays, missed deadlines, and non-compliance risk for government departments.
+### The realities on the ground today
 
-**NyayaDrishti solves this** by building an end-to-end AI pipeline that:
-1. **Extracts** structured data from unstructured judgment PDFs
-2. **Generates** AI-assisted action plans with appeal/comply recommendations
-3. **Verifies** all outputs through a mandatory human-in-the-loop review
-4. **Displays** only approved, trusted data on a decision-maker dashboard
+| Problem | Why it happens | Impact |
+|---|---|---|
+| Judgments are 30–200 page legal PDFs | Operative directives are buried in dense reasoning | Officers miss critical instructions |
+| No automated dept routing | A judgment naming "The State of Karnataka" doesn't tell you which dept must act | Files sit on the wrong desks |
+| Manual deadline tracking | Limitation Act §4 & §12 math is non-trivial; vacation calendars complicate it | Contempt notices, missed appeals |
+| Each role needs a different view | HLC verifies; LCO executes; Nodal Officer tracks deadlines | One dashboard cannot serve all |
+| AI hallucination risk | Off-the-shelf LLMs invent treasury forms / refund codes / deadlines that don't exist | Loss of verifier trust |
+
+### What NyayaDrishti delivers
+
+```
+PDF in  →  AI extracts directives  →  Classifier routes to right dept dashboard
+        →  HLC verifies side-by-side with the highlighted PDF
+        →  AI generates a GOVERNMENT-PERSPECTIVE action plan
+        →  LCO executes; Nodal Officer watches deadlines
+        →  Central Law sees the state-wide aggregate
+```
+
+A complete legal-intelligence platform built around the actual roles, deadlines, and constraints of the Karnataka State Secretariat.
+
+---
+
+## Solution at a Glance
+
+NyayaDrishti is an **end-to-end AI pipeline + multi-role workflow application** that:
+
+1. **Ingests** judgment PDFs (manual upload — 48-hour officer SLA; designed to plug into a CIS API when available)
+2. **Extracts** structured data via a 4-agent LLM pipeline (one agent per logical section)
+3. **Classifies** the responsible department from the 48-department taxonomy automatically
+4. **Routes** the case to that department's dashboard (with verifier override available)
+5. **Enriches** every directive with a government-perspective implementation plan
+6. **Verifies** all outputs via a mandatory Head-of-Legal-Cell (HLC) review against the source PDF
+7. **Executes** approved directives through a Litigation Conducting Officer (LCO) workflow
+8. **Monitors** statutory deadlines for the Nodal Officer
+9. **Aggregates** state-wide compliance at the Central Law / State Monitoring level
+
+Everything runs on free or near-free open-source ML (InLegalBERT, ChromaDB, BM25, cross-encoder, DuckDB). LLM calls are routed through a cost-controlled cascade (OpenRouter Llama 8B + NVIDIA NIM Llama 70B + OpenRouter Gemini 2.5 Pro) — fully replaceable with self-hosted models for air-gapped deployments.
+
+---
+
+## How It Fits the Karnataka CCMS Workflow
+
+The state CCMS doctrine defines 6 phases. NyayaDrishti implements them as follows:
+
+```
+┌──────────────────────────────────────────────────────────────────────────────┐
+│ KARNATAKA CCMS PHASE                  │ NYAYADRISHTI IMPLEMENTATION          │
+├───────────────────────────────────────┼──────────────────────────────────────┤
+│ 1. INGESTION                          │ POST /api/cases/extract/  (manual    │
+│    (CIS API OR 48-hr manual upload)   │  upload). SHA-256 hash dedup. The    │
+│                                       │  same endpoint can be triggered by a │
+│                                       │  CIS push when available.            │
+├───────────────────────────────────────┼──────────────────────────────────────┤
+│ 2. AI PROCESSING & AUTO-ROUTING       │ 4 extraction agents + LLM-first      │
+│    Identify respondent → map dept     │  dept classifier (48 secretariat     │
+│    Extract directives                 │  dept catalogue) writes Case.        │
+│    Generate draft action plan         │  primary_department FK. Routing      │
+│                                       │  filters every dashboard query.      │
+├───────────────────────────────────────┼──────────────────────────────────────┤
+│ 3. VERIFICATION (HLC)                 │ Verify Actions tab — side-by-side    │
+│    HLC compares vs. highlighted PDF   │  PDF viewer with PyMuPDF source-     │
+│    Approve / Edit / Reject            │  paragraph highlighting. HLC can     │
+│    Provide appeal vs comply opinion   │  edit verbatim text, govt summary,   │
+│                                       │  and per-directive implementation    │
+│                                       │  steps. Backend 403s non-HLC writes. │
+├───────────────────────────────────────┼──────────────────────────────────────┤
+│ 4. EXECUTIVE DECISION                 │ HLC recommendation (APPEAL/COMPLY)   │
+│    (Head of Dept convenes DRB)        │  surfaces on Head of Dept's view.    │
+│                                       │  DRB workflow is plan roadmap (out   │
+│                                       │  of MVP scope).                      │
+├───────────────────────────────────────┼──────────────────────────────────────┤
+│ 5. EXECUTION (LCO)                    │ LCO Execution dashboard — only       │
+│    Physical implementation of tasks   │  HLC-verified, government-action     │
+│                                       │  directives appear. Mark status,     │
+│                                       │  upload proof file, record notes.    │
+├───────────────────────────────────────┼──────────────────────────────────────┤
+│ 6. MONITORING (Nodal Officer)         │ Nodal Deadline Monitor — sorts       │
+│    Watch limitation deadlines         │  approved plans by urgency           │
+│                                       │  (overdue / critical ≤3d /           │
+│                                       │  warning ≤14d / safe). Computed      │
+│                                       │  by rules_engine.py from Limitation  │
+│                                       │  Act §4 & §12 + court calendar.      │
+└───────────────────────────────────────┴──────────────────────────────────────┘
+```
+
+### Replacing the CIS API
+
+Most state High Courts do not expose a public CIS API. NyayaDrishti is built so this isn't a blocker:
+
+- **Primary path: manual upload** (the 48-hour officer SLA mandated by govt rules). Any departmental officer with an account can upload a judgment PDF; the AI handles the rest.
+- **Bulk ingestion** via `python manage.py bulk_ingest --dir /path/to/pdfs/` for back-filling old judgments.
+- **Future CIS hook**: the same `CaseExtractView` endpoint is callable by a CIS push job — no architectural change needed, only a credentials handshake.
+
+---
+
+## The 48-Department Routing Layer
+
+Karnataka's Secretariat is 48 departments organised into 9 sectors. NyayaDrishti ships the full taxonomy:
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ SECTOR                              │ EXAMPLE DEPARTMENTS                   │
+├─────────────────────────────────────┼───────────────────────────────────────┤
+│ Finance, Law & Core Administration  │ FINANCE, LAW, DPAR, REVENUE, IPR …    │
+│ Home, Defence & Justice             │ HOME, EXCISE                          │
+│ Health, Environment & Culture       │ HEALTH, AYUSH, MED_EDU, KANNADA_CULT  │
+│ Education & Skill                   │ HIGHER_EDU, SCHOOL_EDU, TECH_EDU, …   │
+│ Infrastructure & Public Works       │ PWD, INFRA_DEV, ENERGY, URBAN_DEV …   │
+│ Agriculture & Allied                │ AGRICULTURE, HORTICULTURE, AHVS, …    │
+│ Industries, Trade & Commerce        │ INDUSTRIES, IT_BT, COOPERATION, …     │
+│ Social Welfare                      │ SOCIAL_WELFARE, MINORITIES, WCD, …    │
+│ Rural Development & Panchayat Raj   │ RDPR, FOOD_CIVIL                      │
+└─────────────────────────────────────┴───────────────────────────────────────┘
+```
+
+### How a case lands on the right dashboard
+
+```
+[Any user uploads PDF]
+       │
+       ▼
+[4-agent extractor extracts parties / entities / operative text]
+       │
+       ▼
+[dept_classifier.py — single NVIDIA NIM 70B call with the 48-dept catalogue]
+       │  Returns: { primary: "FINANCE", secondary: ["REVENUE"], confidence: 0.9 }
+       │
+       ▼
+[Case.primary_department FK set + secondary_departments M2M set]
+       │
+       ▼
+[DepartmentScopedQuerysetMixin filters every list endpoint by user.department]
+       │
+       ▼
+[Case appears ONLY in the AI-tagged department's dashboard]
+[Central Law / State Monitoring see the cross-department aggregate]
+```
+
+### Verifier override
+
+If the AI gets it wrong, the **HLC or Central Law role** can re-route the case via the override modal on the Case Overview screen. Each override writes a `ReviewLog` audit row (`action="department_override"`, reviewer, old → new primary, secondary changes).
+
+### Karnataka-specific routing rules (baked into the classifier prompt)
+
+| Subject matter | Department | Rationale |
+|---|---|---|
+| GST / VAT / commercial taxes | `FINANCE` | Commercial Taxes is a sub-bureau of Finance in Karnataka |
+| Land acquisition / mutation / khata | `REVENUE` | Statutorily Revenue's domain |
+| KPTCL / BESCOM / HESCOM / MESCOM | `ENERGY` | Electricity utilities |
+| Karnataka Housing Board / KHB | `HOUSING` | Even when respondent is "Asst. Commissioner" |
+| Criminal prosecution (IPC / CrPC) | `HOME` | Police / state prosecution |
+| Medical negligence / drug control | `HEALTH` | Not MED_EDU which handles colleges |
+| Motor Vehicles Act / claims | `TRANSPORT` | Finance as secondary if monetary award |
+| Kannada language / state symbols | `KANNADA_CULTURE` | Cultural / regional |
+
+---
+
+## Role-Based Workspaces
+
+NyayaDrishti ships dedicated workspaces for each statutory role, with permission-gated read/write access:
+
+```
+┌──────────────────────────────┬────────────────────────────────────────────────┐
+│ ROLE                         │ LANDING VIEW & PERMISSIONS                     │
+├──────────────────────────────┼────────────────────────────────────────────────┤
+│ Head of Legal Cell (HLC)     │ Dashboard → Verify Actions tab                 │
+│                              │ • Side-by-side PDF + extracted directives      │
+│                              │ • Approve / Edit / Reject each directive       │
+│                              │ • Edit AI-generated implementation steps       │
+│                              │ • Re-route case to another dept if needed      │
+├──────────────────────────────┼────────────────────────────────────────────────┤
+│ Litigation Conducting Officer│ Execution Dashboard (auto-landing)             │
+│ (LCO)                        │ • Only HLC-verified, government-action items   │
+│                              │ • Status: Pending / In-Progress / Completed /  │
+│                              │   Blocked                                      │
+│                              │ • Upload proof-of-compliance file              │
+│                              │ • Add execution notes                          │
+│                              │ • Read-only on Verify tab (cannot approve)     │
+├──────────────────────────────┼────────────────────────────────────────────────┤
+│ Nodal Officer                │ Deadline Monitor (auto-landing)                │
+│                              │ • Approved Action Plans sorted by urgency      │
+│                              │ • Overdue / Critical(≤3d) / Warning(≤14d)/Safe │
+│                              │ • Limitation Act §4/§12 + court holidays       │
+│                              │ • Read-only on Verify tab                      │
+├──────────────────────────────┼────────────────────────────────────────────────┤
+│ Central Law Department       │ Central View (auto-landing) — 48-tile grid     │
+│                              │ • Total cases / high-risk / pending per dept   │
+│                              │ • Drill into any dept's case list              │
+│                              │ • Can override department routing              │
+│                              │ • Can verify (override authority)              │
+├──────────────────────────────┼────────────────────────────────────────────────┤
+│ State Monitoring Committee   │ Central View (same as Central Law) — audit     │
+│                              │ • Read-only state-wide stats                   │
+├──────────────────────────────┼────────────────────────────────────────────────┤
+│ Head of Department           │ Dashboard for their dept (DRB roadmap)         │
+└──────────────────────────────┴────────────────────────────────────────────────┘
+```
+
+### Server-side gating
+
+All role gates are enforced **at the backend**, not just in the UI:
+
+- `DepartmentScopedQuerysetMixin` filters every list endpoint by `user.department_id` (or no-op for global roles)
+- `user_can_verify()` → only HLC and Central Law can POST to `/api/cases/action-plans/<id>/review/`
+- `JudgmentUpdateView.update()` 403s non-verifier PATCH attempts
+- `LCOExecutionListView` requires `gov_action_required=True AND isVerified=True` by default
+
+Frontend reflects these gates with read-only badges and hidden buttons — but they're cosmetic on top of the backend enforcement.
 
 ---
 
 ## System Architecture
 
 ```
-┌──────────────────────────────────────────────────────────────────────┐
-│                      FRONTEND (React 19 + Vite)                      │
-│  Dashboard │ Case List │ Case Overview │ Verify Actions │ Precedents  │
-└────────────────────────────────┬─────────────────────────────────────┘
-                                 │ REST API (JWT Auth)
-┌────────────────────────────────▼─────────────────────────────────────┐
-│                      BACKEND (Django 5 + DRF)                        │
-│                                                                      │
-│  ┌─────────────┐  ┌──────────────┐  ┌──────────────────────────────┐ │
-│  │ PDF Upload  │→ │  PyMuPDF4LLM │→ │  Bi-Directional Segmenter    │ │
-│  │ & Storage   │  │  (Markdown)  │  │  (Header / Body / Operative) │ │
-│  └─────────────┘  └──────────────┘  └──────────────┬───────────────┘ │
-│                                                     │                │
-│  ┌──────────────────────────────────────────────────▼─────────────┐  │
-│  │              4-AGENT EXTRACTION PIPELINE                        │  │
-│  │  Agent 1: Registry Clerk    → case metadata, parties           │  │
-│  │  Agent 2: Legal Analyst     → facts, issues framed             │  │
-│  │  Agent 3: Precedent Scholar → ratio decidendi, citations       │  │
-│  │  Agent 4: Compliance Officer→ directives, deadlines, risk      │  │
-│  └─────────────────────────────────────────────────────────────── ┘  │
-│                                                                      │
-│  ┌─────────────────────────────────────────────────────────────────┐  │
-│  │   AI RECOMMENDATION PIPELINE (Single-Agent or 4-Agent mode)     │  │
-│  │                                                                  │  │
-│  │   Hybrid RAG: InLegalBERT Dense + BM25 + RRF + Cross-Encoder   │  │
-│  │   DuckDB Parquet Analytics  (win-rate stats, 431K+ chunks)      │  │
-│  │                                                                  │  │
-│  │   [Single-Agent mode — default, runs on any hardware]           │  │
-│  │    → One reasoning pass: all context → APPEAL / COMPLY verdict  │  │
-│  │                                                                  │  │
-│  │   [4-Agent mode — available for high-compute deployments]       │  │
-│  │    Agent 1: Precedent Researcher → trend analysis               │  │
-│  │    Agent 2: Devil's Advocate     → pro/con arguments            │  │
-│  │    Agent 3: Risk Auditor         → contempt/financial risk      │  │
-│  │    Agent 4: Decision Synthesizer → final verdict                │  │
-│  └─────────────────────────────────────────────────────────────────┘  │
-│                                                                      │
-│  ┌────────────────┐  ┌──────────────────┐  ┌──────────────────────┐  │
-│  │ Rules Engine   │  │ Contempt Risk    │  │ Court Hierarchy      │  │
-│  │ (Limitation    │  │ Classifier       │  │ Logic (Appeal        │  │
-│  │  Act deadlines)│  │ (Keyword-based   │  │  Forum Detection)    │  │
-│  │                │  │  Deterministic)  │  │                      │  │
-│  └────────────────┘  └──────────────────┘  └──────────────────────┘  │
-│                                                                      │
-│  ┌──────────────────────────────────────────────────────────────────┐ │
-│  │  Data Layer : SQLite (Cases, Judgments, ActionPlans, Reviews)    │ │
-│  │  Vector Store: ChromaDB  (InLegalBERT 768-dim embeddings)        │ │
-│  │  Analytics  : DuckDB over Parquet (431K+ SC/HC judgment chunks)  │ │
-│  └──────────────────────────────────────────────────────────────────┘ │
-└──────────────────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────────────────────┐
+│                      FRONTEND (React 19 + Vite 6 + Tailwind 4)               │
+│                                                                              │
+│  ┌────────────┐  ┌──────────┐  ┌──────────────┐  ┌────────────┐  ┌────────┐  │
+│  │ Dashboard  │  │  Case    │  │   Verify     │  │ Execution  │  │Deadline│  │
+│  │  (HLC)     │  │  List    │  │   Actions    │  │  (LCO)     │  │(Nodal) │  │
+│  └────────────┘  └──────────┘  └──────────────┘  └────────────┘  └────────┘  │
+│  ┌──────────────────────┐  ┌────────────────────┐                            │
+│  │ Central View         │  │ Dept Override      │                            │
+│  │ (48-tile grid)       │  │ Modal              │                            │
+│  └──────────────────────┘  └────────────────────┘                            │
+└──────────────────────────────────┬───────────────────────────────────────────┘
+                                   │ REST API + JWT (with role + dept claims)
+┌──────────────────────────────────▼───────────────────────────────────────────┐
+│                     BACKEND (Django 5 + DRF + SimpleJWT)                     │
+│                                                                              │
+│  ┌─────────────────────────────────────────────────────────────────────┐    │
+│  │  INGESTION                                                          │    │
+│  │  POST /api/cases/extract/   →  SHA-256 dedup  →  PyMuPDF4LLM        │    │
+│  │  bulk_ingest mgmt command   →  Section Segmenter (bi-directional)   │    │
+│  └─────────────────────────────────────────────────────────────────────┘    │
+│                                                                              │
+│  ┌─────────────────────────────────────────────────────────────────────┐    │
+│  │  4-AGENT EXTRACTION (extractor.py)                                  │    │
+│  │  Agent 1 — Registry Clerk    →  metadata    (OpenRouter Llama 8B)  │    │
+│  │  Agent 2 — Legal Analyst     →  facts/issues(NVIDIA NIM 70B)        │    │
+│  │  Agent 3 — Precedent Scholar →  ratio/cites (NVIDIA NIM 70B)        │    │
+│  │  Agent 4 — Compliance Officer→  directives  (NVIDIA NIM 70B)        │    │
+│  │  ≥25-page PDFs route all 4 via OpenRouter Llama 3.3 70B             │    │
+│  └─────────────────────────────────────────────────────────────────────┘    │
+│                                                                              │
+│  ┌─────────────────────────────────────────────────────────────────────┐    │
+│  │  DEPARTMENT CLASSIFIER (dept_classifier.py)                         │    │
+│  │  NVIDIA NIM 70B + 48-dept catalogue + Karnataka routing rules       │    │
+│  │  Falls back to keyword pass if LLM unavailable                      │    │
+│  └─────────────────────────────────────────────────────────────────────┘    │
+│                                                                              │
+│  ┌─────────────────────────────────────────────────────────────────────┐    │
+│  │  DIRECTIVE ENRICHER (directive_enricher.py)                         │    │
+│  │  OpenRouter Gemini 2.5 Pro with anti-hallucination guardrails       │    │
+│  │  Tags actor_type, gov_action_required, implementation_steps         │    │
+│  │  NVIDIA NIM 70B fallback                                            │    │
+│  └─────────────────────────────────────────────────────────────────────┘    │
+│                                                                              │
+│  ┌─────────────────────────────────────────────────────────────────────┐    │
+│  │  HYBRID RAG + RECOMMENDATION                                        │    │
+│  │  BM25 + InLegalBERT dense → RRF → Cross-Encoder rerank              │    │
+│  │  Corpus: ChromaDB + DuckDB-over-Parquet (~431K SC chunks)           │    │
+│  │  Recommendation: single-agent OR 4-agent (Researcher → Devil's Adv  │    │
+│  │  → Risk Auditor → Synthesizer)                                      │    │
+│  └─────────────────────────────────────────────────────────────────────┘    │
+│                                                                              │
+│  ┌─────────────────────┐  ┌──────────────────────┐  ┌────────────────────┐  │
+│  │ Rules Engine        │  │ Contempt Risk        │  │ Court Hierarchy    │  │
+│  │ Limitation Act §4/§12│ │ Classifier           │  │ Appeal Forum Logic │  │
+│  │ + court calendar    │  │ (deterministic kw)   │  │                    │  │
+│  └─────────────────────┘  └──────────────────────┘  └────────────────────┘  │
+│                                                                              │
+│  ┌─────────────────────────────────────────────────────────────────────┐    │
+│  │  DATA LAYER                                                         │    │
+│  │  PostgreSQL (prod) / SQLite (dev) — Case, Judgment, ActionPlan,    │    │
+│  │     Department, ReviewLog, DirectiveExecution, User                 │    │
+│  │  ChromaDB (persistent, local) — InLegalBERT 768-d vectors           │    │
+│  │  DuckDB over Parquet — 431K+ SC judgment chunks                     │    │
+│  │  Filesystem — judgment PDFs + LCO proof uploads                     │    │
+│  └─────────────────────────────────────────────────────────────────────┘    │
+└──────────────────────────────────────────────────────────────────────────────┘
 ```
 
 ---
 
-## End-to-End Flow
+## End-to-End Pipeline (5 Phases)
 
-### Phase 1 — Extract (Understand the Judgment)
-
-```
-PDF Upload → PyMuPDF4LLM (layout-aware Markdown) → Bi-Directional Regex Segmenter
-                                                          │
-                                          ┌───────────────┼───────────────┐
-                                       Header           Body          Operative
-                                          │               │               │
-                                    Agent 1 (fast)  Agent 2+3 (deep)  Agent 4 (fast)
-                                    Registry Clerk  Analyst+Scholar    Compliance
-                                          │               │               │
-                                    Case metadata    Facts, Issues,   Directives,
-                                    Parties, Date    Ratio, Citations  Contempt Risk
-```
-
-- **PDF Processor** (`pdf_processor.py`): Uses `PyMuPDF4LLM` for layout-aware text extraction to clean Markdown. Falls back to legacy `PyMuPDF` if needed.
-- **Section Segmenter** (`section_segmenter.py`): Bi-directional regex scanning — top-down for narrative triggers (where facts begin), bottom-up for disposal triggers (where the operative order starts). 10% bidirectional overlap ensures no reasoning is lost at boundaries.
-- **4-Agent Extraction** (`extractor.py`): Each agent receives only its relevant section with a Pydantic-enforced JSON schema, ensuring structured output.
-- **Source Highlighting**: After extraction, `PyMuPDF` spatial search (`page.search_for()`) locates each directive's bounding box coordinates in the original PDF for visual verification.
-
-### Phase 2 — Generate Action Plan (AI-Assisted Recommendation)
+### Phase 1 — Ingestion
 
 ```
-Extracted Judgment Data
-        │
-        ├─→ Hybrid RAG Engine ──→ Top-K similar precedents
-        │     (BM25 + InLegalBERT + RRF + Cross-Encoder Reranking)
-        │     Corpus: 431,722 chunks from 20 years of SC judgments
-        │
-        ├─→ DuckDB Parquet Analytics ──→ Win-rate statistics
-        │     (50K+ SC + Karnataka HC Division Bench judgments)
-        │
-        ├─→ Rules Engine ──→ Statutory deadlines
-        │     (Limitation Act §4, §12 + Court Calendar holidays)
-        │
-        ├─→ Court Hierarchy Logic ──→ Correct appellate forum
-        │     (Single Judge → Division Bench → Supreme Court)
-        │
-        └─→ Recommendation Pipeline (open-source LLM)
-              [Single-Agent] Default — lower compute, same reasoning quality
-              [4-Agent]      Optional — Precedent Researcher → Devil's Advocate
-                             → Risk Auditor → Decision Synthesizer
-                    │
-                    └─→ ActionPlan record saved to DB
-                         (cached in full_rag_recommendation JSON field)
+PDF Upload  →  SHA-256 Hash Check  ←  Existing? Return dedup hit (HTTP 200, no LLM cost)
+                       │
+                       │ New file
+                       ▼
+              Save to media/judgments/
+                       │
+                       ▼
+              PyMuPDF4LLM → Layout-aware Markdown
+                       │
+                       ▼
+              Section Segmenter (bi-directional regex)
+                       │
+              ┌────────┼────────┐
+              ▼        ▼        ▼
+            Header    Body   Operative
 ```
 
-> **Pipeline modes:** The single-agent pipeline runs well on commodity hardware or cloud free tiers. The 4-agent pipeline is available for government servers with higher compute capacity. Both produce an **APPEAL / COMPLY** verdict with full reasoning.
+Key files: `services/pdf_processor.py`, `services/section_segmenter.py`. The segmenter uses 37+ legal trigger patterns specific to Indian HC judgment style, with 10% bidirectional overlap so no reasoning is lost at boundaries.
 
-### Phase 3 — Verify (Human-in-the-Loop — Mandatory)
+### Phase 2 — 4-Agent Extraction
 
-The **Verify Actions** tab provides:
-- Side-by-side view: extracted directives on the left, original PDF on the right
-- **Source highlighting** with page numbers and bounding boxes from PyMuPDF
-- **Confidence levels** (extraction_confidence field on each Judgment)
-- Human reviewer can **Approve**, **Edit**, or **Reject** each action item
-- Only verified records (`verification_status = approved`) move to the dashboard
-- Multi-level review chain supported via `ReviewLog` model (L1/L2 approvals)
+Each agent receives **only its relevant section** with a strict Pydantic schema. See [Agentic Workflow](#agentic-workflow) for full details.
 
-### Phase 4 — Dashboard (Trusted View)
+### Phase 3 — Routing + Enrichment
 
-- **Real-time stats** computed from database: total cases, pending review, high-risk count, upcoming deadlines
-- **Deadline Heatmap**: 30-day calendar mapped from actual compliance/appeal deadlines
-- **Risk Board**: Cases sorted by contempt risk and urgency
-- **Recent Cases Table**: Live case listing with risk badges, status, and court info
-- Department-wise filtering supported via the user role/department model
+```
+Extracted directives
+       │
+       ▼
+[dept_classifier]  →  primary_department FK + secondary M2M
+       │
+       ▼
+[directive_enricher] →  per-directive enrichment:
+                          • actor_type (gov_dept / court / accused / 3rd-party / informational)
+                          • gov_action_required (bool)
+                          • implementation_steps (LCO-actionable bullets)
+                          • display_note (for non-gov directives)
+                          • govt_summary (one-liner for HLC scanning)
+       │
+       ▼
+[PyMuPDF spatial annotation] → per-directive sourceLocation:
+                                 • page number
+                                 • line-level rects covering the FULL paragraph block
+```
+
+### Phase 4 — Human Verification (HLC, mandatory)
+
+```
+Verify Actions tab
+       │
+       ▼
+Left: PDF viewer (react-pdf) with paragraph-level highlights
+Right: Cards per directive
+       │
+       ▼
+HLC actions per card:
+       • Tick "Verified" checkbox
+       • Edit verbatim text / govt summary / implementation steps
+       • Delete spurious directives
+       • "Show in PDF" button — explicit scroll to source paragraph
+       │
+       ▼
+Cards sorted government-actions first, informational below (muted)
+       │
+       ▼
+On Approve plan-level → verification_status = "approved"
+                       → Only verified-AND-gov directives reach LCO Execution
+```
+
+### Phase 5 — Execute + Monitor
+
+```
+LCO EXECUTION                    NODAL DEADLINE MONITOR
+─────────────                    ────────────────────────
+For each verified gov-action     For each approved plan:
+directive:                         compute next deadline =
+  • Read implementation steps        min(internal_compliance_buffer,
+  • Mark Pending → In Progress           compliance_deadline,
+    → Completed                          internal_appeal_buffer,
+  • Upload proof file                    statutory_appeal_deadline)
+  • Add notes                       sort by urgency:
+  • DirectiveExecution row             • overdue
+    captures executed_by + ts          • critical (≤3d)
+                                        • warning  (≤14d)
+                                        • safe
+                                        • unknown
+```
 
 ---
 
-## 🔒 Data Privacy & Government Compliance (On-Premise Deployment)
+## Agentic Workflow
 
-A critical architectural advantage of **NyayaDrishti** is its design for strict data privacy and residency requirements for Indian digital public infrastructure.
+NyayaDrishti uses LLM **agents** in three places: extraction, recommendation, and enrichment.
 
-The entire stack — Django backend, React frontend, InLegalBERT embeddings, ChromaDB vector store, and DuckDB analytics — is **fully open source**. The government can deploy NyayaDrishti entirely on their own **on-premise servers** with zero external dependencies:
+### A. 4-Agent Extraction Pipeline
 
-* **100% Data Privacy**: Sensitive court documents, directives, and legal strategies never leave the government's internal network.
-* **Air-gap compatible**: All ML models (InLegalBERT, cross-encoder) run locally. The open-source LLMs can be self-hosted via `vLLM` or `Ollama`.
-* **No commercial cloud lock-in**: Zero reliance on external AI providers. Every component can be swapped for an open-source equivalent.
+The judgment PDF is segmented into 3 logical regions; each agent has a single responsibility and a Pydantic schema enforced via `response_format={"type": "json_object"}`:
 
-> The 4-agent pipeline is designed for government on-premise servers with adequate GPU/CPU resources, where rate limits and compute costs are not a constraint.
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ AGENT          │ INPUT       │ OUTPUT (Pydantic)            │ MODEL          │
+├────────────────┼─────────────┼──────────────────────────────┼────────────────┤
+│ 1. Registry    │ Header      │ case_number, court_name,     │ OpenRouter     │
+│    Clerk       │ section     │ bench, judges, parties,      │ Llama 3.1 8B   │
+│                │             │ date_of_order, appeal_type,  │ (cheap, fast)  │
+│                │             │ lower_court_info             │                │
+├────────────────┼─────────────┼──────────────────────────────┼────────────────┤
+│ 2. Legal       │ Body        │ summary_of_facts,            │ NVIDIA NIM     │
+│    Analyst     │ section     │ issues_framed[]              │ Llama 3.3 70B  │
+├────────────────┼─────────────┼──────────────────────────────┼────────────────┤
+│ 3. Precedent   │ Body        │ ratio_decidendi, area_of_law │ NVIDIA NIM     │
+│    Scholar     │ section     │ primary_statute,             │ Llama 3.3 70B  │
+│                │             │ citations[] with context,    │                │
+│                │             │ entities[]                   │                │
+├────────────────┼─────────────┼──────────────────────────────┼────────────────┤
+│ 4. Compliance  │ Operative   │ disposition, winning_party,  │ NVIDIA NIM     │
+│    Officer     │ order       │ operative_order_summary,     │ Llama 3.3 70B  │
+│                │ section     │ court_directions[] (each     │ (most critical │
+│                │             │   with text, responsible_    │  agent)        │
+│                │             │   entity, action_required,   │                │
+│                │             │   financial_details),        │                │
+│                │             │ contempt_risk, financial[]   │                │
+└────────────────┴─────────────┴──────────────────────────────┴────────────────┘
+```
+
+**Why 4 agents instead of one big call?**
+- **Focused schemas** → fewer JSON parse failures and missed fields
+- **Section-scoped input** → smaller per-call token budget; faster + cheaper
+- **Independent retry** → if Agent 3's citations fail, Agents 1, 2, 4 still succeed
+- **Cost shaping** → only the simple metadata agent uses the cheap 8B model; the three reasoning-heavy agents use the strong 70B model
+
+**Large-PDF routing:** PDFs with ≥25 pages route **all 4 agents** through OpenRouter Llama 3.3 70B (which has larger context windows and no NIM rate limits). Threshold is configurable via `OPENROUTER_LARGE_PDF_THRESHOLD` env var.
+
+### B. Department Classifier (single-shot)
+
+```
+┌──────────────────────────────────────────────────────────────────────────┐
+│ INPUT  : operative_text + body_text + entities + parties (concat ≤6K ch) │
+│ MODEL  : NVIDIA NIM Llama 3.3 70B                                        │
+│ PROMPT : full 48-dept catalogue + Karnataka routing rules                │
+│ OUTPUT : { primary_code, secondary_codes[], rationale }                  │
+│ FALLBK : keyword-scoring pass (deterministic) if LLM unreachable         │
+└──────────────────────────────────────────────────────────────────────────┘
+```
+
+The prompt encodes domain knowledge like "GST → FINANCE (Commercial Taxes sits under Finance in Karnataka)" and "KPTCL service matters → ENERGY". Built-in negative examples prevent the model defaulting to HOME or TECH_EDU for ambiguous cases.
+
+### C. Directive Enricher (the government-perspective lens)
+
+Agent 4 extracts directives **verbatim** — that's the source-of-truth record. But a department officer needs an additional translation: *"is this for ME?"* and *"if so, what do I actually do?"*
+
+```
+┌──────────────────────────────────────────────────────────────────────────┐
+│ INPUT  : case metadata + all extracted directives                        │
+│ MODEL  : OpenRouter google/gemini-2.5-pro                                │
+│          (Gemini chosen for stronger instruction-following — Llama 70B   │
+│           confidently fabricates form numbers when pushed)               │
+│ FALLBK : NVIDIA NIM Llama 3.3 70B                                        │
+│                                                                          │
+│ OUTPUT (per directive):                                                  │
+│  • actor_type ∈ { government_department, court_or_registry,              │
+│                   accused_or_petitioner, third_party, informational }    │
+│  • gov_action_required: bool                                             │
+│  • govt_summary: 1-line plain-English restatement                        │
+│  • implementation_steps[]: 2-4 LCO-actionable bullets (gov only)         │
+│  • display_note: "no action required because X" (non-gov only)           │
+└──────────────────────────────────────────────────────────────────────────┘
+```
+
+**Anti-hallucination guardrails baked into the prompt:**
+
+1. NEVER invent procedural specifics (form numbers, treasury codes, internal file IDs, deadlines) that aren't named in the operative order
+2. Distinguish what the court ordered:
+   - **Quashed an admin order** → reverse that administrative state (e.g. unblock GST ledger) — NOT a refund
+   - **Declared a status** (exempt, eligible) → update assessment records — NOT a refund
+   - **Directed payment** → only THEN process a payment
+   - **Remanded** → reconsider afresh, NOT auto-grant relief
+   - **Modified award with explicit math** → recalculate per the formula AND disburse
+3. When in doubt, stay general ("update assessment records") rather than fabricate ("Form TCR-3")
+
+### D. RAG Recommendation Pipeline (single-agent or 4-agent)
+
+For the APPEAL-vs-COMPLY recommendation:
+
+```
+Case context
+   │
+   ▼
+[Hybrid RAG]  →  Top-K legally-similar precedents (BM25 + InLegalBERT + RRF + Cross-Encoder)
+   │
+   ▼
+[Rules Engine]  →  Statutory appeal deadline (Limitation Act + holidays)
+   │
+   ▼
+[Recommendation Agents]
+   ├─── Single-agent mode (default — cheap, fast)
+   │     One reasoning pass over all context → APPEAL/COMPLY + confidence + rationale
+   │
+   └─── 4-agent mode (deeper, costlier)
+         Agent 1 — Precedent Researcher → win-rate trend analysis
+         Agent 2 — Devil's Advocate     → pro/con arguments
+         Agent 3 — Risk Auditor         → contempt + financial risk
+         Agent 4 — Decision Synthesizer → final verdict
+         (final synthesis can use Gemini 2.5 Pro for strongest reasoning)
+   │
+   ▼
+ActionPlan.full_rag_recommendation JSON (cached — revisits skip re-computation)
+```
+
+---
+
+## PDF Source-Highlighting (Verifier Trust)
+
+A verifier cannot trust an AI extraction without seeing the source. NyayaDrishti highlights **the full paragraph block** the directive came from:
+
+```
+┌──────────────────────────────────────────────────────────────────────────┐
+│ ALGORITHM (apps/cases/views.py :: _annotate_source_locations)            │
+├──────────────────────────────────────────────────────────────────────────┤
+│ 1. Build ranked snippet list from the directive text:                    │
+│      • Longest start-of-text first (140, 100, 70, 45, 28 chars)          │
+│      • Mid-text samples at offsets 50, 100, 180                          │
+│      • Tail snippet (last 80 chars)                                      │
+│                                                                          │
+│ 2. For each snippet (in rank order):                                     │
+│      For each PDF page (LAST page first — operative orders are at end):  │
+│         try page.search_for(snippet)                                     │
+│         on first match → use this as the anchor                          │
+│                                                                          │
+│ 3. Resolve anchor rect to its containing TEXT BLOCK via                  │
+│    page.get_text("dict") — gives line-level bboxes                       │
+│                                                                          │
+│ 4. Return line rects for the ENTIRE block (the full paragraph).          │
+│    If the directive overflows the block, walk forward to the next        │
+│    adjacent block (gap < 60pt) until coverage > 55%.                     │
+└──────────────────────────────────────────────────────────────────────────┘
+```
+
+**Why snippet-outer instead of page-outer?** If a directive's paragraph spans two pages, page-outer + reverse order causes the *tail* snippet on page N+1 to win before the *start* snippet on page N gets a chance — anchoring on the wrong page. Snippet-outer (earliest text first) fixes this.
+
+**Frontend rendering** (`HighlightOverlay` in `VerifyActions.tsx`) takes the line rects, computes min/max bbox, clamps to standard text margins, and renders a yellow paragraph band with a side-bracket indicator. The "Show in PDF" button on each card explicitly scrolls the PDF viewer to that page.
+
+---
+
+## Hybrid RAG Engine
+
+Built for legal-domain semantic search over 20 years of Supreme Court judgments:
+
+```
+┌──────────────────────────────────────────────────────────────────────────┐
+│ STAGE                  │ TECHNOLOGY              │ PURPOSE                │
+├────────────────────────┼─────────────────────────┼────────────────────────┤
+│ 1. Sparse retrieval    │ BM25Okapi (rank-bm25)   │ Catch exact statute,   │
+│                        │                         │ citation, party names  │
+├────────────────────────┼─────────────────────────┼────────────────────────┤
+│ 2. Dense retrieval     │ InLegalBERT (768-d)     │ Semantic match on      │
+│                        │ via ChromaDB            │ legal reasoning        │
+├────────────────────────┼─────────────────────────┼────────────────────────┤
+│ 3. Fusion              │ Reciprocal Rank Fusion  │ Combine sparse+dense   │
+│                        │ (RRF, k=60)             │ without score scaling  │
+├────────────────────────┼─────────────────────────┼────────────────────────┤
+│ 4. Rerank              │ Open-source             │ Final precision rank   │
+│                        │ cross-encoder           │                        │
+├────────────────────────┼─────────────────────────┼────────────────────────┤
+│ 5. Analytics           │ DuckDB over Parquet     │ Win-rate stats across  │
+│                        │                         │ ~431K case chunks      │
+└────────────────────────┴─────────────────────────┴────────────────────────┘
+```
+
+Files: `apps/action_plans/services/rag_engine.py`, `apps/rag/embedder.py`, `apps/rag/parquet_store.py`.
+
+---
+
+## Data Privacy & On-Premise Deployment
+
+NyayaDrishti is designed for the strict data-residency requirements of Indian digital public infrastructure:
+
+| Component | Privacy posture |
+|---|---|
+| Django backend + PostgreSQL | Government datacenter |
+| React frontend (static build) | Government datacenter or CDN |
+| InLegalBERT (`law-ai/InLegalBERT`) | Runs **fully local** (CPU or GPU) |
+| ChromaDB vector store | Local persistent volume |
+| DuckDB analytics | Local files only |
+| Cross-encoder reranker | Runs local |
+| PDF storage | Local `media/judgments/` (or S3/MinIO) |
+| LLM calls (current cloud setup) | OpenRouter + NVIDIA NIM — swappable |
+| LLM (air-gapped option) | Self-host via `vLLM`, `Ollama`, or NVIDIA NIM private deployment — same OpenAI-compatible interface |
+
+**Zero commercial-cloud lock-in.** Every external API uses the OpenAI-compatible chat-completions interface, so any cloud LLM provider can be swapped for a locally-hosted Llama / Mistral / Qwen / Gemma model with one environment-variable change.
 
 ---
 
 ## Tech Stack
 
 | Layer | Technology | Purpose |
-|-------|-----------|---------| 
-| **Frontend** | React 19, TypeScript, Vite 6 | SPA with hot-reload |
-| **Styling** | TailwindCSS 4, Framer Motion | Glassmorphism design, animations |
-| **PDF Viewer** | react-pdf + pdfjs-dist | In-browser PDF rendering with source highlights |
-| **Backend** | Django 5, Django REST Framework | REST API, ORM, migrations |
-| **Auth** | SimpleJWT | Token-based authentication with role-based access |
-| **PDF Parsing** | PyMuPDF4LLM | Layout-aware PDF → Markdown conversion |
-| **LLM (Extraction)** | Open-source LLM (cloud API or self-hosted) | 4-agent structured extraction pipeline |
-| **LLM (Recommendation)** | Open-source LLM (cloud API or self-hosted) | Single-agent or 4-agent RAG recommendation |
-| **Embeddings** | **InLegalBERT** (`law-ai/InLegalBERT`) | 768-dim legal domain embeddings — runs fully locally |
-| **Vector Store** | ChromaDB (persistent, local) | Dense vector similarity search |
-| **Sparse Retrieval** | BM25Okapi (rank-bm25) | Keyword-based retrieval |
-| **Reranking** | Cross-Encoder (open-source, local) | Final relevance reranking |
-| **Fusion** | Reciprocal Rank Fusion (RRF) | Combines BM25 + dense scores |
-| **Analytics** | DuckDB over Parquet | SQL queries over 431K+ case chunks |
-| **Classifier** | Deterministic keyword matching | Contempt risk classification (High/Medium/Low) |
-| **Domain Classification** | InLegalBERT zero-shot + K-Means | Legal domain classification (12 categories) |
-| **Database** | SQLite (dev) / PostgreSQL (prod) | Relational data storage |
+|---|---|---|
+| **Frontend SPA** | React 19, TypeScript, Vite 6 | Hot-reload dev, optimized production build |
+| **Styling** | Tailwind 4 (Material 3 tokens), Framer Motion | Glassmorphism dark theme, smooth transitions |
+| **PDF Viewer** | react-pdf + pdfjs-dist | In-browser rendering with paragraph highlights |
+| **State** | React Context + hooks | Auth, theme, view routing |
+| **Backend** | Django 5, Django REST Framework | REST API + ORM + migrations |
+| **Auth** | SimpleJWT | JWT with custom claims (role + dept_id + dept_code) |
+| **Database** | PostgreSQL (prod) / SQLite (dev) | Relational data |
+| **PDF Parsing** | PyMuPDF4LLM + PyMuPDF | Layout-aware Markdown + spatial highlights |
+| **LLM cascade (extraction)** | OpenRouter Llama 8B + NVIDIA NIM Llama 70B | Cost-shaped per-agent routing |
+| **LLM (enrichment)** | OpenRouter Gemini 2.5 Pro | Strong instruction-following for anti-hallucination |
+| **LLM (recommendation)** | NVIDIA NIM Llama 70B (default) / Gemini 2.5 Pro (4-agent final synth) | RAG-grounded reasoning |
+| **Large PDF fallback** | OpenRouter Llama 3.3 70B | Pages ≥25 route all 4 extractors here |
+| **Legal embeddings** | InLegalBERT (`law-ai/InLegalBERT`) | 768-d, trained on 5.4M Indian legal docs |
+| **Vector store** | ChromaDB (persistent, local) | Dense similarity search |
+| **Sparse retrieval** | BM25Okapi (`rank-bm25`) | Keyword/citation match |
+| **Reranking** | Open-source cross-encoder | Final precision pass |
+| **Fusion** | Reciprocal Rank Fusion | Sparse-dense score combination |
+| **Analytics** | DuckDB over Parquet | SQL over ~431K judgment chunks |
+| **Contempt risk** | Deterministic keyword classifier | No LLM guesswork on legal definitions |
+
+---
+
+## Local Setup
+
+### Prerequisites
+
+- **Python 3.12+**
+- **Node.js 20+**
+- **PostgreSQL 14+** (optional — SQLite works fine in dev)
+- **8 GB RAM minimum** (16 GB recommended for InLegalBERT + cross-encoder)
+- **~3 GB free disk** for the RAG corpus and ChromaDB store
+
+### API keys required (one or more)
+
+| Key | Used for | How to get it |
+|---|---|---|
+| `OPENROUTER_API_KEY` | Agent 1 (8B), large-PDF routing, directive enricher (Gemini 2.5 Pro) | https://openrouter.ai/ — free $1 credit on signup |
+| `NVIDIA_API_KEY` | Agents 2/3/4 (70B), dept classifier | https://build.nvidia.com/ — free 1K req tier |
+| `GEMINI_API_KEY` (optional) | 4-agent recommendation final synthesis | https://aistudio.google.com/ |
+| `GROQ_API_KEY` (legacy) | No longer required — extraction has migrated off Groq | — |
+
+
+
+### Step 1 — Clone & enter the repo
+
+```bash
+git clone https://github.com/Harsh-Mohta9163/Nyaya-Drishti.git
+cd Nyaya-Drishti
+```
+
+### Step 2 — Download RAG data from Hugging Face
+
+The 431K-chunk RAG corpus and pre-built ChromaDB store are **not** in git — they live on Hugging Face:
+
+**Dataset:** [Harsh2005/nyaya-drishti-data](https://huggingface.co/datasets/Harsh2005/nyaya-drishti-data/tree/main)
+
+```bash
+pip install huggingface_hub
+
+# Parquet embeddings (~280 MB)
+huggingface-cli download Harsh2005/nyaya-drishti-data sc_embeddings.parquet \
+  --repo-type dataset --local-dir backend/data/parquet/
+
+# ChromaDB vector store (~1.8 GB)
+huggingface-cli download Harsh2005/nyaya-drishti-data --repo-type dataset \
+  --local-dir backend/data/ --include "chroma_db/*"
+```
+
+After download, your layout should look like:
+
+```
+backend/
+└── data/
+    ├── chroma_db/
+    │   ├── chroma.sqlite3
+    │   └── <uuid-folder>/
+    │       ├── data_level0.bin
+    │       ├── header.bin
+    │       ├── length.bin
+    │       └── link_lists.bin
+    └── parquet/
+        └── sc_embeddings.parquet
+```
+
+> Without these files the app still works, but the Similar Cases / Precedents tab will return empty results.
+
+### Step 3 — Backend setup
+
+```bash
+cd backend
+
+# Create virtual environment
+python -m venv .venv
+.venv\Scripts\activate           # Windows PowerShell
+# source .venv/bin/activate      # Linux / macOS
+
+# Install dependencies
+pip install -r requirements.txt
+pip install -r requirements-ml.txt    # Heavy: torch, transformers, InLegalBERT
+
+# Configure environment
+cp .env.example .env
+# Edit backend/.env and fill in:
+#   DJANGO_SECRET_KEY=<run: python -c "import secrets; print(secrets.token_urlsafe(50))">
+#   OPENROUTER_API_KEY=sk-or-...
+#   NVIDIA_API_KEY=nvapi-...
+#   GEMINI_API_KEY=...           (optional)
+#   DATABASE_URL=postgresql://...  (optional — defaults to SQLite)
+
+# Migrations
+python manage.py migrate
+
+# Seed the 48 departments + 13 demo user accounts
+python manage.py seed_demo_data
+
+# (Optional) Create your own Django admin user
+python manage.py createsuperuser
+
+# Start the dev server
+python manage.py runserver 127.0.0.1:8000
+```
+
+### Step 4 — Frontend setup
+
+```bash
+cd frontend
+npm install
+npm run dev          # → http://localhost:3000
+```
+
+The frontend dev server proxies `/api/` and `/media/` to the backend at `127.0.0.1:8000`. JWT tokens are stored in `localStorage`.
+
+### Step 5 — Verify the setup
+
+Open `http://localhost:3000` and log in with one of the demo accounts (all use password `demo123`):
+
+| Email | Role | What you'll see |
+|---|---|---|
+| `central_law@demo.local` | Central Law | Central View — 48-tile grid |
+| `health_hlc@demo.local` | HLC | Health dept dashboard |
+| `health_lco@demo.local` | LCO | Execution dashboard (Health) |
+| `health_nodal@demo.local` | Nodal | Deadline monitor (Health) |
+| `finance_lco@demo.local` | LCO | Execution dashboard (Finance) |
+| `energy_lco@demo.local` | LCO | Execution dashboard (Energy) |
+
+If you see the Central View load with 48 tiles, the backend + frontend + DB are all wired correctly.
+
+---
+
+## Demo Runbook
+
+### Loading demo PDFs
+
+The repo includes 6 anonymized High Court judgment PDFs in `backend/testcases/`:
+
+```
+backend/testcases/
+├── constitutional_law.pdf       (Kannada cultural — dismissed)
+├── crimial_law_1.PDF            (GST Rule 86A — K-9 Enterprises)
+├── criminal_law.pdf             (Criminal IPC — Dr Renuka Prasad)
+├── land_aquisition.pdf          (Land Acquisition + KHB)
+├── service_law.pdf              (KPTCL service / increment)
+└── tax_law.pdf                  (GST exemption — Taghar Vasudeva)
+```
+
+### Method 1 — Bulk ingest via CLI (recommended)
+
+```bash
+cd backend
+.venv\Scripts\activate
+
+# Walk every PDF in testcases/ sequentially with 8s sleep between
+# (keeps you under NVIDIA NIM rate limits). SHA-256 hash dedup avoids
+# re-extraction of files already in the DB.
+python manage.py bulk_ingest --dir testcases/
+
+# Options:
+#   --sleep 4          # shorter delay if your NIM quota is healthy
+#   --skip-dedup       # force re-extraction even if a hash already exists
+```
+
+Each PDF passes through:
+1. PyMuPDF4LLM Markdown conversion
+2. Section segmentation
+3. 4-agent extraction
+4. Department classification
+5. Directive enrichment (Gemini 2.5 Pro)
+6. PyMuPDF source-paragraph annotation
+
+Expected time per PDF: 30–90 seconds depending on length.
+
+### Method 2 — UI upload (single file)
+
+Log in as any HLC, LCO, or Central Law user → click the "New Case Analysis" file picker in the sidebar → select a PDF. The upload runs the full pipeline and lands you on the case detail page when done. SHA-256 dedup returns the existing case if the same file was uploaded before.
+
+### Method 3 — Direct API (for testing)
+
+```bash
+# Get a JWT
+TOKEN=$(curl -s -X POST http://127.0.0.1:8000/api/auth/login/ \
+  -H 'Content-Type: application/json' \
+  -d '{"email":"central_law@demo.local","password":"demo123"}' \
+  | python -c "import json,sys; print(json.load(sys.stdin)['access'])")
+
+# Upload one PDF
+curl -X POST http://127.0.0.1:8000/api/cases/extract/ \
+  -H "Authorization: Bearer $TOKEN" \
+  -F "pdf_file=@testcases/service_law.pdf"
+```
+
+### Demo-day preparation
+
+Right before demo, run these three commands in order:
+
+```bash
+# 1. Re-seed 48 departments + 13 demo users (idempotent — safe to re-run)
+python manage.py seed_demo_data
+
+# 2. Ingest the demo PDFs (skips any already in DB by hash)
+python manage.py bulk_ingest --dir testcases/
+
+# 3. Re-set all approved Action Plans' deadlines to "today + N" so
+#    nothing shows as overdue on stage. Also auto-approves any plans
+#    not yet flagged approved.
+python manage.py refresh_demo_deadlines
+```
+
+
+
+### Resetting between rehearsals
+
+If a rehearsal leaves the DB messy:
+
+```bash
+# Wipe approved status + re-set deadlines (keeps cases)
+python manage.py refresh_demo_deadlines
+
+# Re-enrich existing directives (if you've updated the prompt)
+python manage.py enrich_directives --force
+
+# Nuke everything and start fresh (drops DB)
+python manage.py flush --no-input
+python manage.py seed_demo_data
+python manage.py bulk_ingest --dir testcases/
+```
 
 ---
 
@@ -198,161 +884,176 @@ The entire stack — Django backend, React frontend, InLegalBERT embeddings, Chr
 Nyaya-Drishti/
 ├── backend/
 │   ├── apps/
-│   │   ├── accounts/          # Custom User model (roles: Reviewer, Dept Officer, Dept Head)
-│   │   ├── cases/             # Case, Judgment, Citation models
-│   │   │   └── services/
-│   │   │       ├── pdf_processor.py        # PyMuPDF4LLM text extraction
-│   │   │       ├── section_segmenter.py    # Bi-directional regex segmenter
-│   │   │       └── extractor.py            # 4-agent LLM extraction pipeline
-│   │   ├── action_plans/      # ActionPlan, LimitationRule, CourtCalendar models
-│   │   │   └── services/
-│   │   │       ├── recommendation_pipeline.py  # Single-agent + 4-agent RAG recommendation
-│   │   │       ├── rag_engine.py               # Hybrid RAG (BM25+Dense+RRF+CrossEncoder)
-│   │   │       ├── rules_engine.py             # Limitation Act deadline computation
-│   │   │       ├── risk_classifier.py          # Contempt risk (BERT + keywords)
-│   │   │       └── appeal_strategist.py        # Appeal strategy generation
-│   │   ├── rag/               # Embedding & vector infrastructure
-│   │   │   ├── embedder.py                # InLegalBERT ChromaDB embedding function
-│   │   │   ├── parquet_store.py           # DuckDB analytics over parquet files
-│   │   │   └── classifier.py             # Zero-shot legal domain classifier
-│   │   ├── reviews/           # ReviewLog model (human verification chain)
-│   │   ├── dashboard/         # Dashboard aggregation API
-│   │   ├── notifications/     # Alert system
-│   │   └── translation/       # Multi-language support
-│   ├── config/                # Django settings, root URLs
-│   ├── data/
-│   │   ├── chroma_db/         # ChromaDB persistent vector store  ← download required
-│   │   └── parquet/           # Pre-computed SC/HC judgment embeddings  ← download required
-│   ├── media/judgments/       # Uploaded PDF files
-│   ├── train_contempt_classifier.py       # InLegalBERT fine-tuning script
-│   ├── kaggle_embedding_pipeline.py       # GPU embedding pipeline for 50K+ cases
-│   └── requirements.txt
+│   │   ├── accounts/                         # Custom User + 6 statutory roles
+│   │   │   ├── models.py                       Department, User
+│   │   │   ├── permissions.py                  DepartmentScopedQuerysetMixin,
+│   │   │   │                                   GLOBAL_ACCESS_ROLES, VERIFIER_ROLES
+│   │   │   ├── serializers.py                  UserSerializer, EmailTokenObtainPair
+│   │   │   └── management/commands/
+│   │   │       └── seed_demo_data.py           48 depts + 13 demo users
+│   │   │
+│   │   ├── cases/                            # Case, Judgment, Citation
+│   │   │   ├── models.py                       (UUID PKs, primary_department FK,
+│   │   │   │                                   secondary_departments M2M,
+│   │   │   │                                   pdf_hash for dedup)
+│   │   │   ├── views.py                        CaseExtractView, ReAnnotateSourceView,
+│   │   │   │                                   CaseDepartmentOverrideView,
+│   │   │   │                                   ActionPlanReviewView,
+│   │   │   │                                   _annotate_source_locations()
+│   │   │   ├── services/
+│   │   │   │   ├── pdf_processor.py            PyMuPDF4LLM → Markdown
+│   │   │   │   ├── section_segmenter.py        Bi-directional regex segmenter
+│   │   │   │   ├── extractor.py                4-agent extraction pipeline +
+│   │   │   │   │                               _call_agent_8b (OpenRouter),
+│   │   │   │   │                               _call_agent_70b (NVIDIA NIM),
+│   │   │   │   │                               _call_openrouter_llama
+│   │   │   │   ├── dept_classifier.py          48-dept LLM classifier
+│   │   │   │   └── directive_enricher.py       Gemini 2.5 Pro govt-perspective
+│   │   │   └── management/commands/
+│   │   │       ├── bulk_ingest.py              Sequential PDF ingestion
+│   │   │       ├── backfill_departments.py     Re-classify existing cases
+│   │   │       └── enrich_directives.py        Backfill enrichment
+│   │   │
+│   │   ├── action_plans/                     # ActionPlan, DirectiveExecution
+│   │   │   ├── models.py                       LimitationRule, CourtCalendar
+│   │   │   ├── views.py                        LCOExecutionListView,
+│   │   │   │                                   LCOExecutionDetailView,
+│   │   │   │                                   GenerateRecommendationView
+│   │   │   ├── services/
+│   │   │   │   ├── rag_engine.py               Hybrid RAG (BM25+dense+RRF+rerank)
+│   │   │   │   ├── recommendation_pipeline.py  Single-agent / 4-agent RAG
+│   │   │   │   ├── rules_engine.py             Limitation Act §4/§12
+│   │   │   │   ├── risk_classifier.py          Contempt risk (keyword)
+│   │   │   │   └── appeal_strategist.py        Appeal strategy generator
+│   │   │   └── management/commands/
+│   │   │       └── refresh_demo_deadlines.py   Demo-day deadline reset
+│   │   │
+│   │   ├── rag/                              # Shared embedding/retrieval infra
+│   │   │   ├── embedder.py                     InLegalBERT ChromaDB EF
+│   │   │   ├── parquet_store.py                DuckDB analytics over parquet
+│   │   │   └── classifier.py                   Zero-shot legal domain
+│   │   │
+│   │   ├── reviews/                          # ReviewLog audit chain
+│   │   ├── dashboard/                        # Aggregation endpoints
+│   │   │   ├── views.py                        DashboardStatsView,
+│   │   │   │                                   NodalDeadlinesMonitorView,
+│   │   │   │                                   DashboardByDepartmentView
+│   │   │   └── urls.py
+│   │   ├── notifications/
+│   │   └── translation/
+│   │
+│   ├── config/                               # Django settings, root URLs
+│   ├── data/                                 # Downloaded from HuggingFace
+│   │   ├── chroma_db/                          ChromaDB persistent store
+│   │   └── parquet/sc_embeddings.parquet       431K SC judgment chunks
+│   ├── media/judgments/                      # Uploaded PDFs (gitignored)
+│   ├── testcases/                            # 6 demo HC judgment PDFs
+│   ├── requirements.txt
+│   ├── requirements-ml.txt
+│   └── manage.py
 │
 ├── frontend/
 │   ├── src/
 │   │   ├── components/
-│   │   │   ├── Dashboard.tsx      # Live stats, heatmap, risk board (DB-driven)
-│   │   │   ├── CaseList.tsx       # Case listing with search and filters
-│   │   │   ├── CaseOverview.tsx   # Extracted data + AI analysis display
-│   │   │   ├── CaseHeader.tsx     # Case metadata header bar
-│   │   │   ├── VerifyActions.tsx  # Human-in-the-loop verification + PDF viewer
-│   │   │   ├── Precedents.tsx     # Citation network and precedent analysis
-│   │   │   └── Sidebar.tsx        # Collapsible navigation sidebar
-│   │   ├── api/client.ts          # API client with JWT interceptor
-│   │   ├── context/AuthContext.tsx # Authentication state management
-│   │   ├── App.tsx                # Main app with routing and state
-│   │   └── LoginPage.tsx          # Authentication UI
-│   ├── vite.config.ts             # Vite config with /media proxy
+│   │   │   ├── Dashboard.tsx                   Live stats + dept badge
+│   │   │   ├── CaseList.tsx                    With dept filter chip
+│   │   │   ├── CaseOverview.tsx                Extracted data + AI analysis
+│   │   │   ├── CaseHeader.tsx                  Case metadata header
+│   │   │   ├── VerifyActions.tsx               PDF side-by-side + edit UI
+│   │   │   ├── Precedents.tsx                  Citation network + RAG matches
+│   │   │   ├── Sidebar.tsx                     Govt-of-Karnataka branded
+│   │   │   ├── CentralLawView.tsx              48-tile grid
+│   │   │   ├── DepartmentOverrideModal.tsx     Verifier re-routing
+│   │   │   ├── LCOExecutionView.tsx            Execution dashboard
+│   │   │   └── NodalDeadlineView.tsx           Deadline monitor
+│   │   ├── api/client.ts                       JWT-injected fetch wrapper
+│   │   ├── context/AuthContext.tsx             User + role helpers
+│   │   ├── App.tsx                             Routing + role-based default view
+│   │   ├── LoginPage.tsx
+│   │   ├── RegisterPage.tsx                    Responsive, 48-dept dropdown
+│   │   ├── karnataka_govt_logo.png
+│   │   └── images.d.ts
+│   ├── vite.config.ts
 │   └── package.json
 │
-└── README.md
+├── CLAUDE.md                                 # AI agent guide (architecture notes)
+├── .claude/settings.json                     # Project-wide permission allowlist
+└── README.md                                 # ← you are here
 ```
 
 ---
 
-## Getting Started
+## API Endpoints
 
-### Prerequisites
+| Method | Endpoint | Purpose | Auth |
+|---|---|---|---|
+| `POST` | `/api/auth/register/` | User signup with role + dept | None |
+| `POST` | `/api/auth/login/` | JWT login (role + dept claims) | None |
+| `GET` | `/api/auth/departments/` | List 48 departments | None |
+| `GET` | `/api/cases/` | List cases (dept-scoped) | JWT |
+| `POST` | `/api/cases/extract/` | Upload PDF → full pipeline (with dedup) | JWT |
+| `GET` | `/api/cases/<uuid>/` | Case detail (dept-scoped) | JWT |
+| `GET` | `/api/cases/<uuid>/status/` | Processing status | JWT |
+| `PATCH` | `/api/cases/<uuid>/department/` | Verifier dept override | JWT (HLC/CL) |
+| `POST` | `/api/cases/<uuid>/re-annotate/` | Re-run PDF source highlighting | JWT |
+| `GET` | `/api/cases/judgments/<uuid>/pdf/` | Serve judgment PDF | JWT |
+| `PATCH` | `/api/cases/judgments/<uuid>/` | HLC edits to extraction | JWT (HLC/CL) |
+| `POST` | `/api/cases/action-plans/<id>/review/` | HLC approve/edit/reject | JWT (HLC/CL) |
+| `GET` | `/api/cases/<uuid>/action-plan/` | Get action plan for a case | JWT |
+| `POST` | `/api/action-plans/recommend/` | Trigger RAG recommendation | JWT |
+| `GET` | `/api/action-plans/execution/` | LCO list (gov + verified only) | JWT |
+| `PATCH` | `/api/action-plans/execution/<uuid>/` | LCO status + proof upload | JWT (dept) |
+| `GET` | `/api/dashboard/stats/` | Dept-scoped headline stats | JWT |
+| `GET` | `/api/dashboard/by-department/` | 48-dept aggregate (Central Law) | JWT (global) |
+| `GET` | `/api/dashboard/deadlines-monitor/` | Nodal urgency-sorted list | JWT |
+| `GET` | `/api/dashboard/high-risk/` | Contempt-risk-sorted list | JWT |
 
-- Python 3.12+
-- Node.js 20+
-- API keys for at least one open-source LLM provider (cloud) **or** a self-hosted LLM via `vLLM` / `Ollama`
+---
 
-### 1. Download Required Data Files
-
-The RAG vector store and pre-computed embeddings are hosted on Hugging Face and **must be downloaded before running the backend**.
-
-**Dataset:** [Harsh2005/nyaya-drishti-data](https://huggingface.co/datasets/Harsh2005/nyaya-drishti-data/tree/main)
-
-Download the following and place them in your backend directory:
-
-```
-backend/
-├── data/
-│   ├── chroma_db/          ← Download the chroma_db folder from HuggingFace
-│   └── parquet/
-│       └── sc_embeddings.parquet   ← Download sc_embeddings.parquet from HuggingFace
-```
-
-You can download manually from the link above, or use the Hugging Face CLI:
-
-```bash
-pip install huggingface_hub
-
-# Download the parquet embeddings
-huggingface-cli download Harsh2005/nyaya-drishti-data sc_embeddings.parquet \
-  --repo-type dataset --local-dir backend/data/parquet/
-
-# Download the ChromaDB vector store
-huggingface-cli download Harsh2005/nyaya-drishti-data --repo-type dataset \
-  --local-dir backend/data/ --include "chroma_db/*"
-```
-
-> **Note:** Without these files the app will still run, but the Similar Cases (RAG precedents) section will return no results.
-
-### 2. Backend Setup
+## Management Commands
 
 ```bash
-cd backend
+# Department + user seeding
+python manage.py seed_demo_data                  # 48 depts + 13 demo users (idempotent)
 
-# Create virtual environment
-python -m venv .venv
-source .venv/bin/activate  # Linux/Mac
-# .venv\Scripts\activate   # Windows
+# Data ingestion
+python manage.py bulk_ingest --dir testcases/    # Sequential PDF ingest with dedup
+python manage.py backfill_departments [--force]  # Re-run dept classifier on existing cases
 
-# Install dependencies
-pip install -r requirements.txt
-pip install -r requirements-ml.txt  # For InLegalBERT, torch, transformers
+# AI enrichment
+python manage.py enrich_directives [--force]     # Re-run Gemini enricher
+                                                  # [--case-number-prefix PREFIX] [--sleep N]
 
-# Configure environment
-cp .env.example .env
-# Edit .env and fill in:
-#   DJANGO_SECRET_KEY=<generate-a-secret>
-#   GROQ_API_KEY=<your-groq-key>          # or any open-source LLM API
-#   NVIDIA_API_KEY=<your-nvidia-nim-key>  # optional, for 4-agent mode
+# Demo prep
+python manage.py refresh_demo_deadlines          # Future-dates approved ActionPlans
 
-# Run migrations
-python manage.py migrate
-
-# Create admin user
-python manage.py createsuperuser
-
-# (Optional) Seed sample data
-python seed_data.py
-
-# Start backend server
-python manage.py runserver
+# RAG corpus management
+python manage.py import_kaggle_embeddings --path /path/to/parquet/
+python manage.py build_vectors
+python manage.py rebuild_chromadb
+python manage.py download_parquet
+python manage.py classify_parquet
+python manage.py export_for_merge
+python manage.py import_merged_data
+python manage.py reconcile_citations
+python manage.py seed_court_calendar             # Karnataka court holidays
 ```
 
-### 3. Frontend Setup
+---
 
-```bash
-cd frontend
+## ML Models
 
-# Install dependencies
-npm install
-
-# Start development server
-npm run dev
-# → http://localhost:3000
-```
-
-### 4. (Optional) Rebuild RAG Corpus from Scratch
-
-If you want to re-generate the embeddings rather than downloading the pre-built files:
-
-```bash
-# Run on Kaggle with GPU (T4/P100):
-# Upload kaggle_embedding_pipeline.py → generates sc_embeddings.parquet
-
-# Then import locally:
-python manage.py import_kaggle_embeddings --path /path/to/downloaded/
-```
-
-## Deployed URL
-
-> **Live Demo:** [Nyaya Drishti Portal](https://nyaya-drishti.onrender.com/)
->
+| Model | Source | Role | Runs |
+|---|---|---|---|
+| Llama 3.1 8B Instruct | OpenRouter `meta-llama/llama-3.1-8b-instruct` | Agent 1 (header metadata) | Cloud (cheap) |
+| Llama 3.3 70B Instruct | NVIDIA NIM `meta/llama-3.3-70b-instruct` | Agents 2/3/4 + dept classifier | Cloud (free credits) |
+| Llama 3.3 70B Instruct | OpenRouter `meta-llama/llama-3.3-70b-instruct` | All agents for ≥25-page PDFs | Cloud (paid, cheap) |
+| Gemini 2.5 Pro | OpenRouter `google/gemini-2.5-pro` | Directive enricher | Cloud (paid) |
+| Gemini 2.5 Pro | Google AI Studio (direct) | 4-agent recommendation final | Cloud (optional) |
+| **InLegalBERT** | HuggingFace `law-ai/InLegalBERT` | 768-d legal embeddings — trained on 5.4M Indian legal docs | **Local CPU/GPU** |
+| Cross-Encoder | HuggingFace open-source | RAG reranking | Local CPU |
+| BM25Okapi | `rank-bm25` (PyPI) | Sparse retrieval | Local CPU |
+| Contempt classifier | Custom keyword rules (22 high + 14 medium) | Deterministic risk scoring | Local — no GPU |
 
 ---
 
@@ -360,92 +1061,74 @@ python manage.py import_kaggle_embeddings --path /path/to/downloaded/
 
 ### 1. Accuracy of Extraction
 
-| Technique | How We Achieve It |
-|-----------|-------------------|
-| **Layout-aware PDF parsing** | `PyMuPDF4LLM` converts PDFs to clean Markdown preserving structure, tables, and formatting — far superior to raw text extraction |
-| **Bi-directional regex segmenter** | Intelligently splits judgments into Header/Body/Operative sections using 37+ legal trigger patterns specific to Indian HC judgments |
-| **4 specialized LLM agents** | Each agent receives only its relevant section with a strict Pydantic schema, reducing hallucination and improving field-level accuracy |
-| **Open-source LLM strategy** | Fast models for structured metadata extraction; larger models for complex legal reasoning — fully swappable with self-hosted alternatives |
-| **Source location annotation** | PyMuPDF spatial search maps each extracted directive back to its exact page/coordinates in the PDF for verification |
-| **Confidence scoring** | Each extraction carries an `extraction_confidence` score; the classifier reports confidence levels for risk assessment |
-| **Fallback chains** | Every LLM call has retry logic with automatic fallback ensuring extraction never fails silently |
+| Technique | How NyayaDrishti achieves it |
+|---|---|
+| **Layout-aware PDF parsing** | `PyMuPDF4LLM` produces clean Markdown preserving structure, tables, and reading order — far superior to raw text extraction |
+| **Bi-directional regex segmenter** | 37+ legal trigger patterns specific to Indian HC judgments; bidirectional scan ensures no reasoning is lost at boundaries |
+| **4 specialized LLM agents** | Each agent gets only its section + a strict Pydantic schema. Single-responsibility prompts reduce hallucination |
+| **Cost-shaped LLM cascade** | Cheap 8B model for simple header parsing; strong 70B for reasoning-heavy facts/issues/operative agents |
+| **Source highlighting** | PyMuPDF block-level resolution maps each directive to its **full paragraph** in the PDF for visual verification |
+| **Fallback chains** | Every LLM call has retry + provider fallback. NVIDIA NIM → OpenRouter; OpenRouter → NVIDIA NIM as needed |
+| **Per-case anti-hallucination enrichment** | Gemini 2.5 Pro with explicit prompt guardrails against fabricating form numbers / codes / deadlines |
+| **SHA-256 dedup** | Same PDF uploaded twice short-circuits to the existing case — no spurious re-extraction |
 
 ### 2. Quality of Action Plan Generation
 
-| Technique | How We Achieve It |
-|-----------|-------------------|
-| **Hybrid RAG retrieval** | BM25 (sparse) + **InLegalBERT** (dense) + Reciprocal Rank Fusion + Cross-Encoder reranking — 4-stage retrieval for maximum relevance |
-| **431K+ chunk corpus** | Pre-embedded Supreme Court judgments (20 years) provide statistical grounding for precedent matching |
-| **DuckDB analytics** | Instant SQL queries over parquet files compute real win-rate statistics (allowed/dismissed/partly allowed rates) |
-| **Dual pipeline modes** | Single-agent (default, low compute) and 4-agent adversarial mode (for government on-premise servers) — both produce APPEAL/COMPLY with full reasoning |
-| **Deterministic rules engine** | Limitation Act §4, §12 deadline computation with court calendar holiday awareness — no LLM guesswork for legal deadlines |
-| **Court hierarchy logic** | Automatic detection of correct appellate forum (Single Judge → Division Bench → Supreme Court) based on case type and bench composition |
-| **Contempt risk classification** | Deterministic keyword classifier — 22 High-risk phrases + 14 Medium-risk phrases matched against the operative order text |
-| **Result caching** | Full recommendation JSON cached in `full_rag_recommendation` field — no redundant LLM calls on revisit |
+| Technique | How NyayaDrishti achieves it |
+|---|---|
+| **Hybrid RAG retrieval** | BM25 + InLegalBERT + RRF + cross-encoder rerank — 4-stage retrieval for max relevance |
+| **431K-chunk corpus** | Pre-embedded SC judgments (20 years) provide statistical grounding |
+| **DuckDB analytics** | Real win-rate statistics over parquet (allowed/dismissed/partly allowed rates) |
+| **Government-perspective enricher** | Per-directive implementation steps + actor classification — directly answers "what does my dept do?" |
+| **Karnataka-specific routing rules** | Dept classifier prompt encodes state-specific knowledge (GST→FINANCE, KPTCL→ENERGY, etc.) |
+| **Single- + 4-agent recommendation** | Cheap default mode + adversarial mode for on-premise servers |
+| **Deterministic rules engine** | Limitation Act §4/§12 + court holiday calendar → never trust the LLM for date math |
+| **Court hierarchy logic** | Automatic appellate forum detection (Single Judge → Division Bench → SC) |
+| **Result caching** | `full_rag_recommendation` JSON cache — revisits skip LLM re-run |
 
 ### 3. Effectiveness of Human Verification
 
-| Feature | How We Achieve It |
-|---------|-------------------|
-| **Side-by-side PDF viewer** | `react-pdf` renders the original judgment alongside extracted data for visual cross-referencing |
-| **Source highlighting** | Each directive links to its exact page and bounding box in the PDF via PyMuPDF spatial annotations |
-| **Confidence indicators** | Extraction confidence and contempt risk levels are prominently displayed for reviewer attention |
-| **Approve/Edit/Reject workflow** | Each action item can be individually verified; only approved records proceed to the dashboard |
-| **Multi-level review chain** | `ReviewLog` model supports L1/L2 review levels with full audit trail (reviewer, timestamp, notes) |
-| **Verification status tracking** | `verification_status` field on ActionPlan ensures only human-approved data reaches decision-makers |
+| Feature | How NyayaDrishti achieves it |
+|---|---|
+| **Side-by-side PDF viewer** | `react-pdf` renders original judgment alongside extracted data |
+| **Full-paragraph source highlighting** | PyMuPDF block resolution — every line of the directive's paragraph is highlighted, not just one phrase |
+| **Explicit Show-in-PDF button** | Card click highlights without scrolling; explicit button triggers the jump |
+| **Auto-collapse sidebar in Verify tab** | Maximises horizontal space for the PDF viewer |
+| **Editable AI action plans** | HLC can rewrite the AI's govt summary + implementation steps inline |
+| **Government Perspective Panel** | Green-bordered card per directive shows actor type + steps; muted card for non-gov informational items |
+| **Per-directive verified flag** | HLC ticks each directive individually; only ticked items reach LCO Execution |
+| **Server-side role enforcement** | Backend 403s non-HLC writes — UI gating is cosmetic, not the security boundary |
+| **Multi-level review chain** | `ReviewLog` with L1/L2 review levels, audit trail (reviewer, timestamp, notes, action) |
 
 ### 4. Clarity and Usability of Dashboard
 
-| Feature | How We Achieve It |
-|---------|-------------------|
-| **Premium glassmorphism UI** | Dark theme with backdrop blur, gradient accents, and smooth Framer Motion animations |
-| **Live database-driven stats** | Dashboard fetches real case data — total cases, pending review, high-risk count, upcoming deadlines |
-| **30-day deadline heatmap** | Visual calendar showing deadline density from actual compliance/appeal dates |
-| **Risk board** | Priority-sorted cases by contempt risk and days remaining |
-| **Collapsible sidebar** | Hamburger toggle with smooth 280px → 72px animation for maximum content area |
-| **Role-based access** | User model with Reviewer, Dept Officer, Dept Head, Legal Advisor roles |
-| **Responsive design** | Grid layouts with breakpoints for desktop, tablet, and mobile views |
-| **JWT authentication** | Secure token-based auth with automatic token refresh |
+| Feature | How NyayaDrishti achieves it |
+|---|---|
+| **Material 3 glassmorphism** | Dark theme with `glass-card` surfaces, blue accents, smooth Framer Motion transitions |
+| **Role-based default landing** | LCO → Execution, Nodal → Deadlines, Central Law → 48-tile grid, HLC → Dashboard |
+| **Live database-driven stats** | Real-time totals, pending review, high-risk count, upcoming deadlines |
+| **30-day deadline heatmap** | Visual calendar from actual compliance/appeal dates |
+| **Risk board** | Priority-sorted by contempt risk + days remaining |
+| **Department drill-down** | Click any of the 48 tiles → filtered case list with breadcrumb chip |
+| **Government-of-Karnataka branding** | State crest in sidebar, official tagline |
+| **Responsive layouts** | Phone / tablet / desktop breakpoints throughout |
 
 ---
 
-## API Endpoints
+## License & Team
 
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| `POST` | `/api/auth/register/` | User registration |
-| `POST` | `/api/auth/login/` | JWT login (returns access + refresh tokens) |
-| `GET` | `/api/cases/` | List all cases |
-| `POST` | `/api/cases/extract/` | Upload PDF → trigger full extraction pipeline |
-| `GET` | `/api/cases/{uuid}/` | Case detail with judgments and action plans |
-| `GET` | `/api/cases/{uuid}/status/` | Processing status of a case |
-| `GET` | `/api/cases/{uuid}/action-plan/` | Get action plan for a case |
-| `POST` | `/api/cases/action-plans/{id}/review/` | Submit human review (approve/edit/reject) |
-| `POST` | `/api/action-plans/recommend/` | Trigger recommendation pipeline |
-| `POST` | `/api/cases/{case}/judgments/{judgment}/appeal-strategy/` | Generate appeal strategy |
-| `GET` | `/api/cases/judgments/{uuid}/pdf/` | Serve judgment PDF |
+Built for the **Centre for e-Governance Hackathon — Theme 11**: Court Judgments to Verified Action Plans.
+
+License: **MIT**.
+
+External datasets:
+- **InLegalBERT**: Apache 2.0 (HuggingFace `law-ai/InLegalBERT`)
+- **NyayaDrishti RAG data**: [Harsh2005/nyaya-drishti-data](https://huggingface.co/datasets/Harsh2005/nyaya-drishti-data) — derived from publicly-available Supreme Court judgments
 
 ---
 
-## ML Models Used
+<div align="center">
 
-| Model | Source | Purpose | Runs On |
-|-------|--------|---------|---------| 
-| **Open-source LLM (fast)** | Cloud API or self-hosted | Structured extraction (Agents 1 & 4) | Cloud API / Local |
-| **Open-source LLM (large)** | Cloud API or self-hosted | Complex legal reasoning (Agents 2 & 3) | Cloud API / Local |
-| **InLegalBERT** | `law-ai/InLegalBERT` (HuggingFace) | Legal embeddings (768-dim), trained on 5.4M Indian legal docs | Local (CPU/GPU) |
-| **Keyword Classifier** | Custom rule-based | Contempt risk classification (22 high-risk + 14 medium-risk legal phrases) | Local (no GPU needed) |
-| **Cross-Encoder (open-source)** | HuggingFace | Cross-encoder reranking for RAG | Local (CPU) |
-| **BM25Okapi** | `rank-bm25` | Sparse keyword retrieval | Local (CPU) |
+**Built for the Government of Karnataka — Centre for e-Governance**
 
----
-
-## Team
-
-Built for the **Centre for e-Governance Hackathon** — Theme 11: Court Judgments to Verified Action Plans.
-
----
-
-## License
-
-This project is licensed under the MIT License.
+</div>
