@@ -332,13 +332,28 @@ def _sanitize_party_type(val) -> str:
         return ""
     return str(val).strip()
 
-def _safe_str(val) -> str:
-    """Helper to handle if LLM returns a list for a string field."""
+def _safe_str(val, max_len: int | None = None) -> str:
+    """Coerce an LLM-returned value to a string and (optionally) truncate.
+
+    The LLM occasionally returns a list, dict, or a verbose schema-fragment in
+    a field we expect to be a short string (e.g. case_type). When written to a
+    Postgres CharField with a max_length, that overflow raises
+    DataError: value too long for type character varying(N). Pass max_len to
+    clip safely before save.
+    """
     if isinstance(val, list):
-        return ", ".join(str(v) for v in val)
-    if val is None:
-        return ""
-    return str(val).strip()
+        out = ", ".join(str(v) for v in val if v)
+    elif isinstance(val, dict):
+        # LLM sometimes nests a dict where a string was expected — flatten to
+        # a comma-joined "k=v" so we keep readable signal without crashing.
+        out = ", ".join(f"{k}={v}" for k, v in val.items() if v) or ""
+    elif val is None:
+        out = ""
+    else:
+        out = str(val).strip()
+    if max_len and len(out) > max_len:
+        out = out[: max_len - 1].rstrip()
+    return out
 
 # ==============================================================================
 # Extraction Service (4 Agents)
@@ -554,10 +569,11 @@ def extract_structured_data(
                 if year_match:
                     judgment.date_of_order = f"{year_match.group()}-01-01"
 
-        doc_type = _safe_str(h.get("document_type", ""))
+        # Judgment.document_type is CharField(max_length=50); appeal_type is 30.
+        doc_type = _safe_str(h.get("document_type", ""), max_len=50)
         if doc_type: judgment.document_type = doc_type
 
-        appeal_type = _safe_str(h.get("appeal_type", "none")).lower()
+        appeal_type = _safe_str(h.get("appeal_type", "none"), max_len=30).lower()
         if appeal_type: judgment.appeal_type = appeal_type
 
         extracted_case_number = _safe_str(h.get("case_number", ""))
@@ -582,12 +598,15 @@ def extract_structured_data(
                 old_case.delete()
 
         if extracted_case_number:
-            case.case_number = extracted_case_number
+            # Case.case_number is CharField(max_length=255)
+            case.case_number = _safe_str(extracted_case_number, max_len=255)
 
-        case.court_name = _safe_str(h.get("court_name", case.court_name))
-        case.case_type = _safe_str(h.get("case_type", case.case_type))
-        case.petitioner_name = _safe_str(h.get("petitioner_name", ""))
-        case.respondent_name = _safe_str(h.get("respondent_name", ""))
+        # CharField max_length values mirror Case model field definitions —
+        # any LLM-supplied string is clipped to fit Postgres column bounds.
+        case.court_name = _safe_str(h.get("court_name", case.court_name), max_len=200)
+        case.case_type = _safe_str(h.get("case_type", case.case_type), max_len=100)
+        case.petitioner_name = _safe_str(h.get("petitioner_name", ""))  # TextField, no clip needed
+        case.respondent_name = _safe_str(h.get("respondent_name", ""))  # TextField
         case.save()
 
     # Analyst (Agent 2)
@@ -601,9 +620,10 @@ def extract_structured_data(
         s = extracted_data["scholar"]
         judgment.ratio_decidendi = s.get("ratio_decidendi", "")
         
-        # Area of law & Statute are now extracted by the Scholar (Agent 3)
-        case.area_of_law = _safe_str(s.get("area_of_law", ""))
-        case.primary_statute = _safe_str(s.get("primary_statute", ""))
+        # Area of law & Statute are extracted by the Scholar (Agent 3)
+        # Case.area_of_law is CharField(max_length=100); primary_statute is 300.
+        case.area_of_law = _safe_str(s.get("area_of_law", ""), max_len=100)
+        case.primary_statute = _safe_str(s.get("primary_statute", ""), max_len=300)
         case.save()
 
     # Compliance (Agent 4)
@@ -614,12 +634,18 @@ def extract_structured_data(
             print("  [Extractor] Detected schema-wrapped compliance response, unwrapping from 'properties'...")
             c = c.get("properties", c)
         judgment.court_directions = c.get("court_directions", [])
-        judgment.disposition = _sanitize_disposition(c.get("disposition", ""))
-        judgment.winning_party_type = _sanitize_party_type(c.get("winning_party_type", ""))
+        # Judgment CharField clip lengths from models.py: disposition=30,
+        # winning_party_type=30, contempt_risk=20. operative_order_text is
+        # TextField so no clip needed.
+        judgment.disposition = _safe_str(
+            _sanitize_disposition(c.get("disposition", "")), max_len=30
+        )
+        judgment.winning_party_type = _safe_str(
+            _sanitize_party_type(c.get("winning_party_type", "")), max_len=30
+        )
         judgment.contempt_indicators = c.get("contempt_indicators", [])
-        judgment.contempt_risk = c.get("contempt_risk", "Low")
+        judgment.contempt_risk = _safe_str(c.get("contempt_risk", "Low"), max_len=20)
         judgment.financial_implications = c.get("financial_implications", [])
-        # Save full operative order summary
         judgment.operative_order_text = c.get("operative_order_summary", "")
 
     # Entities Merging

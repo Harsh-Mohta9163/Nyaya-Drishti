@@ -1,40 +1,33 @@
-"""Reset every approved ActionPlan's deadlines to today + N days.
+"""Reset every ActionPlan's deadlines to today + N days.
 
-Use this just before a demo so nothing shows as overdue on stage. Idempotent —
-running it twice is fine. Also flips status to "approved" for ALL existing
-ActionPlans so the LCO / Nodal / Execution tabs have visible data.
+Use this before a demo so nothing shows as overdue on stage. Idempotent —
+running it twice is fine. By default also flips status to "approved" for ALL
+existing ActionPlans so the LCO / Nodal / Execution tabs have visible data.
 
 Usage:
     python manage.py refresh_demo_deadlines
     python manage.py refresh_demo_deadlines --no-approve   # leave verification_status alone
+
+The deadline math + cache patching live in
+`apps/action_plans/services/demo_helpers.py` so the same logic is reused by
+the upload pipeline (CaseExtractView) and by this CLI command.
 """
-from datetime import date, timedelta
+from datetime import date
 
 from django.core.management.base import BaseCommand
 
 from apps.action_plans.models import ActionPlan
-
-
-# Spread the deadlines so the Deadlines monitor shows the full urgency spectrum:
-# one row in "critical" (≤3d), one in "warning" (≤14d), rest "safe".
-DEADLINE_PROFILES = [
-    # (internal_compliance, compliance, internal_appeal, statutory_appeal)
-    (2, 14, 8, 22),    # critical-warning mix
-    (7, 21, 16, 30),   # warning mix
-    (12, 28, 22, 40),  # warning -> safe
-    (20, 45, 30, 60),  # safe
-    (28, 60, 45, 90),  # very safe
-]
+from apps.action_plans.services.demo_helpers import apply_demo_deadlines
 
 
 class Command(BaseCommand):
-    help = "Reset all approved ActionPlan deadlines so nothing shows as overdue on demo day."
+    help = "Reset all ActionPlan deadlines so nothing shows as overdue on demo day."
 
     def add_arguments(self, parser):
         parser.add_argument(
             "--no-approve",
             action="store_true",
-            help="Skip auto-approving plans; only refresh existing approved ones.",
+            help="Skip auto-approving plans; only refresh the deadlines.",
         )
 
     def handle(self, *args, no_approve=False, **options):
@@ -46,36 +39,20 @@ class Command(BaseCommand):
         refreshed = 0
         approved_count = 0
         for idx, plan in enumerate(qs):
-            ic, c, ia, sa = DEADLINE_PROFILES[idx % len(DEADLINE_PROFILES)]
-            plan.internal_compliance_deadline = today + timedelta(days=ic)
-            plan.compliance_deadline = today + timedelta(days=c)
-            plan.internal_appeal_deadline = today + timedelta(days=ia)
-            plan.statutory_appeal_deadline = today + timedelta(days=sa)
-            if not plan.statutory_period_type:
-                plan.statutory_period_type = "writ_appeal (30d)"
-            if not plan.recommendation or plan.recommendation == "PENDING":
-                plan.recommendation = "APPEAL" if idx % 2 == 0 else "COMPLY"
-            if not no_approve and not plan.verification_status.startswith("approved"):
-                plan.verification_status = "approved"
+            summary = apply_demo_deadlines(
+                plan,
+                profile_idx=idx,  # spread across the 5 profiles in stable order
+                today=today,
+                auto_approve=not no_approve,
+            )
+            if summary["did_approve"]:
                 approved_count += 1
-
-            # Also patch any date strings cached inside the recommendation JSON
-            # so the Dashboard / CaseOverview don't display stale "overdue" badges.
-            rec = plan.full_rag_recommendation or {}
-            verdict = rec.get("verdict") or {}
-            verdict["limitation_deadline"] = plan.statutory_appeal_deadline.isoformat()
-            verdict["compliance_deadline"] = plan.compliance_deadline.isoformat()
-            verdict["days_remaining"] = (plan.statutory_appeal_deadline - today).days
-            rec["verdict"] = verdict
-            plan.full_rag_recommendation = rec
-
-            plan.save()
             refreshed += 1
             self.stdout.write(
                 f"  {plan.judgment.case.case_number[:45]:48} "
-                f"-> internal={plan.internal_compliance_deadline} "
-                f"compliance={plan.compliance_deadline} "
-                f"appeal={plan.statutory_appeal_deadline}"
+                f"-> internal={summary['internal_compliance']} "
+                f"compliance={summary['compliance']} "
+                f"appeal={summary['statutory_appeal']}"
             )
 
         self.stdout.write(self.style.SUCCESS(

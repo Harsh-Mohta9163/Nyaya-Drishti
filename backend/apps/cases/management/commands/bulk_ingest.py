@@ -185,9 +185,32 @@ class Command(BaseCommand):
                             f"  dept retry failed: {dept_err}"
                         ))
 
+                # ── Demo deadlines + ActionPlan creation ──────────────────
+                # Matches CaseExtractView so bulk-ingested cases are demo-ready
+                # without needing a separate `refresh_demo_deadlines` run.
+                # auto_approve=True so the LCO Execution filter (which gates
+                # on plan-level "approved" status) surfaces ticked directives.
+                try:
+                    from apps.action_plans.services.demo_helpers import ensure_demo_plan
+                    plan, summary = ensure_demo_plan(case, auto_approve=True)
+                    if plan and summary:
+                        self.stdout.write(
+                            f"  demo deadlines: internal={summary['internal_compliance']} "
+                            f"compliance={summary['compliance']} "
+                            f"appeal={summary['statutory_appeal']} "
+                            f"did_approve={summary['did_approve']}"
+                        )
+                except Exception as deadline_err:
+                    self.stdout.write(self.style.WARNING(
+                        f"  demo deadline application failed: {deadline_err}"
+                    ))
+
+                # Use update_fields so we don't overwrite the freshly-enriched
+                # court_directions written by enrich_case_directives via a
+                # fresh judgment instance fetched from case.judgments.first().
                 if judgment.processing_status not in ("failed",):
                     judgment.processing_status = "complete"
-                    judgment.save()
+                    judgment.save(update_fields=["processing_status", "updated_at"])
 
                 primary = case.primary_department.code if case.primary_department else "<none>"
                 self.stdout.write(self.style.SUCCESS(

@@ -171,8 +171,9 @@ def classify(case_text: str, entities: list, parties: tuple) -> dict:
     try:
         from apps.cases.services.extractor import _call_agent_70b
         result = _call_agent_70b(prompt, DeptClassification, temperature=0.0)
-        primary = (result.get("primary_code") or "").strip().upper()
-        secondary = [str(c).strip().upper() for c in (result.get("secondary_codes") or [])]
+        raw_primary = result.get("primary_code") or ""
+        primary = (raw_primary.strip().upper() if isinstance(raw_primary, str) else "")
+        secondary = [str(c).strip().upper() for c in (result.get("secondary_codes") or []) if c]
         rationale = result.get("rationale", "")
 
         if primary not in valid_codes:

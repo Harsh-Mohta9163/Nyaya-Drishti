@@ -203,7 +203,12 @@ def _annotate_source_locations(pdf_path: str, directions: list[dict]) -> list[di
 
     try:
         for direction in directions:
-            text = (direction.get("text") or direction.get("description") or "").strip()
+            # Defensive: Agent 4 sometimes returns a dict where a string is
+            # expected (Pydantic schema is prompt-side only, not validated on
+            # the response). Coerce non-string values to empty so the upload
+            # doesn't crash — that directive simply gets no source highlight.
+            raw_text = direction.get("text") or direction.get("description") or ""
+            text = raw_text.strip() if isinstance(raw_text, str) else ""
             if not text:
                 direction["source_location"] = None
                 continue
@@ -463,21 +468,58 @@ class CaseExtractView(APIView):
                 judgment.court_directions = _annotate_source_locations(pdf_path, judgment.court_directions)
                 judgment.save()
 
-            # Second-pass enrichment: classify each directive as government
-            # action vs informational + generate implementation steps. Failure
-            # here is non-fatal — the user still gets the verbatim directives.
+            # ── Second-pass enrichment ─────────────────────────────────────
+            # Classify each directive as government-action vs informational
+            # and generate implementation steps. Failure here is non-fatal —
+            # the user still gets the verbatim directives.
             try:
                 from apps.cases.services.directive_enricher import enrich_case_directives
-                enrich_case_directives(case)
+                enrich_result = enrich_case_directives(case)
+                print(
+                    f"  [Enrichment] case={case.case_number[:40]} "
+                    f"updated={enrich_result.get('updated', 0)} "
+                    f"method={enrich_result.get('method', '?')}"
+                )
             except Exception as enrich_err:
                 logging.getLogger(__name__).warning(
                     "Directive enrichment failed for case %s: %s", case.id, enrich_err
                 )
+                print(f"  [Enrichment] FAILED for case {case.case_number[:40]}: {enrich_err}")
 
-            # Ensure status is set (extractor sets "completed", normalize to "complete")
+            # ── Auto-create ActionPlan + demo deadlines ───────────────────
+            # For the demo, the deadlines must land in the future even though
+            # the source PDFs are historical judgments. The shared helper
+            # creates an ActionPlan with the demo deadline profile and
+            # auto-approves it so the LCO Execution view filter (which
+            # requires verification_status startswith "approved") will surface
+            # any per-directive isVerified ticks the HLC makes — consistent
+            # with how the seeded demo cases behave. The per-directive
+            # isVerified checkbox remains the HLC's real verification gate.
+            try:
+                from apps.action_plans.services.demo_helpers import ensure_demo_plan
+                plan, summary = ensure_demo_plan(case, auto_approve=True)
+                if plan and summary:
+                    print(
+                        f"  [DemoDeadlines] case={case.case_number[:40]} "
+                        f"internal={summary['internal_compliance']} "
+                        f"compliance={summary['compliance']} "
+                        f"appeal={summary['statutory_appeal']} "
+                        f"did_approve={summary['did_approve']}"
+                    )
+            except Exception as deadline_err:
+                logging.getLogger(__name__).warning(
+                    "Demo deadline application failed for case %s: %s",
+                    case.id, deadline_err,
+                )
+
+            # Ensure status is set (extractor sets "completed", normalize to "complete").
+            # CRITICAL: use update_fields so we DON'T overwrite court_directions —
+            # enrich_case_directives() above wrote to court_directions via a
+            # fresh judgment instance, but our local `judgment` variable is
+            # stale and would clobber that enrichment if we did a full save().
             if judgment.processing_status not in ("failed",):
                 judgment.processing_status = "complete"
-                judgment.save()
+                judgment.save(update_fields=["processing_status", "updated_at"])
 
             return Response(CaseSerializer(case).data, status=status.HTTP_201_CREATED)
 
@@ -486,7 +528,9 @@ class CaseExtractView(APIView):
             tb = traceback.format_exc()
             logging.getLogger(__name__).error(f"Extraction failed for judgment {judgment.id}:\n{tb}")
             judgment.processing_status = "failed"
-            judgment.save()
+            # update_fields keeps us from clobbering any partial extraction
+            # that did succeed before the error point.
+            judgment.save(update_fields=["processing_status", "updated_at"])
             # Include the exception class + traceback summary so the frontend
             # surfaces something actionable instead of a generic 500.
             return Response(

@@ -184,18 +184,29 @@ def _build_prompt(case_meta: dict, directives: list[dict]) -> str:
         f"DIRECTIVES TO ENRICH ({len(directives)} total — preserve order):",
     ]
 
+    # Defensive: Agent 4's LLM output isn't Pydantic-validated, so any field
+    # could come back as the wrong type (dict / list / None). _s() coerces
+    # anything non-string to a safe empty string so we never crash here.
+    def _s(v) -> str:
+        if isinstance(v, str):
+            return v
+        if isinstance(v, list):
+            return ", ".join(str(x) for x in v if x)
+        return ""
+
     for i, d in enumerate(directives):
+        if not isinstance(d, dict):
+            continue
         text = (
-            d.get("description")
-            or d.get("text")
-            or d.get("sourceText")
-            or d.get("title")
-            or ""
+            _s(d.get("description"))
+            or _s(d.get("text"))
+            or _s(d.get("sourceText"))
+            or _s(d.get("title"))
         )
-        action = d.get("action_required", "")
-        entity = d.get("responsible_entity") or d.get("source") or ""
-        deadline = d.get("deadline_mentioned") or d.get("dueDate") or ""
-        money = d.get("financial_details") or d.get("financialDetails") or ""
+        action = _s(d.get("action_required"))
+        entity = _s(d.get("responsible_entity")) or _s(d.get("source"))
+        deadline = _s(d.get("deadline_mentioned")) or _s(d.get("dueDate"))
+        money = _s(d.get("financial_details")) or _s(d.get("financialDetails"))
 
         lines.append(f"\n[{i}]")
         if entity:

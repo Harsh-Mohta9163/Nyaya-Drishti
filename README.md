@@ -859,15 +859,38 @@ python manage.py refresh_demo_deadlines
 
 
 
+### What runs automatically on every upload
+
+Every PDF you upload through the UI (or `bulk_ingest` CLI) now triggers the
+full demo-ready pipeline — no follow-up commands needed:
+
+```
+1. SHA-256 hash dedup
+2. PyMuPDF4LLM → Markdown + bi-directional section segmentation
+3. 4-agent extraction
+4. Department classification + auto-routing
+5. PyMuPDF source-paragraph annotation
+6. Directive enrichment (Gemini 2.5 Pro)            ← auto
+7. ActionPlan get_or_create + demo deadlines        ← auto (today + N)
+   (verification_status stays PENDING — HLC still verifies on stage)
+```
+
+Each step logs its outcome to the server console (`[Enrichment] case=… method=llm_gemini`,
+`[DemoDeadlines] case=… compliance=2026-06-12 …`) so silent failures are visible.
+
 ### Resetting between rehearsals
 
 If a rehearsal leaves the DB messy:
 
 ```bash
-# Wipe approved status + re-set deadlines (keeps cases)
+# Refresh deadlines on ALL existing plans + auto-approve them
+# (use this when you want the LCO/Nodal tabs immediately populated)
 python manage.py refresh_demo_deadlines
 
-# Re-enrich existing directives (if you've updated the prompt)
+# Same as above but keep verification_status untouched
+python manage.py refresh_demo_deadlines --no-approve
+
+# Re-enrich existing directives (only needed if you've tweaked the enricher prompt)
 python manage.py enrich_directives --force
 
 # Nuke everything and start fresh (drops DB)
