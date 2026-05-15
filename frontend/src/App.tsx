@@ -331,11 +331,18 @@ function MainApp() {
               transition={{ duration: 0.3 }}
               className="px-4 sm:px-6 lg:px-10"
             >
-              <CentralLawView onSelectDepartment={(deptCode) => {
-                setCaseListDeptFilter(deptCode);
-                setSelectedCaseId(null);
-                setCurrentView('cases');
-              }} />
+              <CentralLawView
+                onSelectDepartment={(deptCode) => {
+                  setCaseListDeptFilter(deptCode);
+                  setSelectedCaseId(null);
+                  setCurrentView('cases');
+                }}
+                onNavigate={(view) => {
+                  setCaseListDeptFilter(null);
+                  setSelectedCaseId(null);
+                  setCurrentView(view);
+                }}
+              />
             </motion.div>
           ) : currentView === 'execution' ? (
             <motion.div

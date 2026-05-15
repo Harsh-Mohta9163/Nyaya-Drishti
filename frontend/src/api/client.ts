@@ -219,6 +219,17 @@ export async function fetchByDepartmentDashboard(): Promise<DeptDashboardRow[]> 
   return apiGet<DeptDashboardRow[]>('/api/dashboard/by-department/');
 }
 
+export interface DashboardStats {
+  total_cases: number;
+  pending_review: number;
+  high_risk: number;
+  upcoming_deadlines_7d: number;
+}
+
+export async function fetchDashboardStats(): Promise<DashboardStats> {
+  return apiGet<DashboardStats>('/api/dashboard/stats/');
+}
+
 export async function updateCaseDepartment(
   caseId: string,
   primaryCode: string,
