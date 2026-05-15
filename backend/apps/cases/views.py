@@ -367,12 +367,30 @@ class JudgmentUpdateView(RetrieveUpdateAPIView):
         # If the frontend is setting a final decision (comply/appeal),
         # auto-approve the action plan so it reaches the LCO / Nodal dashboards.
         appeal_type = self.request.data.get("appeal_type")
-        if appeal_type and appeal_type != "none":
-            from apps.action_plans.models import ActionPlan
-            action_plan = ActionPlan.objects.filter(judgment=judgment).first()
-            if action_plan and not action_plan.verification_status.startswith("approved"):
+        
+        from apps.action_plans.models import ActionPlan
+        action_plan = ActionPlan.objects.filter(judgment=judgment).first()
+        
+        if action_plan:
+            # 1. If final decision is undone, or changed to none, revert to pending
+            if appeal_type == "none":
+                action_plan.verification_status = "pending"
+                action_plan.save(update_fields=["verification_status"])
+            
+            # 2. If a decision is made, approve it
+            elif appeal_type and appeal_type != "none":
                 action_plan.verification_status = "approved"
                 action_plan.save(update_fields=["verification_status"])
+                
+            # 3. Check if all directives became unverified
+            if judgment.court_directions:
+                has_verified = any(d.get("isVerified") for d in judgment.court_directions if isinstance(d, dict))
+                if not has_verified and action_plan.verification_status.startswith("approved"):
+                    action_plan.verification_status = "pending"
+                    action_plan.save(update_fields=["verification_status"])
+                    # Also revert the appeal type if we drop approval due to no verified directives
+                    judgment.appeal_type = "none"
+                    judgment.save(update_fields=["appeal_type"])
 
 class CaseExtractView(APIView):
     """
