@@ -288,7 +288,7 @@ class LCOExecutionListView(APIView):
                     d = directions[e.directive_index]
                     if not isinstance(d, dict):
                         continue
-                    if d.get("gov_action_required") is not True:
+                    if d.get("gov_action_required") is False:
                         continue
                     if not d.get("isVerified"):
                         continue
