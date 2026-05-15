@@ -51,7 +51,7 @@ const PDF_RENDER_WIDTH = 580;
 
 // ─── ActionItem ─────────────────────────────────────────────────────────────────
 
-type EditPatch = { description?: string; govtSummary?: string; implementationSteps?: string[] };
+type EditPatch = { description?: string; govtSummary?: string; implementationSteps?: string[]; dueDate?: string };
 
 const ActionItem: React.FC<{
   action: ActionData;
@@ -76,6 +76,7 @@ const ActionItem: React.FC<{
   const [editedDescription, setEditedDescription] = useState(action.description);
   const [editedSummary, setEditedSummary] = useState(action.govtSummary || '');
   const [editedSteps, setEditedSteps] = useState<string[]>(action.implementationSteps || []);
+  const [editedDueDate, setEditedDueDate] = useState(action.dueDate || '');
 
   // Keep edit form in sync when the source action changes from above
   // (e.g. after a backend save round-trip).
@@ -83,13 +84,15 @@ const ActionItem: React.FC<{
     setEditedDescription(action.description);
     setEditedSummary(action.govtSummary || '');
     setEditedSteps(action.implementationSteps || []);
-  }, [action.id, action.description, action.govtSummary, action.implementationSteps]);
+    setEditedDueDate(action.dueDate || '');
+  }, [action.id, action.description, action.govtSummary, action.implementationSteps, action.dueDate]);
 
   const handleSave = () => {
     onEdit(action.id, {
       description: editedDescription,
       govtSummary: editedSummary,
       implementationSteps: editedSteps.filter(s => s.trim().length > 0),
+      dueDate: editedDueDate,
     });
     setIsEditing(false);
   };
@@ -232,6 +235,20 @@ const ActionItem: React.FC<{
               </button>
             </div>
 
+            {/* Due date */}
+            <div className="space-y-1">
+              <label className="text-[10px] font-bold uppercase tracking-widest text-on-surface-variant/80">
+                Due Date / Timeline
+              </label>
+              <input
+                type="text"
+                value={editedDueDate}
+                onChange={e => setEditedDueDate(e.target.value)}
+                placeholder="e.g. within three weeks, 30 Jun 2026"
+                className="w-full bg-surface-dim/80 border border-outline-variant/40 rounded-lg px-3 py-2 text-[13px] text-on-surface focus:outline-none focus:ring-1 focus:ring-primary-blue/50"
+              />
+            </div>
+
             <div className="flex justify-end gap-2 pt-1">
               <button
                 onClick={() => {
@@ -239,6 +256,7 @@ const ActionItem: React.FC<{
                   setEditedDescription(action.description);
                   setEditedSummary(action.govtSummary || '');
                   setEditedSteps(action.implementationSteps || []);
+                  setEditedDueDate(action.dueDate || '');
                 }}
                 className="px-4 py-1.5 text-on-surface-variant hover:text-on-surface text-[11px] font-bold rounded-lg uppercase tracking-wider"
               >
