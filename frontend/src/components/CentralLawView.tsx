@@ -563,81 +563,7 @@ function LeaguePanel({ execByDept, onSelectDept }: {
   );
 }
 
-function CoordinationPanel({ executions, deptRows, onSelectDept }: {
-  executions: DirectiveExecution[];
-  deptRows: DeptDashboardRow[];
-  onSelectDept: (code: string) => void;
-}) {
-  const crossCases = useMemo(() => {
-    const byCaseId = new Map<string, { caseId: string; caseNumber: string; depts: Map<string, { code: string; name: string; done: number; total: number; }> }>();
-    executions.forEach(e => {
-      if (!e.case_id) return;
-      const prev = byCaseId.get(e.case_id) || { caseId: e.case_id, caseNumber: e.case_number, depts: new Map() };
-      const code = e.department_code || 'UNKNOWN';
-      const deptPrev = prev.depts.get(code) || { code, name: e.department_name || code, done: 0, total: 0 };
-      deptPrev.total++;
-      if (e.status === 'completed') deptPrev.done++;
-      prev.depts.set(code, deptPrev);
-      byCaseId.set(e.case_id, prev);
-    });
-    return [...byCaseId.values()]
-      .filter(c => c.depts.size >= 2)
-      .slice(0, 6);
-  }, [executions]);
-
-  if (crossCases.length === 0) {
-    return (
-      <Card className="p-5 h-full flex flex-col">
-        <ZoneHeader title="Cross-dept coordination" sub="Multi-department case progress." />
-        <div className="flex-1 flex items-center justify-center">
-          <p className="text-on-surface-variant/50 text-sm">No multi-department cases.</p>
-        </div>
-      </Card>
-    );
-  }
-
-  return (
-    <Card className="p-5 h-full">
-      <ZoneHeader title="Cross-dept coordination lag" sub="Cases stalled by a lagging department." />
-      <div className="space-y-3 max-h-[360px] overflow-y-auto scrollbar-thin pr-1">
-        {crossCases.map(c => (
-          <div key={c.caseId}
-            className="rounded-lg border border-outline-variant/20 bg-white/[0.02] px-3 py-3 hover:bg-white/[0.04] cursor-pointer transition">
-            <div className="flex items-center justify-between mb-2.5">
-              <div>
-                <div className="text-[12px] font-medium text-on-surface">{c.caseNumber}</div>
-                <div className="text-[10.5px] text-on-surface-variant/50">{c.depts.size} departments involved</div>
-              </div>
-              <Icon name="arrow-right" className="w-3.5 h-3.5 text-on-surface-variant/40" />
-            </div>
-            <div className="space-y-1.5">
-              {[...c.depts.values()].map(dep => {
-                const pct = dep.total > 0 ? (dep.done / dep.total) * 100 : 0;
-                const isLagging = pct < 50 && dep.total > 0;
-                return (
-                  <div key={dep.code} className="grid grid-cols-12 items-center gap-2 text-[11px]">
-                    <span className={`col-span-3 truncate font-medium`}
-                      style={{ color: isLagging ? SEG.red : '#c2c6d6' }}>
-                      {dep.name.replace(' Department', '')}
-                    </span>
-                    <div className="col-span-6">
-                      <ProgressBar value={pct} color={pct >= 100 ? 'emerald' : isLagging ? 'red' : 'teal'} height={5} />
-                    </div>
-                    <span className="col-span-3 text-right tabular-nums text-on-surface-variant/60">
-                      {dep.done}/{dep.total}
-                    </span>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        ))}
-      </div>
-    </Card>
-  );
-}
-
-function Zone3({ execByDept, executions, deptRows, onSelectDept }: {
+function Zone3({ execByDept, onSelectDept }: {
   execByDept: Map<string, DeptExecStats>;
   executions: DirectiveExecution[];
   deptRows: DeptDashboardRow[];
@@ -646,9 +572,8 @@ function Zone3({ execByDept, executions, deptRows, onSelectDept }: {
   return (
     <section>
       <ZoneHeader title="Execution and coordination" size="section" />
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+      <div className="flex flex-col gap-3">
         <LeaguePanel execByDept={execByDept} onSelectDept={onSelectDept} />
-        <CoordinationPanel executions={executions} deptRows={deptRows} onSelectDept={onSelectDept} />
       </div>
     </section>
   );
