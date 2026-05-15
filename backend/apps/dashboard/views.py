@@ -53,17 +53,19 @@ class DashboardStatsView(APIView):
         action_plans = _scope_action_plans(user, ActionPlan.objects.all())
 
         total_cases = cases.count()
-        pending_review = cases.filter(status=Case.Status.PENDING).count()
+        pending_review = cases.exclude(
+            judgments__action_plan__verification_status__startswith="approved"
+        ).distinct().count()
 
         try:
-            high_risk = action_plans.filter(contempt_risk="High").count()
+            high_risk = action_plans.filter(judgment__contempt_risk="High").count()
         except Exception:
             high_risk = 0
 
         try:
             upcoming_7d = action_plans.filter(
-                legal_deadline__lte=seven_days,
-                legal_deadline__gte=now.date(),
+                compliance_deadline__lte=seven_days,
+                compliance_deadline__gte=now.date(),
             ).count()
         except Exception:
             upcoming_7d = 0
@@ -93,20 +95,20 @@ class DashboardDeadlinesView(APIView):
         plans = _scope_action_plans(
             request.user,
             ActionPlan.objects.select_related("judgment__case")
-            .filter(legal_deadline__lte=cutoff, legal_deadline__gte=timezone.now().date())
-            .order_by("legal_deadline"),
+            .filter(compliance_deadline__lte=cutoff, compliance_deadline__gte=timezone.now().date())
+            .order_by("compliance_deadline"),
         )
         data = []
         for plan in plans:
-            days_remaining = (plan.legal_deadline - timezone.now().date()).days
+            days_remaining = (plan.compliance_deadline - timezone.now().date()).days if plan.compliance_deadline else None
             case = plan.judgment.case if plan.judgment else None
             data.append({
                 "case_id": case.id if case else None,
                 "case_number": case.case_number if case else "",
                 "case_type": case.case_type if case else "",
-                "legal_deadline": plan.legal_deadline,
-                "internal_deadline": getattr(plan, "internal_deadline", None),
-                "contempt_risk": plan.contempt_risk,
+                "legal_deadline": plan.compliance_deadline,
+                "internal_deadline": getattr(plan, "internal_compliance_deadline", None),
+                "contempt_risk": plan.judgment.contempt_risk if plan.judgment else "Low",
                 "ccms_stage": plan.ccms_stage,
                 "days_remaining": days_remaining,
             })
@@ -120,14 +122,14 @@ class DashboardHighRiskView(APIView):
         plans = _scope_action_plans(
             request.user,
             ActionPlan.objects.select_related("judgment__case")
-            .filter(contempt_risk="High")
-            .order_by("legal_deadline"),
+            .filter(judgment__contempt_risk="High")
+            .order_by("compliance_deadline"),
         )
         data = []
         for plan in plans:
             days_remaining = (
-                (plan.legal_deadline - timezone.now().date()).days
-                if plan.legal_deadline else None
+                (plan.compliance_deadline - timezone.now().date()).days
+                if plan.compliance_deadline else None
             )
             case = plan.judgment.case if plan.judgment else None
             data.append({
@@ -135,8 +137,8 @@ class DashboardHighRiskView(APIView):
                 "case_number": case.case_number if case else "",
                 "court": case.court_name if case else "",
                 "petitioner": case.petitioner_name if case else "",
-                "contempt_risk": plan.contempt_risk,
-                "legal_deadline": plan.legal_deadline,
+                "contempt_risk": plan.judgment.contempt_risk if plan.judgment else "High",
+                "legal_deadline": plan.compliance_deadline,
                 "days_remaining": days_remaining,
                 "ccms_stage": plan.ccms_stage,
             })
@@ -247,26 +249,45 @@ class DashboardByDepartmentView(APIView):
         if user.role not in GLOBAL_ACCESS_ROLES:
             return Response({"error": "Central / monitoring access required."}, status=403)
 
-        # We aggregate from the Department side so departments with zero cases
-        # still appear in the tile grid (essential — Central Law dashboard
-        # shows all 48 even if some have no judgments yet).
         from apps.accounts.models import Department
-        rows = (
-            Department.objects.filter(is_active=True)
-            .annotate(
-                total_cases=Count("primary_cases", distinct=True),
-                high_risk=Count(
-                    "primary_cases__judgments",
-                    filter=Q(primary_cases__judgments__contempt_risk="High"),
-                    distinct=True,
-                ),
-                pending=Count(
-                    "primary_cases",
-                    filter=Q(primary_cases__status=Case.Status.PENDING),
-                    distinct=True,
-                ),
-            )
-            .order_by("sector", "name")
-            .values("id", "code", "name", "sector", "total_cases", "high_risk", "pending")
+        
+        departments = {
+            d.id: {
+                "id": d.id, "code": d.code, "name": d.name, "sector": d.sector,
+                "total_cases": 0, "high_risk": 0, "pending": 0
+            }
+            for d in Department.objects.filter(is_active=True)
+        }
+
+        cases = Case.objects.prefetch_related(
+            "judgments__action_plan",
+            "secondary_departments"
         )
-        return Response(list(rows))
+
+        for case in cases:
+            dept_ids = set()
+            if case.primary_department_id:
+                dept_ids.add(case.primary_department_id)
+            for sec_dept in case.secondary_departments.all():
+                dept_ids.add(sec_dept.id)
+
+            is_pending = True
+            has_high_risk = False
+            
+            for judgment in case.judgments.all():
+                if judgment.contempt_risk == "High":
+                    has_high_risk = True
+                # If ANY judgment has an approved action plan, the case is no longer "pending verify"
+                if hasattr(judgment, "action_plan") and judgment.action_plan.verification_status.startswith("approved"):
+                    is_pending = False
+                    
+            for d_id in dept_ids:
+                if d_id in departments:
+                    departments[d_id]["total_cases"] += 1
+                    if is_pending:
+                        departments[d_id]["pending"] += 1
+                    if has_high_risk:
+                        departments[d_id]["high_risk"] += 1
+
+        rows = sorted(departments.values(), key=lambda x: (x["sector"], x["name"]))
+        return Response(rows)

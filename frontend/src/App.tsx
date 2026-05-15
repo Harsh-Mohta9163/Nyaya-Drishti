@@ -88,8 +88,9 @@ function MainApp() {
         setSelectedCase(data);
         // Check if recommendation already exists in judgment's action_plan
         const judgment = data.judgments?.[0];
-        if (judgment?.action_plan?.full_rag_recommendation) {
-          setRecommendation(judgment.action_plan.full_rag_recommendation);
+        const rec = judgment?.action_plan?.full_rag_recommendation;
+        if (rec && (rec.verdict?.decision || rec.primary_reasoning)) {
+          setRecommendation(rec);
         } else {
           setRecommendation(null);
         }
