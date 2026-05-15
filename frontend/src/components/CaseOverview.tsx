@@ -451,22 +451,7 @@ export const CaseOverview = ({
                     </div>
                   </div>
                 </div>
-                {/* Urgency heatmap bar */}
-                <div className="mt-4">
-                  <div className="flex justify-between text-[8px] font-bold uppercase tracking-widest text-on-surface-variant mb-1">
-                    <span>Urgent</span><span>Safe</span>
-                  </div>
-                  <div className="h-2 rounded-full bg-surface-container-highest overflow-hidden">
-                    <div 
-                      className={`h-full rounded-full transition-all duration-1000 ${
-                        (recommendation.verdict.days_remaining || 0) <= 7 ? 'bg-gradient-to-r from-red-500 to-red-400' :
-                        (recommendation.verdict.days_remaining || 0) <= 30 ? 'bg-gradient-to-r from-amber-500 to-amber-400' :
-                        'bg-gradient-to-r from-green-500 to-green-400'
-                      }`}
-                      style={{ width: `${(recommendation.verdict.days_remaining ?? 0) < 0 ? 100 : Math.max(5, Math.min(100, 100 - ((recommendation.verdict.days_remaining || 0) / 90) * 100))}%` }}
-                    />
-                  </div>
-                </div>
+
               </div>
             )}
           </div>
@@ -789,16 +774,19 @@ export const CaseOverview = ({
                       {/* Card */}
                       <div className="rounded-xl border border-outline-variant/20 bg-surface-container-high/30 p-4 hover:border-outline-variant/40 hover:bg-surface-container-high/50 transition-all duration-150">
                         {/* Meta top row */}
-                        <div className="flex items-center justify-between gap-3 mb-2.5">
-                          <span className="font-mono text-[11px] tracking-[0.12em] text-on-surface-variant/50 font-medium">
+                        <div className="flex items-start justify-between gap-3 mb-2.5 min-w-0">
+                          <span className="font-mono text-[11px] tracking-[0.12em] text-on-surface-variant/50 font-medium whitespace-nowrap flex-shrink-0">
                             DIRECTION · #{String(idx + 1).padStart(2, '0')}
                           </span>
                           {action.dueDate && (() => {
                             const pill = getDeadlinePillStyle(action.dueDate);
                             return (
-                              <span className={`inline-flex items-center gap-1.5 h-6 px-2.5 rounded-full font-mono text-[10.5px] font-semibold tracking-[0.06em] uppercase border whitespace-nowrap ${pill.classes}`}>
-                                <span className="material-symbols-outlined text-[11px]">{pill.icon}</span>
-                                {action.dueDate}
+                              <span 
+                                title={action.dueDate}
+                                className={`inline-flex items-center gap-1.5 h-6 px-2.5 rounded-full font-mono text-[10.5px] font-semibold tracking-[0.06em] uppercase border min-w-0 ${pill.classes}`}
+                              >
+                                <span className="material-symbols-outlined text-[11px] flex-shrink-0">{pill.icon}</span>
+                                <span className="truncate">{action.dueDate}</span>
                               </span>
                             );
                           })()}
