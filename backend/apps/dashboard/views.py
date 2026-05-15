@@ -205,6 +205,8 @@ class NodalDeadlinesMonitorView(APIView):
 
             judgment = plan.judgment
             primary_dept = case.primary_department
+            sec_dept_codes = [d.code for d in case.secondary_departments.all()]
+            
             rows.append({
                 "action_plan_id": plan.id,
                 "case_id": case.id,
@@ -212,7 +214,8 @@ class NodalDeadlinesMonitorView(APIView):
                 "case_title": f"{case.petitioner_name} vs {case.respondent_name}"[:160],
                 "department_code": primary_dept.code if primary_dept else None,
                 "department_name": primary_dept.name if primary_dept else None,
-                "recommendation": plan.recommendation,
+                "secondary_departments": sec_dept_codes,
+                "recommendation": judgment.appeal_type if judgment and judgment.appeal_type and judgment.appeal_type != "none" else plan.recommendation,
                 "verification_status": plan.verification_status,
                 "compliance_deadline": plan.compliance_deadline,
                 "internal_compliance_deadline": plan.internal_compliance_deadline,

@@ -389,8 +389,8 @@ class JudgmentUpdateView(RetrieveUpdateAPIView):
                 
             # 3. Check if all directives became unverified
             if judgment.court_directions:
-                has_verified = any(d.get("isVerified") for d in judgment.court_directions if isinstance(d, dict))
-                if not has_verified and action_plan.verification_status.startswith("approved"):
+                has_all_verified = all(d.get("isVerified") for d in judgment.court_directions if isinstance(d, dict))
+                if not has_all_verified and action_plan.verification_status.startswith("approved"):
                     action_plan.verification_status = "pending"
                     action_plan.save(update_fields=["verification_status"])
                     # Also revert the appeal type if we drop approval due to no verified directives

@@ -379,7 +379,7 @@ function ComplyAppealPanel({ deadlines, deptRows, onSelectDept }: {
   const { comply, appeal, undecided } = useMemo(() => {
     const src = selected === 'state'
       ? deadlines
-      : deadlines.filter(d => d.department_code === selected);
+      : deadlines.filter(d => d.department_code === selected || d.secondary_departments?.includes(selected));
     const comply = src.filter(d => d.recommendation?.toLowerCase() === 'comply').length;
     const appeal = src.filter(d => d.recommendation?.toLowerCase() === 'appeal').length;
     const undecided = src.length - comply - appeal;

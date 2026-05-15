@@ -358,6 +358,7 @@ export interface DeadlineRow {
   case_title: string;
   department_code: string | null;
   department_name: string | null;
+  secondary_departments?: string[];
   recommendation: string;
   verification_status: string;
   compliance_deadline: string | null;
