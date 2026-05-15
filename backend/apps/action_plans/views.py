@@ -2,13 +2,13 @@ from django.db.models import Q
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from rest_framework import permissions, status
-from rest_framework.generics import ListAPIView, RetrieveAPIView
+from rest_framework.generics import ListAPIView
 from rest_framework.parsers import FormParser, MultiPartParser
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from apps.accounts.permissions import GLOBAL_ACCESS_ROLES
+from apps.accounts.permissions import GLOBAL_ACCESS_ROLES, user_can_verify
 from apps.cases.models import Case
 
 from .models import ActionPlan, DirectiveExecution
@@ -78,9 +78,42 @@ class ActionPlanListView(ListAPIView):
     serializer_class = ActionPlanSerializer
 
 
-class ActionPlanDetailView(RetrieveAPIView):
-    queryset = ActionPlan.objects.select_related("case").all()
-    serializer_class = ActionPlanSerializer
+class ActionPlanDetailView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, pk):
+        plan = get_object_or_404(ActionPlan, pk=pk)
+        return Response(ActionPlanSerializer(plan).data)
+
+    def patch(self, request, pk):
+        """HLC-only: update statutory_appeal_deadline and keep cached verdict in sync."""
+        if not user_can_verify(request.user):
+            return Response(
+                {"detail": "Only Head of Legal Cell or Central Law can edit deadlines."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+        plan = get_object_or_404(ActionPlan, pk=pk)
+        raw = request.data.get("statutory_appeal_deadline")
+        if not raw:
+            return Response({"detail": "statutory_appeal_deadline is required."}, status=400)
+        from datetime import date as _date
+        try:
+            new_date = _date.fromisoformat(str(raw))
+        except ValueError:
+            return Response({"detail": "Invalid date. Use YYYY-MM-DD."}, status=400)
+
+        plan.statutory_appeal_deadline = new_date
+        today = _date.today()
+        days_remaining = (new_date - today).days
+        rec = plan.full_rag_recommendation or {}
+        verdict = rec.get("verdict") or {}
+        verdict["limitation_deadline"] = new_date.isoformat()
+        verdict["days_remaining"] = days_remaining
+        verdict["urgency"] = "HIGH" if days_remaining <= 7 else ("MEDIUM" if days_remaining <= 30 else "LOW")
+        rec["verdict"] = verdict
+        plan.full_rag_recommendation = rec
+        plan.save(update_fields=["statutory_appeal_deadline", "full_rag_recommendation", "updated_at"])
+        return Response(ActionPlanSerializer(plan).data)
 
 
 class GenerateActionPlanView(APIView):

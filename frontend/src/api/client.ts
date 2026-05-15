@@ -258,6 +258,10 @@ export async function updateJudgment(judgmentId: string, data: Partial<JudgmentD
   return apiPatch<JudgmentData>(`/api/cases/judgments/${judgmentId}/`, data);
 }
 
+export async function updateActionPlanDeadline(planId: string, newDate: string): Promise<any> {
+  return apiPatch<any>(`/api/action-plans/${planId}/`, { statutory_appeal_deadline: newDate });
+}
+
 export async function extractCase(pdfFile: File): Promise<CaseData> {
   const formData = new FormData();
   formData.append('pdf_file', pdfFile);

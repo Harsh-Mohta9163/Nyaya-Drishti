@@ -85,28 +85,35 @@ const getDepartmentColors = (source: string) => {
   return 'bg-surface-container-high/50 border-outline-variant/30 text-on-surface-variant';
 };
 
-export const CaseOverview = ({ 
-  caseData, 
-  verifiedActions, 
+export const CaseOverview = ({
+  caseData,
+  verifiedActions,
   onGoToVerify,
   recommendation,
   isGenerating,
   onGenerateAnalysis,
   decision,
-  onDecision
-}: { 
-  caseData?: CaseData | null, 
-  verifiedActions?: any[], 
+  onDecision,
+  actionPlanId,
+  onDeadlineChange,
+}: {
+  caseData?: CaseData | null,
+  verifiedActions?: any[],
   onGoToVerify?: () => void,
   recommendation?: any | null,
   isGenerating?: boolean,
   onGenerateAnalysis?: () => void,
   decision?: 'none' | 'appeal' | 'comply',
-  onDecision?: (decision: 'none' | 'appeal' | 'comply') => void
+  onDecision?: (decision: 'none' | 'appeal' | 'comply') => void,
+  actionPlanId?: string,
+  onDeadlineChange?: (newDate: string) => void,
 }) => {
   const { user } = useAuth();
   const [overrideOpen, setOverrideOpen] = useState(false);
   const [overrideKey, setOverrideKey] = useState(0); // bump to force re-fetch of case after save
+  const [editingDeadline, setEditingDeadline] = useState(false);
+  const [deadlineInput, setDeadlineInput] = useState('');
+  const [savingDeadline, setSavingDeadline] = useState(false);
 
   const primaryDept = caseData?.primary_department;
   const secondaryDepts = caseData?.secondary_departments || [];
@@ -370,11 +377,57 @@ export const CaseOverview = ({
                   <span className="material-symbols-outlined text-sm">schedule</span> Key Deadlines & Limitation
                 </h4>
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4">
-                  <div className="bg-surface-container-high/40 rounded-lg p-3 text-center border border-outline-variant/15">
-                    <p className="text-[9px] font-bold text-on-surface-variant uppercase tracking-widest mb-1">Limitation Deadline</p>
-                    <p className="text-base font-bold text-on-surface">
-                      {recommendation.verdict.limitation_deadline || '—'}
+                  {/* Limitation Deadline — HLC can click the pencil to correct the AI date */}
+                  <div className="bg-surface-container-high/40 rounded-lg p-3 text-center border border-outline-variant/15 relative">
+                    <p className="text-[9px] font-bold text-on-surface-variant uppercase tracking-widest mb-1 flex items-center justify-center gap-1.5">
+                      Limitation Deadline
+                      {!editingDeadline && actionPlanId && (user?.role === 'head_legal_cell' || user?.role === 'central_law') && (
+                        <button
+                          onClick={() => { setDeadlineInput(recommendation.verdict.limitation_deadline || ''); setEditingDeadline(true); }}
+                          className="text-primary-blue hover:text-primary-blue/70 transition-colors"
+                          title="Edit deadline"
+                        >
+                          <span className="material-symbols-outlined" style={{ fontSize: '16px' }}>edit</span>
+                        </button>
+                      )}
                     </p>
+                    {editingDeadline ? (
+                      <div className="flex flex-col items-center gap-2 mt-1">
+                        <input
+                          type="date"
+                          value={deadlineInput}
+                          onChange={e => setDeadlineInput(e.target.value)}
+                          className="text-sm font-bold text-on-surface bg-surface-container rounded px-2 py-1 border border-primary-blue/40 focus:outline-none focus:border-primary-blue w-full text-center"
+                        />
+                        <div className="flex gap-2">
+                          <button
+                            disabled={savingDeadline || !deadlineInput}
+                            onClick={async () => {
+                              setSavingDeadline(true);
+                              try {
+                                await onDeadlineChange?.(deadlineInput);
+                                setEditingDeadline(false);
+                              } finally {
+                                setSavingDeadline(false);
+                              }
+                            }}
+                            className="text-[10px] font-bold px-2 py-1 rounded bg-primary-blue text-on-primary-blue disabled:opacity-50"
+                          >
+                            {savingDeadline ? 'Saving…' : 'Save'}
+                          </button>
+                          <button
+                            onClick={() => setEditingDeadline(false)}
+                            className="text-[10px] font-bold px-2 py-1 rounded bg-surface-container text-on-surface-variant"
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <p className="text-base font-bold text-on-surface">
+                        {recommendation.verdict.limitation_deadline || '—'}
+                      </p>
+                    )}
                   </div>
                   <div className="bg-surface-container-high/40 rounded-lg p-3 text-center border border-outline-variant/15">
                     <p className="text-[9px] font-bold text-on-surface-variant uppercase tracking-widest mb-1">Days Remaining</p>

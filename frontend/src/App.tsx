@@ -13,7 +13,7 @@ import { Routes, Route, Navigate, useNavigate } from 'react-router-dom';
 import { useAuth } from './context/AuthContext';
 import LoginPage from './LoginPage';
 import RegisterPage from './RegisterPage';
-import { fetchCase, CaseData, fetchRecommendation, reAnnotateSource, updateJudgment, extractCase } from './api/client';
+import { fetchCase, CaseData, fetchRecommendation, reAnnotateSource, updateJudgment, extractCase, updateActionPlanDeadline } from './api/client';
 import { shortPartyTitle, extractCoreName } from './utils/truncate';
 
 import { Precedents } from './components/Precedents';
@@ -98,6 +98,19 @@ function MainApp() {
       })
       .catch(err => console.error('Failed to fetch case:', err));
   }, [selectedCaseId]);
+
+  const handleDeadlineChange = async (newDate: string) => {
+    const planId = selectedCase?.judgments?.[0]?.action_plan?.id;
+    if (!planId) return;
+    try {
+      const updated = await updateActionPlanDeadline(planId, newDate);
+      const newRec = updated.full_rag_recommendation;
+      if (newRec) setRecommendation(newRec);
+    } catch (err) {
+      console.error("Failed to update deadline", err);
+      alert("Failed to save deadline. Please try again.");
+    }
+  };
 
   const handleGenerateAnalysis = async () => {
     if (!selectedCaseId) return;
@@ -226,7 +239,7 @@ function MainApp() {
     saveActionsToBackend(newActions);
   };
 
-  const editAction = (id: string, patch: { description?: string; govtSummary?: string; implementationSteps?: string[] }) => {
+  const editAction = (id: string, patch: { description?: string; govtSummary?: string; implementationSteps?: string[]; dueDate?: string }) => {
     const newActions = actions.map(a => a.id === id ? { ...a, ...patch } : a);
     setActions(newActions);
     saveActionsToBackend(newActions);
@@ -439,15 +452,17 @@ function MainApp() {
                           transition={{ duration: 0.3 }}
                         >
                           {activeTab === 'overview' && (
-                            <CaseOverview 
+                            <CaseOverview
                               caseData={selectedCase}
-                              verifiedActions={actions} 
+                              verifiedActions={actions}
                               onGoToVerify={() => setActiveTab('verify')}
                               recommendation={recommendation}
                               isGenerating={isGeneratingAnalysis}
                               onGenerateAnalysis={handleGenerateAnalysis}
                               decision={caseDecision}
                               onDecision={updateCaseStatus}
+                              actionPlanId={selectedCase?.judgments?.[0]?.action_plan?.id}
+                              onDeadlineChange={handleDeadlineChange}
                             />
                           )}
                           {activeTab === 'verify' && (
