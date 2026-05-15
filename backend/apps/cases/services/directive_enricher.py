@@ -349,6 +349,11 @@ def enrich_case_directives(case, *, force: bool = False) -> dict:
         )
         try:
             from apps.cases.services.extractor import _call_agent_70b
+            # Sleep before hitting NIM: the 4-agent extraction may have just
+            # exhausted the per-minute rate limit. 20s is enough for a single
+            # rate-limit window to clear; _call_agent_70b will retry further
+            # with its own backoff if still limited.
+            time.sleep(20)
             result = _call_agent_70b(prompt, CaseEnrichment, temperature=0.1)
             enrichments = (result or {}).get("enrichments") or []
             method = "llm_nvidia_fallback"

@@ -52,6 +52,9 @@ class Command(BaseCommand):
         from apps.cases.services.extractor import extract_structured_data
         from apps.cases.services.pdf_processor import extract_text_from_pdf
         from apps.cases.services.section_segmenter import segment_judgment
+        from apps.cases.services.directive_enricher import enrich_case_directives
+        from apps.cases.services.dept_classifier import classify as classify_dept
+        from apps.accounts.models import Department
         import fitz
         from apps.cases.views import _annotate_source_locations
 
@@ -119,11 +122,69 @@ class Command(BaseCommand):
 
                 judgment.refresh_from_db()
                 case = judgment.case
+
+                # ── Source highlighting ──────────────────────────────────
                 if judgment.court_directions:
                     judgment.court_directions = _annotate_source_locations(
                         pdf_full_path, judgment.court_directions
                     )
                     judgment.save()
+
+                # ── Directive enrichment (missing in old bulk_ingest!) ───
+                # Classifies each directive as govt-action vs informational
+                # and generates implementation steps. Same as CaseExtractView.
+                try:
+                    enrich_result = enrich_case_directives(case)
+                    self.stdout.write(
+                        f"  enriched {enrich_result.get('updated', 0)} directives "
+                        f"(method={enrich_result.get('method', '?')})"
+                    )
+                except Exception as enrich_err:
+                    self.stdout.write(self.style.WARNING(
+                        f"  directive enrichment failed (non-fatal): {enrich_err}"
+                    ))
+
+                # ── Department re-classification guard ───────────────────
+                # extract_structured_data already runs dept classification,
+                # but if it was rate-limited the case ends up with no dept.
+                # Retry once here so bulk runs don't lose classification.
+                case.refresh_from_db()
+                if not case.primary_department:
+                    self.stdout.write("  dept was <none> after extraction — retrying classification...")
+                    try:
+                        dept_haystack = (
+                            (segments.get("operative_order", "") or "")[:6000]
+                            + "\n"
+                            + (segments.get("middle", "") or "")[:4000]
+                        )
+                        dept_result = classify_dept(
+                            case_text=dept_haystack,
+                            entities=list(judgment.entities or []),
+                            parties=(case.petitioner_name or "", case.respondent_name or ""),
+                        )
+                        if dept_result.get("primary"):
+                            case.primary_department = Department.objects.filter(
+                                code=dept_result["primary"]
+                            ).first()
+                            case.save()
+                            case.secondary_departments.set(
+                                Department.objects.filter(
+                                    code__in=dept_result.get("secondary", [])
+                                )
+                            )
+                            self.stdout.write(self.style.SUCCESS(
+                                f"  dept retry ok: primary={dept_result['primary']} "
+                                f"method={dept_result.get('method')}"
+                            ))
+                        else:
+                            self.stdout.write(self.style.WARNING(
+                                "  dept retry: still no match"
+                            ))
+                    except Exception as dept_err:
+                        self.stdout.write(self.style.WARNING(
+                            f"  dept retry failed: {dept_err}"
+                        ))
+
                 if judgment.processing_status not in ("failed",):
                     judgment.processing_status = "complete"
                     judgment.save()

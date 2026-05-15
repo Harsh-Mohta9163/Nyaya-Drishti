@@ -51,7 +51,10 @@
       "Bash(.venv/Scripts/python.exe -X utf8 manage.py shell -c ' *)",
       "Bash(.venv/Scripts/python.exe -X utf8 manage.py enrich_directives --force --sleep 4)",
       "Bash(.venv/Scripts/python.exe -X utf8 smoke_or_gemini.py)",
-      "Bash(.venv/Scripts/python.exe -X utf8 manage.py enrich_directives --force --sleep 3 --case-number-prefix CRL)"
+      "Bash(.venv/Scripts/python.exe -X utf8 manage.py enrich_directives --force --sleep 3 --case-number-prefix CRL)",
+      "Bash(git -C /home/sunhith/nyaya_drishti/Nyaya-Drishti log --oneline -10)",
+      "Bash(git -C /home/sunhith/nyaya_drishti/Nyaya-Drishti status --short)",
+      "Bash(git -C /home/sunhith/nyaya_drishti/Nyaya-Drishti show --stat 2920331)"
     ]
   }
 }

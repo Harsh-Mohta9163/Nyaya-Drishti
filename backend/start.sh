@@ -35,6 +35,10 @@ fi
 echo "Applying database migrations..."
 python manage.py migrate --noinput
 
-# 4. Start the server
+# 4. Seed departments and demo users (idempotent — safe to re-run)
+echo "Seeding demo data..."
+python manage.py seed_demo_data
+
+# 5. Start the server
 echo "Starting Django Server..."
 exec gunicorn --bind 0.0.0.0:7860 --workers 2 --threads 4 --timeout 120 config.wsgi:application
