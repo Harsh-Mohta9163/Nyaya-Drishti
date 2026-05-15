@@ -361,6 +361,19 @@ class JudgmentUpdateView(RetrieveUpdateAPIView):
             )
         return super().update(request, *args, **kwargs)
 
+    def perform_update(self, serializer):
+        judgment = serializer.save()
+        
+        # If the frontend is setting a final decision (comply/appeal),
+        # auto-approve the action plan so it reaches the LCO / Nodal dashboards.
+        appeal_type = self.request.data.get("appeal_type")
+        if appeal_type and appeal_type != "none":
+            from apps.action_plans.models import ActionPlan
+            action_plan = ActionPlan.objects.filter(judgment=judgment).first()
+            if action_plan and not action_plan.verification_status.startswith("approved"):
+                action_plan.verification_status = "approved"
+                action_plan.save(update_fields=["verification_status"])
+
 class CaseExtractView(APIView):
     """
     The main ingestion pipeline for a new judgment.
