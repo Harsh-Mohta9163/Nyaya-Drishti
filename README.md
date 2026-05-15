@@ -209,10 +209,20 @@ NyayaDrishti ships dedicated workspaces for each statutory role, with permission
 │ ROLE                         │ LANDING VIEW & PERMISSIONS                     │
 ├──────────────────────────────┼────────────────────────────────────────────────┤
 │ Head of Legal Cell (HLC)     │ Dashboard → Verify Actions tab                 │
-│                              │ • Side-by-side PDF + extracted directives      │
-│                              │ • Approve / Edit / Reject each directive       │
-│                              │ • Edit AI-generated implementation steps       │
-│                              │ • Re-route case to another dept if needed      │
+│                              │ • Case Overview — dept assignment, case meta,  │
+│                              │   AI Recommendation (APPEAL/COMPLY + contempt  │
+│                              │   risk + deadline heatmap + similar cases)     │
+│                              │ • Court Directions panel — timeline with        │
+│                              │   urgency-coloured deadline pills, per-         │
+│                              │   direction responsible-party footer, progress  │
+│                              │   bar, verification node indicators             │
+│                              │ • Verification & Final Decision banner —        │
+│                              │   verified-by meta, order source, comply/appeal │
+│                              │   decision lock with change option              │
+│                              │ • Verify Actions tab — side-by-side PDF viewer  │
+│                              │ • Approve / Edit / Reject each directive        │
+│                              │ • Edit AI-generated implementation steps        │
+│                              │ • Re-route case to another dept if needed       │
 ├──────────────────────────────┼────────────────────────────────────────────────┤
 │ Litigation Conducting Officer│ Execution Dashboard (auto-landing)             │
 │ (LCO)                        │ • Only HLC-verified, government-action items   │
@@ -231,6 +241,7 @@ NyayaDrishti ships dedicated workspaces for each statutory role, with permission
 │ Central Law Department       │ Central View (auto-landing) — 48-tile grid     │
 │                              │ • Total cases / high-risk / pending per dept   │
 │                              │ • Drill into any dept's case list              │
+│                              │ • Full Case Overview access across all depts    │
 │                              │ • Can override department routing              │
 │                              │ • Can verify (override authority)              │
 ├──────────────────────────────┼────────────────────────────────────────────────┤
@@ -980,7 +991,16 @@ Nyaya-Drishti/
 │   │   ├── components/
 │   │   │   ├── Dashboard.tsx                   Live stats + dept badge
 │   │   │   ├── CaseList.tsx                    With dept filter chip
-│   │   │   ├── CaseOverview.tsx                Extracted data + AI analysis
+│   │   │   ├── CaseOverview.tsx                Case detail central view:
+│   │   │   │                                   dept assignment card, case meta grid,
+│   │   │   │                                   executive brief, AI Recommendation
+│   │   │   │                                   (verdict + contempt risk + deadline
+│   │   │   │                                   heatmap + similar cases RAG table),
+│   │   │   │                                   Court Directions timeline (urgency-
+│   │   │   │                                   coloured deadline pills, glowing
+│   │   │   │                                   verification nodes, responsible-party
+│   │   │   │                                   footer with initials avatar),
+│   │   │   │                                   Verification & Final Decision banner
 │   │   │   ├── CaseHeader.tsx                  Case metadata header
 │   │   │   ├── VerifyActions.tsx               PDF side-by-side + edit UI
 │   │   │   ├── Precedents.tsx                  Citation network + RAG matches
@@ -1135,6 +1155,18 @@ python manage.py seed_court_calendar             # Karnataka court holidays
 | **Department drill-down** | Click any of the 48 tiles → filtered case list with breadcrumb chip |
 | **Government-of-Karnataka branding** | State crest in sidebar, official tagline |
 | **Responsive layouts** | Phone / tablet / desktop breakpoints throughout |
+
+#### Case Overview — central detail view
+
+| Feature | Design detail |
+|---|---|
+| **Department Assignment card** | Square icon tile + monospace `RESPONSIBLE DEPT` / `ALSO AFFECTS` labels + indigo-tinted active pill for primary department + neutral surface pills for secondary departments + ghost Reassign button |
+| **Court Directions & Action Plan panel** | Sticky right column with monospace order-date sub-line + verified/pending progress bar; each direction card shows a `DIRECTION · #01` monospace label, urgency-coloured deadline pill, direction body text, and a dashed-border footer with two-letter initials avatar + `RESPONSIBLE` label + `✓ Verified` badge |
+| **Urgency-coloured deadline pills** | Dynamically coloured by timeframe: weeks → muted rose-red; 1 month → orange-amber; 2-3 months → soft amber; 4+ months → slate-sky; acknowledged/on-track → muted sage green |
+| **Timeline verification nodes** | Circular nodes with double-ring glow shadow — emerald with checkmark for verified, amber with direction number for pending |
+| **AI Recommendation card** | Rename from "AI Verdict" to "AI Recommendation"; shows APPEAL/COMPLY decision + confidence %, contempt risk badge, appeal grounds or key reasoning, CCMS perspective note, and a Key Deadlines block with limitation deadline / days remaining / urgency + animated heatmap bar |
+| **Verification & Final Decision banner** | Full-width two-column card with green left-accent gradient; left col shows verification status (pending progress bar or verified meta — Verified By / Reviewed / Order Source rows), right col shows final decision locked (comply/appeal badge + Change button) or decision buttons disabled until verification complete |
+| **Similar Cases & RAG Evidence table** | Similarity score bar + outcome label + core precedent text; "View All N Precedents" button when corpus returns more than 5 matches |
 
 ---
 
